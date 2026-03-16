@@ -67,6 +67,7 @@ class StemPlan:
     ramp_out_seconds: float | None = None
     play_duration: float | None = None
     pre_trimmed: bool = False
+    loop: bool = True
 
     @property
     def is_background(self) -> bool:
@@ -257,13 +258,37 @@ def collect_stem_plans(
         plan.volume_percentage = vol
         plan.ramp_in_seconds = ri
         plan.ramp_out_seconds = ro
+
         plan.play_duration = pd
         # Source-based stems are pre-trimmed by XILP002; don't trim again at mix time
         if sfx_config and plan.text and plan.text in sfx_config.effects:
             src_entry = sfx_config.effects[plan.text]
             if src_entry.source is not None and pd is not None:
                 plan.pre_trimmed = True
+            if src_entry.loop is False:
+                plan.loop = False
         plans.append(plan)
+
+    # Inject synthetic stop markers for ambience-end directives in the index.
+    # "AMBIENCE: STOP" and "AMBIENCE: * FADES OUT" have no stem file on disk
+    # but must appear in the timeline so build_ambience_layer can use their
+    # cue position as the loop end boundary.
+    seen_seqs = {p.seq for p in plans}
+    for seq, entry in entries_index.items():
+        if seq in seen_seqs:
+            continue
+        text = entry.get("text", "")
+        if entry.get("direction_type") == "AMBIENCE" and (
+            text == "AMBIENCE: STOP" or text.endswith("FADES OUT")
+        ):
+            plans.append(StemPlan(
+                seq=seq,
+                filepath="",  # sentinel: no audio — skip in layer builders
+                direction_type="AMBIENCE",
+                entry_type=entry.get("type"),
+                text=text,
+            ))
+
     return plans
 
 
@@ -403,6 +428,8 @@ def build_ambience_layer(
     )
 
     for plan in ambience_plans:
+        if not plan.filepath:  # AMBIENCE: STOP marker — boundary only, no audio
+            continue
         start_ms = timeline.get(plan.seq, 0)
         if start_ms >= total_ms:
             continue
@@ -418,10 +445,14 @@ def build_ambience_layer(
         if duration_needed <= 0:
             continue
 
-        clip = AudioSegment.from_file(plan.filepath)
+        try:
+            clip = AudioSegment.from_file(plan.filepath)
+        except Exception as exc:
+            print(f" [W] Skipping corrupt ambience stem: {plan.filepath} ({exc})")
+            continue
         ramp_in_ms = int((plan.ramp_in_seconds or 0) * 1000)
         ramp_out_ms = int((plan.ramp_out_seconds or 0) * 1000)
-        looped = _loop_clip(clip, duration_needed)
+        looped = _loop_clip(clip, duration_needed) if plan.loop else clip[:duration_needed]
         looped = _apply_clip_effects(
             looped, plan.volume_percentage, ramp_in_ms, ramp_out_ms, level_db
         )
@@ -583,7 +614,7 @@ def build_foreground_timeline_only(
 def compute_dialogue_labels(
     stem_plans: list[StemPlan],
     timeline: dict[int, int],
-) -> list[tuple[float, float, str]]:
+) -> list[tuple]:
     """Compute dialogue label tuples without loading audio.
 
     Args:
@@ -591,9 +622,12 @@ def compute_dialogue_labels(
         timeline: Cue-point timestamps from a foreground build.
 
     Returns:
-        List of ``(start_s, end_s, speaker)`` tuples.
+        List of 7-element tuples ``(start_s, end_s, speaker, None, None, None, snippet)``
+        where *snippet* is the first 5 words of the dialogue text (or ``None`` if no
+        text is available).  Positions [3]–[5] are ``None`` (dialogue has no ramp or
+        play_duration); position [6] carries the snippet for the HTML tooltip.
     """
-    labels: list[tuple[float, float, str]] = []
+    labels = []
     for plan in sorted(stem_plans, key=lambda p: p.seq):
         if plan.entry_type != "dialogue":
             continue
@@ -602,7 +636,9 @@ def compute_dialogue_labels(
         end_ms = start_ms + duration
         basename = os.path.splitext(os.path.basename(plan.filepath))[0]
         speaker = basename.rsplit("_", 1)[-1]
-        labels.append((start_ms / 1000.0, end_ms / 1000.0, speaker))
+        words = (plan.text or "").split()
+        snippet = " ".join(words[:5]) if words else None
+        labels.append((start_ms / 1000.0, end_ms / 1000.0, speaker, None, None, None, snippet))
     return labels
 
 
@@ -641,6 +677,8 @@ def compute_ambience_labels(
     )
 
     for plan in ambience_plans:
+        if not plan.filepath:  # AMBIENCE: STOP marker — boundary only, no label
+            continue
         start_ms = timeline.get(plan.seq, 0)
         if start_ms >= total_ms:
             continue

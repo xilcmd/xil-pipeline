@@ -48,6 +48,15 @@ flowchart TD
     SFXCFG --> P2
     SFXLIB --> ST
 
+    XILU004["XILU004_sample_voices_T2S.py"]
+    VSAMPLES["`🎙️ voice_samples/<TAG>/
+    <actor>.mp3 — audition samples`"]
+    C --> XILU004
+    XILU004 --> VSAMPLES
+
+    XILU005["XILU005_discover_SFX.py"]
+    SFXLIB --> XILU005
+
     C --> P2
     J --> P2
     P2 -->|"--dry-run"| DRY
@@ -212,7 +221,7 @@ sequenceDiagram
     participant FS as stems directory
     participant PJ as parsed JSON
 
-    User->>M: python XILP002_the413_producer.py --episode S02E03
+    User->>M: python XILP002_the413_producer.py --episode S02E03 [--gen-sfx / --gen-music / --gen-ambience]
     M->>LP: load cast_the413_S02E03.json + parsed script
     LP-->>M: config dict, dialogue_entries list
     M->>SFX: load sfx_the413_S02E03.json (always, for preamble)
@@ -226,6 +235,8 @@ sequenceDiagram
         M->>SFX: look up effects["INTRO MUSIC"].source
         SFX-->>M: "SFX/The Porch Light.mp3"
         M->>FS: copy source → n001_preamble_sfx.mp3
+        note over FS: play_duration % applied at copy time
+Stem file reflects actual playback length
     end
 
     M->>QG: get_best_model_for_budget
@@ -702,6 +713,11 @@ python XILP006_the413_cues_ingester.py --episode S02E03 \
 #    XILP002 will copy that file → n001_preamble_sfx.mp3 and inject seq -2/-1 into parsed JSON
 python XILP002_the413_producer.py --episode S02E03 --dry-run
 python XILP002_the413_producer.py --episode S02E03
+# Generate SFX/music/ambience stems by category (omit flags to generate all):
+python XILU002_generate_SFX.py --episode S02E03 --gen-sfx --dry-run
+python XILU002_generate_SFX.py --episode S02E03 --gen-music --dry-run
+python XILU002_generate_SFX.py --episode S02E03 --gen-ambience --dry-run
+python XILU002_generate_SFX.py --episode S02E03
 
 # 6. Assemble master MP3 or export DAW layers
 python XILP003_the413_audio_assembly.py --episode S02E03
@@ -795,3 +811,27 @@ flowchart LR
 > for header-only duration reads — orders of magnitude faster than `AudioSegment.from_file()`
 > for a full episode.  The `compute_*_labels()` helpers apply the same boundary logic as the
 > audio-loading layer builders (`build_ambience_layer` etc.) but return label tuples only.
+
+---
+
+## 11. Ambience Stop Markers
+
+Script-side directives that end an ambience loop without starting a new one.
+
+### Recognized patterns
+- `[AMBIENCE: STOP]` — explicit stop
+- `[AMBIENCE: DINER FADES OUT]`, `[AMBIENCE: B&B FADES OUT]` — any `FADES OUT` suffix
+
+### How they work
+1. **XILP001** auto-generates `type: "silence", duration_seconds: 0.0` entries in the sfx config — no audio asset is created
+2. **mix_common `collect_stem_plans()`** injects a synthetic `StemPlan(filepath="")` for each stop marker found in the entries index — they never have a stem file on disk
+3. **`build_ambience_layer()`** uses stop markers as `bg_cues` boundary markers: the preceding ambience loop's `end_ms` is set to the stop marker's timeline position
+4. Stop marker plans are skipped when loading audio (empty filepath) and generate no label in the timeline
+
+### `loop: false` vs stop markers
+| | `loop: false` | Stop marker |
+|---|---|---|
+| Controlled in | sfx config | script |
+| Effect | Plays file once (no tiling) | Ends loop at cue position |
+| Audio generated | Yes | No |
+| Timeline label | Yes | No |

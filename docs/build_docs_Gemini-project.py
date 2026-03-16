@@ -193,12 +193,13 @@ def create_pages_file(docs_dir: Path, title: str = None) -> None:
         logger.error(f"Failed to create {pages_file}: {e}")
 
 
-def copy_markdown_files(code_root: Path, docs_base: Path, project_root: Path) -> int:
+def link_markdown_files(code_root: Path, docs_base: Path, project_root: Path) -> int:
     """
-    Copy markdown files from source code to docs directory.
+    Symlink markdown files from source code into the docs directory.
 
-    Preserves directory structure and copies README.md and other documentation
-    files so they're available in the generated docs site.
+    Preserves directory structure and creates symbolic links so that edits to
+    the source .md files are immediately visible in the generated docs site
+    without needing to re-run the build script.
 
     Args:
         code_root: Source code root directory (e.g., gemini-project/)
@@ -206,14 +207,14 @@ def copy_markdown_files(code_root: Path, docs_base: Path, project_root: Path) ->
         project_root: Project root directory
 
     Returns:
-        Number of files copied
+        Number of symlinks created
     """
-    logger.info(f"Copying markdown files from {code_root.name}...")
+    logger.info(f"Linking markdown files from {code_root.name}...")
 
     # Find all markdown files in source code
     md_files = [f for f in code_root.rglob("*.md") if should_copy_markdown_file(f)]
 
-    copied_count = 0
+    linked_count = 0
     for md_file in md_files:
         try:
             # Calculate relative path from project root
@@ -223,18 +224,22 @@ def copy_markdown_files(code_root: Path, docs_base: Path, project_root: Path) ->
             # Create destination directory
             docs_dir.mkdir(parents=True, exist_ok=True)
 
-            # Copy file
+            # Remove stale copy/symlink before creating fresh symlink
             dest_file = docs_dir / md_file.name
-            shutil.copy2(md_file, dest_file)
+            if dest_file.exists() or dest_file.is_symlink():
+                dest_file.unlink()
 
-            logger.info(f"  Copied: {md_file.relative_to(code_root)}")
-            copied_count += 1
+            # Symlink to absolute source path so the link works regardless of cwd
+            dest_file.symlink_to(md_file.resolve())
+
+            logger.info(f"  Linked: {md_file.relative_to(code_root)}")
+            linked_count += 1
 
         except Exception as e:
-            logger.error(f"  Failed to copy {md_file}: {e}")
+            logger.error(f"  Failed to link {md_file}: {e}")
 
-    logger.info(f"✅ Copied {copied_count} markdown file(s)")
-    return copied_count
+    logger.info(f"✅ Linked {linked_count} markdown file(s)")
+    return linked_count
 
 
 def create_module_doc(file: Path, docs_dir: Path, namespace: str) -> None:
@@ -352,9 +357,9 @@ Examples:
             namespace = convert_path_to_namespace(py_file, project_root)
             create_module_doc(py_file, docs_dir, namespace)
 
-    # Copy markdown files from source to docs
+    # Symlink markdown files from source to docs
     logger.info("")  # Blank line for readability
-    md_count = copy_markdown_files(code_root, docs_base, project_root)
+    md_count = link_markdown_files(code_root, docs_base, project_root)
 
     logger.info("")  # Blank line for readability
     logger.info("✅ Documentation generation complete!")

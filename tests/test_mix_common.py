@@ -22,6 +22,7 @@ _apply_clip_effects = mix_common._apply_clip_effects
 _volume_pct_to_db = mix_common._volume_pct_to_db
 build_ambience_layer = mix_common.build_ambience_layer
 build_music_layer = mix_common.build_music_layer
+compute_dialogue_labels = mix_common.compute_dialogue_labels
 StemPlan = mix_common.StemPlan
 
 # ─── Import models for SfxConfiguration ───
@@ -534,3 +535,67 @@ class TestAmbienceLabelRampData:
 
         assert labels[0][3] is None
         assert labels[0][4] is None
+
+
+# ─── Tests: compute_dialogue_labels snippet ───
+
+class TestComputeDialogueLabelsSnippet:
+    def test_snippet_contains_first_five_words(self, tmp_path):
+        mp3_path = str(tmp_path / "001_cold-open_adam.mp3")
+        _write_mp3(mp3_path, duration_ms=500)
+        plan = _make_plan(1, mp3_path, None, entry_type="dialogue",
+                          text="It's 7:14 AM on a Saturday in February.")
+        timeline = {1: 0}
+
+        labels = compute_dialogue_labels([plan], timeline)
+
+        assert len(labels) == 1
+        tup = labels[0]
+        assert len(tup) == 7
+        assert tup[6] == "It's 7:14 AM on a"
+
+    def test_snippet_is_none_when_no_text(self, tmp_path):
+        mp3_path = str(tmp_path / "001_cold-open_adam.mp3")
+        _write_mp3(mp3_path, duration_ms=500)
+        plan = _make_plan(1, mp3_path, None, entry_type="dialogue", text=None)
+        timeline = {1: 0}
+
+        labels = compute_dialogue_labels([plan], timeline)
+
+        assert labels[0][6] is None
+
+    def test_snippet_short_text_not_truncated(self, tmp_path):
+        mp3_path = str(tmp_path / "001_cold-open_adam.mp3")
+        _write_mp3(mp3_path, duration_ms=200)
+        plan = _make_plan(1, mp3_path, None, entry_type="dialogue",
+                          text="Hello world")
+        timeline = {1: 0}
+
+        labels = compute_dialogue_labels([plan], timeline)
+
+        assert labels[0][6] == "Hello world"
+
+    def test_non_dialogue_entries_excluded(self, tmp_path):
+        mp3_path = str(tmp_path / "001_cold-open_sfx.mp3")
+        _write_mp3(mp3_path, duration_ms=200)
+        plan = _make_plan(1, mp3_path, "SFX", entry_type="direction",
+                          text="SOUND: phone buzzes")
+        timeline = {1: 0}
+
+        labels = compute_dialogue_labels([plan], timeline)
+
+        assert labels == []
+
+    def test_ramp_positions_are_none(self, tmp_path):
+        mp3_path = str(tmp_path / "001_cold-open_adam.mp3")
+        _write_mp3(mp3_path, duration_ms=300)
+        plan = _make_plan(1, mp3_path, None, entry_type="dialogue",
+                          text="Some dialogue text here now.")
+        timeline = {1: 0}
+
+        labels = compute_dialogue_labels([plan], timeline)
+
+        tup = labels[0]
+        assert tup[3] is None  # ramp_in
+        assert tup[4] is None  # ramp_out
+        assert tup[5] is None  # play_duration

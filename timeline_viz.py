@@ -31,6 +31,8 @@ class LayerSpan:
         label: Human-readable label (speaker name, SFX text, etc.).
         ramp_in_s: Fade-in duration in seconds, or ``None`` if not set.
         ramp_out_s: Fade-out duration in seconds, or ``None`` if not set.
+        play_duration: Percentage of file to play, or ``None`` if not set.
+        snippet: First 5 words of dialogue text for HTML tooltip, or ``None``.
     """
 
     start_s: float
@@ -39,6 +41,7 @@ class LayerSpan:
     ramp_in_s: float | None = None
     ramp_out_s: float | None = None
     play_duration: float | None = None
+    snippet: str | None = None
 
 
 @dataclass
@@ -66,13 +69,15 @@ def build_timeline_data(
 ) -> TimelineData:
     """Wrap the four label lists into a :class:`TimelineData` object.
 
-    Label tuples are either 3-element ``(start_s, end_s, text)`` or
-    5-element ``(start_s, end_s, text, ramp_in_s, ramp_out_s)``.
+    Label tuples may be 3-element ``(start_s, end_s, text)``,
+    5-element ``(start_s, end_s, text, ramp_in_s, ramp_out_s)``,
+    6-element ``(start_s, end_s, text, ramp_in_s, ramp_out_s, play_duration)``, or
+    7-element ``(start_s, end_s, text, ramp_in_s, ramp_out_s, play_duration, snippet)``.
 
     Args:
         tag: Episode tag.
         total_s: Total episode duration in seconds.
-        dlg_labels: Dialogue label tuples ``(start_s, end_s, speaker)``.
+        dlg_labels: Dialogue label 7-tuples ``(start_s, end_s, speaker, None, None, None, snippet)``.
         amb_labels: Ambience label tuples (may carry ramp data).
         mus_labels: Music label tuples (may carry ramp data).
         sfx_labels: SFX label tuples.
@@ -87,7 +92,8 @@ def build_timeline_data(
             ri = tup[3] if len(tup) > 3 else None
             ro = tup[4] if len(tup) > 4 else None
             pd = tup[5] if len(tup) > 5 else None
-            spans.append(LayerSpan(s, e, t, ri, ro, pd))
+            sn = tup[6] if len(tup) > 6 else None
+            spans.append(LayerSpan(s, e, t, ri, ro, pd, sn))
         return spans
 
     return TimelineData(
@@ -336,8 +342,9 @@ function render() {{
       if (sp.ramp_out_s) {{ rampBadges += '<span class="ramp-badge ro" title="ramp out: '+sp.ramp_out_s+'s">\u2193</span>'; rampTip += '\u2193 ramp out: '+sp.ramp_out_s+'s  '; }}
       if (sp.play_duration != null) {{ rampBadges += '<span class="ramp-badge pd" title="play: '+sp.play_duration+'%">%</span>'; rampTip += '% play: '+sp.play_duration+'%'; }}
       const tipExtra = rampTip ? '<br><span style="opacity:0.8">'+rampTip.trim()+'</span>' : '';
+      const snippetLine = sp.snippet ? '<br><em style="opacity:0.75">'+sp.snippet.replace(/</g,'&lt;')+'\u2026</em>' : '';
       lhtml += '<div class="span '+COLORS[key]+'" style="left:'+left+'%;width:'+w+'%">'+rampBadges+'<div class="tooltip">'+
-        sp.label.replace(/</g,'&lt;')+'<br>'+fmtTime(sp.start_s)+' \u2192 '+fmtTime(sp.end_s)+' ('+dur+'s)'+tipExtra+'</div></div>';
+        sp.label.replace(/</g,'&lt;')+snippetLine+'<br>'+fmtTime(sp.start_s)+' \u2192 '+fmtTime(sp.end_s)+' ('+dur+'s)'+tipExtra+'</div></div>';
     }}
     lhtml += '</div></div>';
   }}
@@ -386,6 +393,7 @@ def render_html_timeline(data: TimelineData, output_path: str) -> str:
                     "ramp_in_s": sp.ramp_in_s,
                     "ramp_out_s": sp.ramp_out_s,
                     "play_duration": sp.play_duration,
+                    "snippet": sp.snippet,
                 }
                 for sp in spans
             ]

@@ -127,6 +127,57 @@ class TestShouldCopyMarkdownFile:
         assert build_docs.should_copy_markdown_file(f) is False
 
 
+# ─── Tests: link_markdown_files ───
+
+class TestLinkMarkdownFiles:
+    def test_creates_symlink(self, tmp_path):
+        """link_markdown_files should create a symlink, not a copy."""
+        project_root = tmp_path / "gemini-project"
+        project_root.mkdir()
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        src = project_root / "README.md"
+        src.write_text("# Hello\n")
+
+        build_docs.link_markdown_files(project_root, docs_base, project_root)
+
+        dest = docs_base / "README.md"
+        assert dest.is_symlink(), "Expected a symlink, not a regular file"
+        assert dest.resolve() == src.resolve()
+
+    def test_replaces_stale_copy_with_symlink(self, tmp_path):
+        """link_markdown_files should replace an existing regular file with a symlink."""
+        project_root = tmp_path / "gemini-project"
+        project_root.mkdir()
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        src = project_root / "README.md"
+        src.write_text("# Hello\n")
+
+        # Pre-place a regular file (as if a previous copy run left it)
+        dest = docs_base / "README.md"
+        dest.write_text("stale content")
+
+        build_docs.link_markdown_files(project_root, docs_base, project_root)
+
+        assert dest.is_symlink(), "Expected stale copy to be replaced by a symlink"
+        assert dest.resolve() == src.resolve()
+
+    def test_returns_count(self, tmp_path):
+        project_root = tmp_path / "gemini-project"
+        project_root.mkdir()
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        (project_root / "README.md").write_text("# A\n")
+        (project_root / "CHANGELOG.md").write_text("# B\n")
+
+        count = build_docs.link_markdown_files(project_root, docs_base, project_root)
+        assert count == 2
+
+
 # ─── Integration: code_root path resolves to project root ───
 
 class TestCodeRootPath:

@@ -15,6 +15,7 @@ import json
 import os
 import re
 import shutil
+import time
 
 from mutagen.id3 import ID3, TALB, TCON, TDRC, TIT2, TPE1, USLT
 from mutagen.wave import WAVE
@@ -183,17 +184,34 @@ def ensure_shared_sfx(
         if prompt_influence is None:
             prompt_influence = defaults.get("prompt_influence", 0.3)
 
-        audio_stream = client.text_to_sound_effects.convert(
-            text=effect.prompt,
-            duration_seconds=effect.duration_seconds,
-            prompt_influence=prompt_influence,
-        )
         tmp_path = path + ".tmp"
-        with open(tmp_path, "wb") as f:
-            for chunk in audio_stream:
-                if chunk:
-                    f.write(chunk)
-        os.rename(tmp_path, path)
+        max_retries, delay = 5, 10
+        for attempt in range(1, max_retries + 1):
+            try:
+                audio_stream = client.text_to_sound_effects.convert(
+                    text=effect.prompt,
+                    duration_seconds=effect.duration_seconds,
+                    prompt_influence=prompt_influence,
+                )
+                with open(tmp_path, "wb") as f:
+                    for chunk in audio_stream:
+                        if chunk:
+                            f.write(chunk)
+                os.rename(tmp_path, path)
+                break
+            except Exception as exc:
+                is_rate_limit = (
+                    hasattr(exc, "status_code") and exc.status_code == 429
+                )
+                if is_rate_limit and attempt < max_retries:
+                    wait = delay * attempt
+                    print(f"   [429] Rate limited — retrying in {wait}s "
+                          f"(attempt {attempt}/{max_retries})")
+                    time.sleep(wait)
+                else:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                    raise
 
     tag_mp3(path, show=show, title=effect_key)
 
@@ -222,6 +240,7 @@ def load_sfx_entries(
     script_json_path: str,
     sfx_json_path: str,
     max_duration: float | None = None,
+    direction_types: set[str] | None = None,
 ) -> list[dict]:
     """Load direction entries matched against an SFX configuration.
 
@@ -234,10 +253,13 @@ def load_sfx_entries(
         sfx_json_path: Path to the SFX configuration JSON.
         max_duration: If set, exclude effects with ``duration_seconds``
             exceeding this value.
+        direction_types: If set, only include entries whose
+            ``direction_type`` is in this set (e.g. ``{"SFX", "BEAT"}``).
+            ``None`` includes all categories.
 
     Returns:
-        A list of SFX entry dicts with ``seq``, ``text``, ``stem_name``,
-        ``sfx_type``, ``section``, and ``scene``.
+        A list of SFX entry dicts with ``seq``, ``text``, ``direction_type``,
+        ``stem_name``, ``sfx_type``, ``section``, and ``scene``.
     """
     with open(script_json_path, "r", encoding="utf-8") as f:
         script_data = json.load(f)
@@ -250,9 +272,13 @@ def load_sfx_entries(
     for entry in script_data["entries"]:
         if entry["type"] != "direction":
             continue
+        if direction_types is not None and entry.get("direction_type") not in direction_types:
+            continue
         effect = sfx_cfg.effects.get(entry["text"])
         if effect is None:
             continue
+        if effect.duration_seconds == 0.0:
+            continue  # stop markers (FADES OUT / AMBIENCE: STOP) — no stem needed
         if max_duration is not None and effect.duration_seconds > max_duration:
             continue
 
@@ -268,6 +294,7 @@ def load_sfx_entries(
         sfx_entries.append({
             "seq": entry["seq"],
             "text": entry["text"],
+            "direction_type": entry.get("direction_type"),
             "stem_name": stem_name,
             "sfx_type": effect.type,
             "section": entry["section"],
@@ -364,7 +391,13 @@ def dry_run_sfx(
     print(f"  shared dir: {sfx_dir}")
     print(f"{'='*70}\n")
 
-    new_duration = 0.0
+    # Per-category accumulators: keys are direction_type buckets + "silence"
+    buckets: dict[str, dict] = {
+        "MUSIC":    {"new": 0, "dur": 0.0},
+        "AMBIENCE": {"new": 0, "dur": 0.0},
+        "SFX":      {"new": 0, "dur": 0.0},
+        "silence":  {"new": 0, "dur": 0.0},
+    }
     new_count = 0
     cached_count = 0
     exists_count = 0
@@ -394,6 +427,9 @@ def dry_run_sfx(
                 f" [{status}] {seq_label} | silence "
                 f"| {effect.duration_seconds:>5.1f}s | {entry['text']}"
             )
+            if status == "   NEW":
+                buckets["silence"]["new"] += 1
+                buckets["silence"]["dur"] += effect.duration_seconds
         elif is_source:
             print(
                 f" [{status}] {seq_label} | copy    "
@@ -403,8 +439,12 @@ def dry_run_sfx(
             print(f"            source: {shared_file}")
         else:
             credits = int(effect.duration_seconds * 40)
+            bucket_key = entry.get("direction_type") or "SFX"
+            if bucket_key not in buckets:
+                bucket_key = "SFX"
             if status == "   NEW":
-                new_duration += effect.duration_seconds
+                buckets[bucket_key]["new"] += 1
+                buckets[bucket_key]["dur"] += effect.duration_seconds
             print(
                 f" [{status}] {seq_label} | sfx     "
                 f"| {effect.duration_seconds:>5.1f}s | ~{credits:>5} credits "
@@ -417,14 +457,25 @@ def dry_run_sfx(
             print(f"            shared: {os.path.basename(shared_file)}")
         print()
 
-    total_credits = int(new_duration * 40)
+    total_new_dur = sum(b["dur"] for b in buckets.values())
+    total_credits = int(total_new_dur * 40)
     print(f"{'='*70}")
     print(
         f"SUMMARY: {len(sfx_entries)} total — "
         f"{new_count} new, {cached_count} cached, {exists_count} on disk"
     )
+    for cat in ("MUSIC", "AMBIENCE", "SFX"):
+        b = buckets[cat]
+        if b["new"] or any(
+            (entry.get("direction_type") or "SFX") == cat
+            for entry in sfx_entries
+        ):
+            cred = int(b["dur"] * 40)
+            print(f"  {cat:<9}: {b['new']:>3} new, {b['dur']:>6.1f}s, ~{cred:>6} credits")
+    if buckets["silence"]["new"]:
+        print(f"  {'silence':<9}: {buckets['silence']['new']:>3} new  (free)")
     print(
-        f"  New API audio: {new_duration:.1f}s, ~{total_credits} credits "
-        f"(silence & cached are free)"
+        f"  {'TOTAL NEW':<9}: {new_count:>3},  {total_new_dur:.1f}s, "
+        f"~{total_credits} credits  (silence & cached are free)"
     )
     print(f"{'='*70}\n")

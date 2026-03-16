@@ -765,6 +765,15 @@ def generate_sfx_config(parsed: dict, sfx_path: str) -> None:
         elif text == "LONG BEAT":
             effects[text] = {"type": "silence", "duration_seconds": 2.0}
             silence_count += 1
+        elif text.startswith("BEAT"):
+            # e.g. "BEAT — 3 SECONDS", "BEAT — LONG, 5 SECONDS", "BEAT — EXTENDED, 8 SECONDS"
+            m = re.search(r"(\d+)\s+SECOND", text)
+            dur = float(m.group(1)) if m else 1.0
+            effects[text] = {"type": "silence", "duration_seconds": dur}
+            silence_count += 1
+        elif text == "AMBIENCE: STOP" or text.endswith("FADES OUT"):
+            effects[text] = {"type": "silence", "duration_seconds": 0.0}
+            silence_count += 1
         elif text.startswith("AMBIENCE:"):
             effects[text] = {
                 "prompt": text,

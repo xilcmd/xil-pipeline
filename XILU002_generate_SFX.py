@@ -41,6 +41,7 @@ STEMS_DIR = "stems"
 def load_sfx_plan(
     script_json_path: str, sfx_json_path: str, cast_json_path: str,
     max_duration: float | None = None,
+    direction_types: set[str] | None = None,
 ) -> tuple[list[dict], str]:
     """Load SFX entries and derive the stems directory path.
 
@@ -53,6 +54,8 @@ def load_sfx_plan(
         cast_json_path: Path to the cast configuration JSON.
         max_duration: If set, exclude effects with ``duration_seconds``
             exceeding this value. Useful for limiting API credit spend.
+        direction_types: If set, only include entries whose
+            ``direction_type`` is in this set. ``None`` includes all.
 
     Returns:
         A tuple of ``(sfx_entries, stems_dir)`` where ``sfx_entries`` is
@@ -65,7 +68,9 @@ def load_sfx_plan(
     stems_dir = os.path.join(STEMS_DIR, cast_cfg.tag)
 
     sfx_entries = load_sfx_entries(
-        script_json_path, sfx_json_path, max_duration=max_duration,
+        script_json_path, sfx_json_path,
+        max_duration=max_duration,
+        direction_types=direction_types,
     )
     return sfx_entries, stems_dir
 
@@ -83,6 +88,14 @@ def main() -> None:
                         help="Preview existing vs. new stems and estimated credit cost")
     parser.add_argument("--max-duration", type=float, default=None,
                         help="Only process effects with duration_seconds <= this value")
+    parser.add_argument("--gen-sfx", action="store_true",
+                        help="Limit to SFX and BEAT entries only")
+    parser.add_argument("--gen-music", action="store_true",
+                        help="Limit to MUSIC entries only")
+    parser.add_argument("--gen-ambience", action="store_true",
+                        help="Limit to AMBIENCE entries only")
+    parser.add_argument("--sfx-music", action="store_true",
+                        help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
     args = parser.parse_args()
 
     # Derive config paths from --episode
@@ -96,8 +109,17 @@ def main() -> None:
         cast_cfg = CastConfiguration(**cast_data)
         args.script = f"parsed/parsed_the413_{cast_cfg.tag}.json"
 
+    direction_types: set[str] | None = None
+    if args.gen_sfx or args.gen_music or args.gen_ambience or args.sfx_music:
+        direction_types = set()
+        if args.gen_sfx   or args.sfx_music: direction_types |= {"SFX", "BEAT"}
+        if args.gen_music or args.sfx_music: direction_types.add("MUSIC")
+        if args.gen_ambience or args.sfx_music: direction_types.add("AMBIENCE")
+
     entries, stems_dir = load_sfx_plan(
-        args.script, sfx_path, cast_path, max_duration=args.max_duration,
+        args.script, sfx_path, cast_path,
+        max_duration=args.max_duration,
+        direction_types=direction_types,
     )
 
     with open(sfx_path, "r", encoding="utf-8") as f:

@@ -280,7 +280,7 @@ class SfxEntry(BaseModel):
         default="sfx", description="Effect type: API-generated or local silence"
     )
     duration_seconds: float = Field(
-        default=5.0, ge=0.5, description="Audio duration in seconds"
+        default=5.0, ge=0.0, description="Audio duration in seconds (0.0 for stop markers)"
     )
     prompt_influence: float | None = Field(
         default=None, ge=0.0, le=1.0,
@@ -310,12 +310,18 @@ class SfxEntry(BaseModel):
 
     @model_validator(mode="after")
     def _check_api_duration_cap(self) -> "SfxEntry":
-        """Enforce the 30 s ElevenLabs API cap for effects that need generation."""
-        if self.type == "sfx" and self.source is None and self.duration_seconds > 30.0:
-            raise ValueError(
-                f"duration_seconds must be ≤ 30.0 for API-generated effects "
-                f"(got {self.duration_seconds}); set source= for pre-existing files"
-            )
+        """Enforce the 30 s ElevenLabs API cap and zero-duration guard."""
+        if self.type == "sfx" and self.source is None:
+            if self.duration_seconds == 0.0:
+                raise ValueError(
+                    "duration_seconds must be > 0 for API-generated effects; "
+                    "use type='silence' for stop markers"
+                )
+            if self.duration_seconds > 30.0:
+                raise ValueError(
+                    f"duration_seconds must be ≤ 30.0 for API-generated effects "
+                    f"(got {self.duration_seconds}); set source= for pre-existing files"
+                )
         return self
 
 

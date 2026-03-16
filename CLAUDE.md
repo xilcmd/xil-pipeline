@@ -49,6 +49,8 @@ python XILP001_script_parser.py "scripts/<script>.md" --episode S01E01 --preview
 - `--episode S01E01` (optional) validates that the script header matches the intended episode tag
 - When `--episode` is provided and `cast_the413_S01E01.json` / `sfx_the413_S01E01.json` don't exist, auto-generates skeleton configs with `voice_id=TBD` and default SFX prompts
 - Supports `--quiet` (JSON only, skip summary) and `--debug` (write diagnostic CSV alongside JSON)
+- Auto-generates BEAT variants (`BEAT — 3 SECONDS` etc.) as `type: "silence"` with duration parsed from the text (e.g. 3.0s)
+- Auto-generates `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives as `type: "silence", duration_seconds: 0.0` stop markers — no audio asset needed
 - Known speakers defined in `KNOWN_SPEAKERS` list (must be longest-first for multi-word and compound names like "FILM AUDIO (MARGARET'S VOICE)")
 - Sections: COLD OPEN, OPENING CREDITS, ACT ONE, ACT TWO, MID-EPISODE BREAK, CLOSING
 
@@ -87,7 +89,8 @@ python XILP002_the413_producer.py --episode S01E01 --dry-run
 - Supports `--start-from N` for resuming interrupted runs
 - Supports `--dry-run` to preview lines and TTS character cost without API calls
 - Supports `--terse` to truncate each line to 3 words (minimizes TTS character cost)
-- Supports `--sfx-music` flag to generate sound effect and music stems alongside dialogue
+- Supports `--gen-sfx`, `--gen-music`, `--gen-ambience` to generate only the specified categories of stems (replaces deprecated `--sfx-music` which is kept as a shorthand for all three)
+- Intro music (`INTRO MUSIC` source entry): trimmed at copy time using `play_duration` percentage from sfx config, so the stem file reflects the actual playback length
 - Skips stems that already exist on disk
 
 ### Stage 3: Audio Assembly
@@ -170,16 +173,18 @@ Always use `--dry-run` before running voice generation on a new script to verify
 
 Scripts use prefix `XIL` (ElevenLabs, avoiding numeric prefixes). The suffix pattern is:
 - `XILP000_*` — pre-flight script scanner (no API, no side effects)
-- `11L_*` — legacy standalone utilities (e.g., `XILU001_discover_voices_T2S.py`)
-- `XILU002_*` — standalone SFX stem generation utility
+- `XILU001_*` — voice discovery
+- `XILU002_*` — standalone SFX stem generation
+- `XILU004_*` — voice sample generator (audition cast voices)
+- `XILU005_*` — SFX library discovery (local scan of SFX/ directory)
 - `XILP001_*` — script parser
 - `XILP002_*` — voice generation (ElevenLabs TTS)
 - `XILP003_*` — audio assembly (stems → master MP3, two-pass multi-track mix)
 - `XILP004_*` — Studio project onboarding (ElevenLabs Studio Projects API)
 - `XILP005_*` — DAW layer export (stems → per-layer WAVs for Audacity)
 - `XILP006_*` — cues sheet ingester (cues markdown → SFX library + sfx config enrichment)
-- `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005
-- `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation
+- `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `collect_stem_plans()` injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing
+- `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency
 
 ## Cast Configuration
@@ -224,7 +229,9 @@ Optional `preamble` block (`intro_music_source` is **not** a field — intro mus
 - `"INTRO MUSIC"` is the reserved key for preamble intro music; XILP002 reads its `source` field to copy the audio file into `n001_preamble_sfx.mp3` — no API generation
 - `type: "sfx"` (default) entries call `client.text_to_sound_effects.convert()` with the `prompt`
 - `type: "silence"` entries (BEAT/LONG BEAT) generate local silent audio — no API call
-- `loop: true` entries mark ambience stems for looping in XILP003's background pass and XILP005's ambience layer
+- `loop: false` entries play the audio file once up to the scene boundary (no tiling); `loop: true` (default) tiles the file to fill the full scene duration
+- `play_duration` — percentage of file to play (e.g. `45` = play 45% of file duration); for INTRO MUSIC, the trim is applied when copying to the stem file so all downstream tools see the correct duration
+- Stop markers: `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` entries use `type: "silence", duration_seconds: 0.0`; they inject a boundary marker into the mixing timeline without generating audio
 - SFX stems use `_sfx` suffix: `002_cold-open_sfx.mp3`
 
 ### Shared SFX Library
@@ -241,6 +248,9 @@ Each unique sound effect is generated **once** into the `SFX/` directory as a sh
 
 ```bash
 python XILU002_generate_SFX.py --episode S01E01 --dry-run
+python XILU002_generate_SFX.py --episode S01E01 --gen-sfx
+python XILU002_generate_SFX.py --episode S01E01 --gen-music
+python XILU002_generate_SFX.py --episode S01E01 --gen-ambience
 python XILU002_generate_SFX.py --episode S01E01 --max-duration 5.0
 python XILU002_generate_SFX.py --episode S01E01
 ```
@@ -249,8 +259,41 @@ python XILU002_generate_SFX.py --episode S01E01
 - Reads: parsed script JSON + SFX config + cast config (for episode tag)
 - Outputs: shared assets to `SFX/`, episode stems to `stems/<TAG>/`
 - `--dry-run` shows EXISTS/CACHED/NEW status per stem with credit estimates
+- `--gen-sfx`, `--gen-music`, `--gen-ambience` filter generation to the specified categories; omitting all three processes all categories
+- `--dry-run` SUMMARY now shows per-category credit subtotals (MUSIC / AMBIENCE / SFX / silence)
 - `--max-duration N` filters to effects ≤ N seconds (controls API credit spend)
+- 429 rate-limit errors are retried automatically up to 5 times with linear backoff (10s, 20s, 30s, 40s, 50s)
 - Skips stems that already exist on disk
+
+### Voice Sample Utility
+`XILU004_sample_voices_T2S.py` — Generates a short TTS sample for each cast member to audition voice assignments.
+
+```bash
+python XILU004_sample_voices_T2S.py --episode S02E03 --dry-run
+python XILU004_sample_voices_T2S.py --episode S02E03
+python XILU004_sample_voices_T2S.py --episode S02E03 --force
+```
+
+- `--episode` (required) or `--cast PATH` to specify the cast config
+- Sample text: `"I am {full_name} not yo momma"` using `cast_member.full_name`
+- Output: `voice_samples/{TAG}/{actor}.mp3` (e.g. `voice_samples/S02E03/adam.mp3`)
+- Skips members with `voice_id=TBD`; `--force` regenerates existing samples
+- Requires `ELEVENLABS_API_KEY`
+
+### SFX Library Discovery
+`XILU005_discover_SFX.py` — Lists and searches the local shared SFX asset library.
+
+```bash
+python XILU005_discover_SFX.py                    # local scan (default)
+python XILU005_discover_SFX.py --search "diner"   # filter by keyword
+python XILU005_discover_SFX.py --json             # machine-readable output
+python XILU005_discover_SFX.py --api              # attempt API history (endpoint may not be public)
+```
+
+- Default mode: scans `SFX/` directory and reports all assets with duration and file size
+- `--search TEXT` filters results by case-insensitive substring match on filename/prompt
+- `--json` outputs results as a JSON array
+- `--api` attempts to query ElevenLabs sound generation history (endpoint is not publicly accessible as of March 2026 regardless of API key permissions)
 
 ## Developer/Maintainer Rules
 
@@ -259,6 +302,18 @@ Automated testing via Python and Bash serves as the fundamental mechanism for th
 Use tests for everything it implements:
 - Determine which tests are appropriate; the model will then generate a test for every single feature it builds
 - Test-Driven Development (TDD): A key best practice is implementing a verification-led technique where tests for a new feature are written first, followed by the actual code implementation
+
+### Documentation Currency Rule
+
+After executing any plan that changes pipeline behaviour, CLI flags, file formats, or module interfaces, **both** `CLAUDE.md` (root) and `docs/pipeline.md` must be updated to reflect those changes **before committing**. This applies equally to Claude and human contributors. Specifically:
+
+- New CLI flags or flag removals → update the relevant stage description in CLAUDE.md and the corresponding section/sequence diagram in pipeline.md
+- New module fields or dataclass additions → update `mix_common.py` / `sfx_common.py` bullet points in CLAUDE.md
+- New SFX config keys or behaviours → update the SFX Configuration section
+- New pipeline stages or utilities → add a XILP/XILU entry under File Naming Convention and a stage section in pipeline.md
+- Any behavioural change visible to operators → update the relevant stage bullets in CLAUDE.md
+
+If a plan is large enough to have its own plan file, tick this as the final step before closing the plan.
 
 ### Script Entry Point Style
 

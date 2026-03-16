@@ -15,7 +15,7 @@
     "AMBIENCE: RADIO BOOTH — SOFT EQUIPMENT HUM, SLIGHT STATIC, INTIMATE": {
       "prompt": "AMBIENCE: RADIO BOOTH — SOFT EQUIPMENT HUM, SLIGHT STATIC, INTIMATE",
       "duration_seconds": 30.0,
-      "loop": true
+      "loop": false
     },
     "MUSIC: MUS-THEME-MAIN-01 — EERIE INDIE FOLK, FADES UNDER": {
       "prompt": "MUSIC: MUS-THEME-MAIN-01 — EERIE INDIE FOLK, FADES UNDER",
@@ -40,7 +40,7 @@
     "AMBIENCE: DINER — MORNING, SUBDUED, COFFEE MACHINE HISSING, OCCASIONAL PLATE CLINK, QUIETER THAN USUAL": {
       "prompt": "AMBIENCE: DINER — MORNING, SUBDUED, COFFEE MACHINE HISSING, OCCASIONAL PLATE CLINK, QUIETER THAN USUAL",
       "duration_seconds": 30.0,
-      "loop": true
+      "loop": false
     },
     "SFX: COFFEE BEING POURED INTO CERAMIC MUG": {
       "prompt": "SFX: COFFEE BEING POURED INTO CERAMIC MUG",
@@ -93,12 +93,12 @@
     "AMBIENCE: DINER FADES OUT": {
       "prompt": "AMBIENCE: DINER FADES OUT",
       "duration_seconds": 30.0,
-      "loop": true
+      "loop": false
     },
     "AMBIENCE: B&B SITTING ROOM — FIREPLACE CRACKLING, GRANDFATHER CLOCK TICKING STEADY, OLD BUILDING SETTLING, INTIMATE": {
       "prompt": "AMBIENCE: B&B SITTING ROOM — FIREPLACE CRACKLING, GRANDFATHER CLOCK TICKING STEADY, OLD BUILDING SETTLING, INTIMATE",
       "duration_seconds": 30.0,
-      "loop": true
+      "loop": false
     },
     "SFX: FIRE CRACKLING — CONTINUOUS THROUGHOUT": {
       "prompt": "SFX: FIRE CRACKLING — CONTINUOUS THROUGHOUT",
@@ -255,12 +255,12 @@
     "AMBIENCE: B&B FADES OUT": {
       "prompt": "AMBIENCE: B&B FADES OUT",
       "duration_seconds": 30.0,
-      "loop": true
+      "loop": false
     },
     "AMBIENCE: QUARRY — WINTER, WIND MOANING THROUGH MARBLE CANYON, VAST OUTDOOR SPACE, TWILIGHT": {
       "prompt": "AMBIENCE: QUARRY — WINTER, WIND MOANING THROUGH MARBLE CANYON, VAST OUTDOOR SPACE, TWILIGHT",
       "duration_seconds": 30.0,
-      "loop": true
+      "loop": false
     },
     "SFX: WIND — HOLLOW, ANCIENT SOUND, ECHOING OFF MARBLE": {
       "prompt": "SFX: WIND — HOLLOW, ANCIENT SOUND, ECHOING OFF MARBLE",
@@ -349,12 +349,12 @@
     "AMBIENCE: QUARRY FADES OUT": {
       "prompt": "AMBIENCE: QUARRY FADES OUT",
       "duration_seconds": 30.0,
-      "loop": true
+      "loop": false
     },
     "AMBIENCE: RADIO BOOTH — SOFT, INTIMATE": {
       "prompt": "AMBIENCE: RADIO BOOTH — SOFT, INTIMATE",
       "duration_seconds": 30.0,
-      "loop": true
+      "loop": false
     },
     "MUSIC: MUS-THEME-WARM-01 — CONTINUES UNDER": {
       "prompt": "MUSIC: MUS-THEME-WARM-01 — CONTINUES UNDER",
@@ -387,7 +387,7 @@
     "AMBIENCE: RADIO BOOTH — SOFT, CONVERSATIONAL": {
       "prompt": "AMBIENCE: RADIO BOOTH — SOFT, CONVERSATIONAL",
       "duration_seconds": 30.0,
-      "loop": true
+      "loop": false
     },
     "MUSIC: MUS-THEME-MAIN-01 — BRIEF STING, THEN OUT": {
       "prompt": "MUSIC: MUS-THEME-MAIN-01 — BRIEF STING, THEN OUT",

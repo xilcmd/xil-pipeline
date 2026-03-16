@@ -459,8 +459,14 @@ def main() -> None:
                         help="Stop generation at sequence number N, inclusive (for previewing a section)")
     parser.add_argument("--terse", action="store_true",
                         help="Truncate each line to 3 words to minimize TTS character cost")
+    parser.add_argument("--gen-sfx", action="store_true",
+                        help="Generate SFX and BEAT stems")
+    parser.add_argument("--gen-music", action="store_true",
+                        help="Generate music stems")
+    parser.add_argument("--gen-ambience", action="store_true",
+                        help="Generate ambience stems")
     parser.add_argument("--sfx-music", action="store_true",
-                        help="Enable sound effect and music stem generation")
+                        help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
     args = parser.parse_args()
 
     # Derive config paths from --episode
@@ -492,10 +498,18 @@ def main() -> None:
             sfx_config_data = json.load(f)
         sfx_config_model = SfxConfiguration(**sfx_config_data)
 
-    # Load SFX entries if --sfx-music flag is set
+    # Build direction_types filter from gen flags (--sfx-music is deprecated all-in-one)
+    gen_sfx      = args.gen_sfx      or args.sfx_music
+    gen_music    = args.gen_music    or args.sfx_music
+    gen_ambience = args.gen_ambience or args.sfx_music
     sfx_entries = None
-    if args.sfx_music:
-        sfx_entries = load_sfx_entries(args.script, sfx_path)
+    if gen_sfx or gen_music or gen_ambience:
+        direction_types: set[str] = set()
+        if gen_sfx:      direction_types |= {"SFX", "BEAT"}
+        if gen_music:    direction_types.add("MUSIC")
+        if gen_ambience: direction_types.add("AMBIENCE")
+        sfx_entries = load_sfx_entries(args.script, sfx_path,
+                                       direction_types=direction_types)
         # Pre-filter SFX entries to the requested range
         if args.stop_at is not None:
             sfx_entries = [e for e in sfx_entries if e["seq"] <= args.stop_at]
