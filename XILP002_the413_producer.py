@@ -439,11 +439,12 @@ def inject_preamble_entries(parsed_path: str, preamble_text: str, speaker: str) 
     print(f"   Injected preamble entries (seq -2, -1) into {parsed_path}")
 
 
-def inject_postamble_entries(parsed_path: str, postamble_text: str, speaker: str) -> int:
-    """Append postamble voice entry at the end of the parsed JSON.
+def inject_postamble_entries(parsed_path: str, postamble_text: str, speaker: str) -> tuple[int, int]:
+    """Append postamble OUTRO MUSIC + voice entries at the end of the parsed JSON.
 
-    Idempotent: removes any existing ``section="postamble"`` entries before
-    appending, then assigns seq = max_episode_seq + 1.
+    Order: music (max+1) precedes voice (max+2) so the outro sting plays
+    before Tina's sign-off.  Idempotent: removes any existing
+    ``section="postamble"`` entries before appending.
 
     Args:
         parsed_path: Path to the parsed script JSON file (modified in place).
@@ -451,7 +452,7 @@ def inject_postamble_entries(parsed_path: str, postamble_text: str, speaker: str
         speaker: Cast key for the TTS speaker (e.g. "tina").
 
     Returns:
-        The assigned voice sequence number.
+        Tuple of (music_seq, voice_seq) — the assigned sequence numbers.
     """
     with open(parsed_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -460,21 +461,34 @@ def inject_postamble_entries(parsed_path: str, postamble_text: str, speaker: str
     # Determine max episode seq (positive, non-postamble)
     episode_seqs = [e["seq"] for e in data["entries"] if e["seq"] > 0]
     max_seq = max(episode_seqs) if episode_seqs else 0
-    voice_seq = max_seq + 1
-    data["entries"].append({
-        "seq": voice_seq,
-        "type": "dialogue",
-        "section": "postamble",
-        "scene": None,
-        "speaker": speaker,
-        "direction": None,
-        "text": postamble_text,
-        "direction_type": None,
-    })
+    music_seq = max_seq + 1
+    voice_seq = max_seq + 2
+    data["entries"] += [
+        {
+            "seq": music_seq,
+            "type": "direction",
+            "section": "postamble",
+            "scene": None,
+            "speaker": None,
+            "direction": None,
+            "text": "OUTRO MUSIC",
+            "direction_type": "MUSIC",
+        },
+        {
+            "seq": voice_seq,
+            "type": "dialogue",
+            "section": "postamble",
+            "scene": None,
+            "speaker": speaker,
+            "direction": None,
+            "text": postamble_text,
+            "direction_type": None,
+        },
+    ]
     with open(parsed_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"   Injected postamble entry (seq {voice_seq}) into {parsed_path}")
-    return voice_seq
+    print(f"   Injected postamble entries (seq {music_seq} OUTRO MUSIC, {voice_seq} voice) into {parsed_path}")
+    return music_seq, voice_seq
 
 
 # ---------------------------------------------------------------------------
@@ -751,8 +765,9 @@ def main() -> None:
                              if e["seq"] > 0 and e.get("section") != "postamble"]
             _max_seq = max(_episode_seqs) if _episode_seqs else 0
             spk_post = cast_cfg.postamble.speaker
-            postamble_voice_stem = os.path.join(stems_dir, f"{_max_seq + 1:03d}_postamble_{spk_post}.mp3")
-            # no postamble music — voice only
+            # music (max+1) precedes voice (max+2)
+            postamble_music_stem = os.path.join(stems_dir, f"{_max_seq + 1:03d}_postamble_sfx.mp3")
+            postamble_voice_stem = os.path.join(stems_dir, f"{_max_seq + 2:03d}_postamble_{spk_post}.mp3")
 
         if args.dry_run:
             if cast_cfg.preamble:
@@ -795,11 +810,26 @@ def main() -> None:
             # --- Postamble ---
             if cast_cfg.postamble and postamble_text is not None and os.path.exists(args.script):
                 os.makedirs(stems_dir, exist_ok=True)
-                voice_seq = inject_postamble_entries(
+                music_seq, voice_seq = inject_postamble_entries(
                     args.script, postamble_text, cast_cfg.postamble.speaker
                 )
                 spk_post = cast_cfg.postamble.speaker
+                postamble_music_stem = os.path.join(stems_dir, f"{music_seq:03d}_postamble_sfx.mp3")
                 postamble_voice_stem = os.path.join(stems_dir, f"{voice_seq:03d}_postamble_{spk_post}.mp3")
+                # Copy outro music from sfx config 'OUTRO MUSIC' source (optional)
+                if not os.path.exists(postamble_music_stem):
+                    if sfx_config_model and "OUTRO MUSIC" in sfx_config_model.effects:
+                        outro_entry = sfx_config_model.effects["OUTRO MUSIC"]
+                        if outro_entry.source:
+                            clip = AudioSegment.from_file(outro_entry.source)
+                            if outro_entry.play_duration is not None:
+                                trim_ms = int(len(clip) * outro_entry.play_duration / 100.0)
+                                clip = clip[:trim_ms]
+                                print(f"   Trimmed outro music to {trim_ms/1000:.1f}s ({outro_entry.play_duration}%)")
+                            clip.export(postamble_music_stem, format="mp3")
+                            print(f"   Saved: {postamble_music_stem}")
+                        else:
+                            print(" [!] OUTRO MUSIC entry has no 'source' — skipping outro music stem")
                 _generate_postamble_voice(cast_cfg, config, postamble_voice_stem)
 
 

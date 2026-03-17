@@ -1053,19 +1053,32 @@ class TestPostambleHelpers:
 
     def test_inject_postamble_appends_at_end(self, tmp_path):
         parsed = self._make_parsed(tmp_path, n_entries=5)
-        v_seq = producer.inject_postamble_entries(parsed, "Bye everyone.", "tina")
-        assert v_seq == 6
+        m_seq, v_seq = producer.inject_postamble_entries(parsed, "Bye everyone.", "tina")
+        assert m_seq == 6   # music precedes voice
+        assert v_seq == 7
         with open(parsed) as f:
             data = json.load(f)
         seqs = [e["seq"] for e in data["entries"]]
-        assert seqs[-1] == 6
+        assert seqs[-2] == 6
+        assert seqs[-1] == 7
+
+    def test_inject_postamble_music_entry_fields(self, tmp_path):
+        parsed = self._make_parsed(tmp_path, n_entries=2)
+        producer.inject_postamble_entries(parsed, "Goodnight.", "tina")
+        with open(parsed) as f:
+            data = json.load(f)
+        music = next(e for e in data["entries"] if e["seq"] == 3)
+        assert music["type"] == "direction"
+        assert music["section"] == "postamble"
+        assert music["text"] == "OUTRO MUSIC"
+        assert music["direction_type"] == "MUSIC"
 
     def test_inject_postamble_voice_entry_fields(self, tmp_path):
         parsed = self._make_parsed(tmp_path, n_entries=2)
         producer.inject_postamble_entries(parsed, "Goodnight.", "tina")
         with open(parsed) as f:
             data = json.load(f)
-        voice = next(e for e in data["entries"] if e["seq"] == 3)
+        voice = next(e for e in data["entries"] if e["seq"] == 4)
         assert voice["type"] == "dialogue"
         assert voice["section"] == "postamble"
         assert voice["speaker"] == "tina"
@@ -1078,8 +1091,27 @@ class TestPostambleHelpers:
         with open(parsed) as f:
             data = json.load(f)
         postamble = [e for e in data["entries"] if e.get("section") == "postamble"]
-        assert len(postamble) == 1
-        assert postamble[0]["text"] == "Take 2."
+        assert len(postamble) == 2
+        voice = next(e for e in postamble if e["type"] == "dialogue")
+        assert voice["text"] == "Take 2."
+
+    def test_inject_postamble_music_gets_foreground_override(self, tmp_path):
+        """OUTRO MUSIC entry (section=postamble) must be foreground in mix."""
+        from mix_common import collect_stem_plans
+        stems = tmp_path / "stems"
+        stems.mkdir()
+        sfx_stem = stems / "306_postamble_sfx.mp3"
+        sfx_stem.write_bytes(b"\xff\xfb" + b"\x00" * 100)
+        entries_index = {
+            306: {
+                "seq": 306, "type": "direction", "section": "postamble",
+                "text": "OUTRO MUSIC", "direction_type": "MUSIC",
+            }
+        }
+        plans = collect_stem_plans(str(stems), entries_index)
+        music_plan = next((p for p in plans if p.seq == 306), None)
+        assert music_plan is not None
+        assert music_plan.foreground_override is True
 
     # ------------------------------------------------------------------
     # _dry_run_postamble
