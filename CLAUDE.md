@@ -86,6 +86,8 @@ python XILP002_the413_producer.py --episode S01E01 --dry-run
 - Outputs: `stems/<TAG>/{seq:03d}_{section}[-{scene}]_{speaker}.mp3` (e.g. `stems/S01E01/003_cold-open_adam.mp3`)
 - **Preamble stems** (when cast config has a `preamble` block): `n002_preamble_tina.mp3` (voice, seq −2) and `n001_preamble_sfx.mp3` (intro music, seq −1); music source read from `sfx_config.effects["INTRO MUSIC"].source`
 - After generation, injects seq −2/−1 entries into the parsed JSON via `inject_preamble_entries()` — idempotent, re-running replaces existing preamble entries
+- **Postamble stems** (when cast config has a `postamble` block): `{max+1:03d}_postamble_{speaker}.mp3` (voice) and `{max+2:03d}_postamble_sfx.mp3` (outro music, source from `sfx_config.effects["OUTRO MUSIC"].source`); injected into parsed JSON with `section="postamble"` via `inject_postamble_entries()` — idempotent
+- Both `preamble` and `postamble` support multi-segment TTS: `segments` list with optional `shared_key` caches stock parts to `SFX/{shared_key}.mp3` (generated once, reused across episodes); episode-specific segments (no `shared_key`) are generated as temp files, concatenated with pydub, then cleaned up; legacy `text` field still works as a fallback
 - Supports `--start-from N` for resuming interrupted runs
 - Supports `--dry-run` to preview lines and TTS character cost without API calls
 - Supports `--terse` to truncate each line to 3 words (minimizes TTS character cost)
@@ -200,16 +202,29 @@ Scripts use prefix `XIL` (ElevenLabs, avoiding numeric prefixes). The suffix pat
 ```
 Voice IDs are discovered via `XILU001_discover_voices_T2S.py` (filters to premade category).
 
-Optional `preamble` block (`intro_music_source` is **not** a field — intro music lives in the SFX config):
+Optional `preamble` and `postamble` blocks (`intro_music_source` is **not** a field — intro/outro music lives in the SFX config under `"INTRO MUSIC"` / `"OUTRO MUSIC"` keys):
 ```json
 {
   "preamble": {
-    "text": "This is Tina Brissette... Today on The 4 1 3, {season_title}, Episode {episode}, {title}.",
     "speaker": "tina",
-    "speed": 0.85
+    "speed": 0.85,
+    "segments": [
+      { "text": "This is the Berkshire Talking Chronicle...", "shared_key": "preamble-the413-tina-intro" },
+      { "text": "{season_title}, Episode {episode}, {title}, by Tina Brissette.", "shared_key": null },
+      { "text": " Thank you for listening...", "shared_key": "preamble-the413-tina-outro" }
+    ]
+  },
+  "postamble": {
+    "speaker": "tina",
+    "speed": 0.85,
+    "segments": [
+      { "text": "This is Tina Brissette... Episode {episode} \"{title}\"", "shared_key": null },
+      { "text": " The material is read exactly as printed...", "shared_key": "postamble-the413-tina-outro" }
+    ]
   }
 }
 ```
+Legacy single-string `"text"` field still works as a fallback for un-migrated episodes. `segments[].shared_key` caches stock parts to `SFX/{shared_key}.mp3` — generated once, reused across episodes. Supports SSML `<break time="1s"/>` pauses (requires `eleven_multilingual_v2`).
 
 ## SFX Configuration
 

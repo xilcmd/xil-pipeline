@@ -235,6 +235,7 @@ class CastConfiguration(BaseModel):
         description="Artist/creator credit for audio metadata",
     )
     preamble: Preamble | None = Field(default=None, description="Broadcast intro config")
+    postamble: Preamble | None = Field(default=None, description="Broadcast outro config")
     cast: dict[str, CastMember] = Field(..., description="Speaker-to-config mapping")
 
     @property

@@ -497,6 +497,7 @@ class TestCastConfiguration:
             "season_title": None,
             "artist": "Tina Brissette for Berkshire Talking Chronicles",
             "preamble": None,
+            "postamble": None,
             "cast": self._make_cast(),
         }
         assert models.CastConfiguration(**raw).model_dump() == raw

@@ -252,7 +252,11 @@ def collect_stem_plans(
             entry_type=entry_type,
             text=entry.get("text"),
         )
-        if plan.seq < 0 and plan.direction_type == "MUSIC":
+        # Preamble intro music (seq < 0) and postamble outro music both play
+        # sequentially in the foreground rather than as background overlays.
+        if plan.direction_type == "MUSIC" and (
+            entry.get("section") in ("preamble", "postamble") or plan.seq < 0
+        ):
             plan.foreground_override = True
         vol, ri, ro, pd = _resolve_audio_params(plan, sfx_config)
         plan.volume_percentage = vol

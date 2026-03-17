@@ -982,3 +982,185 @@ class TestPreambleSegments:
         out = capsys.readouterr().out
         assert "No voice_id" in out
         assert not os.path.exists(stem)
+
+
+class TestPostambleHelpers:
+    """Unit tests for postamble inject, resolve, dry-run, and generate helpers."""
+
+    def _make_cast_cfg(self, postamble_dict: dict | None, preamble_dict: dict | None = None):
+        from models import CastConfiguration
+        data = {
+            "show": "TEST", "season": 2, "episode": 3,
+            "title": "The Bridge", "season_title": "The Letters",
+            "cast": {
+                "tina": {
+                    "full_name": "Tina", "voice_id": "voice_tina",
+                    "pan": 0.0, "filter": False, "role": "Producer",
+                },
+            },
+        }
+        if postamble_dict is not None:
+            data["postamble"] = postamble_dict
+        if preamble_dict is not None:
+            data["preamble"] = preamble_dict
+        return CastConfiguration(**data)
+
+    def _make_parsed(self, tmp_path, n_entries=3):
+        """Write a minimal parsed JSON with n_entries dialogue lines."""
+        entries = [
+            {
+                "seq": i, "type": "dialogue", "section": "act-one",
+                "scene": None, "speaker": "adam", "direction": None,
+                "text": f"Line {i}", "direction_type": None,
+            }
+            for i in range(1, n_entries + 1)
+        ]
+        data = {
+            "show": "TEST", "episode": 3, "title": "The Bridge",
+            "entries": entries,
+            "stats": {"dialogue_lines": n_entries},
+        }
+        p = tmp_path / "parsed_the413_S02E03.json"
+        p.write_text(json.dumps(data), encoding="utf-8")
+        return str(p)
+
+    # ------------------------------------------------------------------
+    # _resolve_postamble_text
+    # ------------------------------------------------------------------
+
+    def test_resolve_postamble_segments(self):
+        cfg = self._make_cast_cfg({
+            "speaker": "tina",
+            "segments": [
+                {"text": "Today you listened to {season_title}, Episode {episode}, {title}.", "shared_key": None},
+                {"text": " Stock outro.", "shared_key": "postamble-outro"},
+            ],
+        })
+        result = producer._resolve_postamble_text(cfg)
+        assert result == "Today you listened to The Letters, Episode 3, The Bridge. Stock outro."
+
+    def test_resolve_postamble_legacy_text(self):
+        cfg = self._make_cast_cfg({
+            "speaker": "tina",
+            "text": "Bye from {season_title}.",
+        })
+        result = producer._resolve_postamble_text(cfg)
+        assert result == "Bye from The Letters."
+
+    # ------------------------------------------------------------------
+    # inject_postamble_entries
+    # ------------------------------------------------------------------
+
+    def test_inject_postamble_appends_at_end(self, tmp_path):
+        parsed = self._make_parsed(tmp_path, n_entries=5)
+        v_seq, m_seq = producer.inject_postamble_entries(parsed, "Bye everyone.", "tina")
+        assert v_seq == 6
+        assert m_seq == 7
+        with open(parsed) as f:
+            data = json.load(f)
+        seqs = [e["seq"] for e in data["entries"]]
+        assert seqs[-2] == 6
+        assert seqs[-1] == 7
+
+    def test_inject_postamble_voice_entry_fields(self, tmp_path):
+        parsed = self._make_parsed(tmp_path, n_entries=2)
+        producer.inject_postamble_entries(parsed, "Goodnight.", "tina")
+        with open(parsed) as f:
+            data = json.load(f)
+        voice = next(e for e in data["entries"] if e["seq"] == 3)
+        assert voice["type"] == "dialogue"
+        assert voice["section"] == "postamble"
+        assert voice["speaker"] == "tina"
+        assert voice["text"] == "Goodnight."
+
+    def test_inject_postamble_music_entry_fields(self, tmp_path):
+        parsed = self._make_parsed(tmp_path, n_entries=2)
+        producer.inject_postamble_entries(parsed, "Goodnight.", "tina")
+        with open(parsed) as f:
+            data = json.load(f)
+        music = next(e for e in data["entries"] if e["seq"] == 4)
+        assert music["type"] == "direction"
+        assert music["section"] == "postamble"
+        assert music["text"] == "OUTRO MUSIC"
+        assert music["direction_type"] == "MUSIC"
+
+    def test_inject_postamble_idempotent(self, tmp_path):
+        parsed = self._make_parsed(tmp_path, n_entries=2)
+        producer.inject_postamble_entries(parsed, "Take 1.", "tina")
+        producer.inject_postamble_entries(parsed, "Take 2.", "tina")
+        with open(parsed) as f:
+            data = json.load(f)
+        postamble = [e for e in data["entries"] if e.get("section") == "postamble"]
+        assert len(postamble) == 2
+        assert postamble[0]["text"] == "Take 2."
+
+    # ------------------------------------------------------------------
+    # _dry_run_postamble
+    # ------------------------------------------------------------------
+
+    def test_dry_run_postamble_shows_label(self, tmp_path, capsys):
+        cfg = self._make_cast_cfg({
+            "speaker": "tina",
+            "segments": [
+                {"text": "Variable {title}.", "shared_key": None},
+                {"text": " Static outro.", "shared_key": "postamble-outro"},
+            ],
+        })
+        stem = str(tmp_path / "305_postamble_tina.mp3")
+        producer._dry_run_postamble(cfg, stem)
+        out = capsys.readouterr().out
+        assert "POSTAMBLE" in out
+        assert "tina" in out
+
+    def test_dry_run_postamble_stem_exists_skips(self, tmp_path, capsys):
+        stem = tmp_path / "305_postamble_tina.mp3"
+        stem.write_bytes(b"\xff\xfb" + b"\x00" * 100)
+        cfg = self._make_cast_cfg({"speaker": "tina", "text": "Bye."})
+        producer._dry_run_postamble(cfg, str(stem))
+        out = capsys.readouterr().out
+        assert "skip" in out.lower()
+
+    # ------------------------------------------------------------------
+    # _generate_postamble_voice — guard paths (no API call)
+    # ------------------------------------------------------------------
+
+    def test_generate_postamble_skips_existing_stem(self, tmp_path, capsys):
+        stem = tmp_path / "305_postamble_tina.mp3"
+        stem.write_bytes(b"\xff\xfb" + b"\x00" * 100)
+        cfg = self._make_cast_cfg({"speaker": "tina", "text": "Bye."})
+        config = {"tina": {"id": "voice_tina"}}
+        producer._generate_postamble_voice(cfg, config, str(stem))
+        out = capsys.readouterr().out
+        assert "skipping" in out.lower()
+
+    def test_generate_postamble_missing_voice_id_skips(self, tmp_path, capsys):
+        cfg = self._make_cast_cfg({"speaker": "tina", "text": "Bye."})
+        config = {"tina": {"id": "TBD"}}
+        stem = str(tmp_path / "305_postamble_tina.mp3")
+        producer._generate_postamble_voice(cfg, config, stem)
+        out = capsys.readouterr().out
+        assert "No voice_id" in out
+        assert not os.path.exists(stem)
+
+    # ------------------------------------------------------------------
+    # mix_common foreground_override uses section field
+    # ------------------------------------------------------------------
+
+    def test_postamble_music_gets_foreground_override(self, tmp_path):
+        """OUTRO MUSIC entry (positive seq, section=postamble) must be foreground."""
+        from mix_common import collect_stem_plans
+        stems = tmp_path / "stems"
+        stems.mkdir()
+        # Create a fake postamble music stem
+        sfx_stem = stems / "305_postamble_sfx.mp3"
+        sfx_stem.write_bytes(b"\xff\xfb" + b"\x00" * 100)
+        entries_index = {
+            305: {
+                "seq": 305, "type": "direction", "section": "postamble",
+                "text": "OUTRO MUSIC", "direction_type": "MUSIC",
+            }
+        }
+        plans = collect_stem_plans(str(stems), entries_index)
+        music_plan = next((p for p in plans if p.seq == 305), None)
+        assert music_plan is not None
+        assert music_plan.foreground_override is True
