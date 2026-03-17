@@ -477,9 +477,10 @@ def export_daw_layers(
 
     # --- Timeline visualization (optional) ---
     if timeline or timeline_html:
+        dlg_labels = compute_dialogue_labels(stem_plans, timeline)
         td = build_timeline_data(
             tag, total_ms / 1000.0,
-            labels, amb_labels, mus_labels, sfx_labels,
+            dlg_labels, amb_labels, mus_labels, sfx_labels,
         )
         if timeline:
             print(render_terminal_timeline(td))
