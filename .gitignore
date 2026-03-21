@@ -11,6 +11,7 @@ site/
 
 # Generated audio (large binaries, expensive to recreate)
 stems/
+daw/
 *.mp3
 *.wav
 *.aup3
