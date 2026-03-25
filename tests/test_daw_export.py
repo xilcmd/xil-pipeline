@@ -1,4 +1,4 @@
-"""Tests for XILP005_the413_daw_export.py — DAW layer export."""
+"""Tests for XILP005_daw_export.py — DAW layer export."""
 
 import importlib.util
 import json
@@ -12,7 +12,7 @@ from pydub.generators import Sine
 # ─── Import XILP005 ───
 
 _daw_path = os.path.join(
-    os.path.dirname(__file__), "..", "XILP005_the413_daw_export.py"
+    os.path.dirname(__file__), "..", "XILP005_daw_export.py"
 )
 spec = importlib.util.spec_from_file_location("daw_export", _daw_path)
 daw = importlib.util.module_from_spec(spec)

@@ -1,4 +1,4 @@
-"""Shared multi-track mixing utilities for THE 413 audio pipeline.
+"""Shared multi-track mixing utilities for the audio pipeline.
 
 Provides timeline construction and per-layer audio building used by
 XILP003 (automated two-pass mix) and XILP005 (DAW layer export).

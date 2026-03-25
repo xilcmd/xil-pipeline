@@ -1,4 +1,4 @@
-"""Pre-flight scanner for THE 413 production scripts.
+"""Pre-flight scanner for production scripts.
 
 Reads a raw markdown script, applies the same two-pass normalization that
 XILP001 uses, then scans every ALL-CAPS candidate line and reports which

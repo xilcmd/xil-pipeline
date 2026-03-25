@@ -13,6 +13,7 @@ import sys
 
 from XILP001_script_parser import SPEAKER_KEYS, SECTION_MAP
 from sfx_common import run_banner
+from models import resolve_slug, derive_paths
 
 SCRIPT_NAME = os.path.basename(__file__)
 
@@ -142,16 +143,20 @@ def main():
                         help="Override parsed JSON path")
     parser.add_argument("--cast", default=None,
                         help="Override cast config path")
+    parser.add_argument("--show", default=None,
+                        help="Show name override (default: from project.json)")
     parser.add_argument("--output", default=None,
-                        help="Output markdown path (default: scripts/revised_the413_{TAG}.md)")
+                        help="Output markdown path (default: scripts/revised_<slug>_{TAG}.md)")
 
     args = parser.parse_args()
     tag = args.episode
 
     with run_banner(SCRIPT_NAME):
-        parsed_path = args.parsed or f"parsed/parsed_the413_{tag}.json"
-        cast_path = args.cast or f"cast_the413_{tag}.json"
-        output_path = args.output or f"scripts/revised_the413_{tag}.md"
+        slug = resolve_slug(args.show)
+        p = derive_paths(slug, tag)
+        parsed_path = args.parsed or p["parsed"]
+        cast_path = args.cast or p["cast"]
+        output_path = args.output or p["revised_script"]
 
         if not os.path.exists(parsed_path):
             print(f"ERROR: Parsed JSON not found: {parsed_path}")

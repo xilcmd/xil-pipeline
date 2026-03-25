@@ -3,7 +3,8 @@
     "allow": [
       "Bash(ls /mnt/c/Users/shaba/src/python/gemini-project/*.py)",
       "Bash(source venv/bin/activate)",
-      "Bash(python -m pytest tests/ -v)"
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m pytest tests/test_timeline_viz.py tests/test_mix_common.py -v)"
     ]
   }
 }

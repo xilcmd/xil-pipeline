@@ -1,10 +1,10 @@
-"""XILP006_the413_cues_ingester.py — Cues Sheet Ingester
+"""XILP006_cues_ingester.py — Cues Sheet Ingester
 
 Parses a sound cues & music prompts markdown file into a structured asset
 manifest, audits the shared SFX library, and optionally:
 
   - Generates NEW assets into ``SFX/`` via ElevenLabs Sound Effects API
-  - Enriches ``sfx_the413_<TAG>.json`` with accurate prompts/durations
+  - Enriches the episode SFX config with accurate prompts/durations
     sourced directly from the cues sheet
 
 Pipeline position: after XILP001 (script parse), before XILU002/XILP002
@@ -13,24 +13,24 @@ Pipeline position: after XILP001 (script parse), before XILU002/XILP002
 Usage::
 
     # Audit only — show library status, what needs generating, write manifest
-    python XILP006_the413_cues_ingester.py --episode S02E03
+    python XILP006_cues_ingester.py --episode S02E03
 
     # Same with explicit cues file path
-    python XILP006_the413_cues_ingester.py --episode S02E03 \\
+    python XILP006_cues_ingester.py --episode S02E03 \\
         --cues "cues/Season 2, Episode 3 Sound Cues.md"
 
     # Generate NEW assets into SFX/ (requires ELEVENLABS_API_KEY)
-    python XILP006_the413_cues_ingester.py --episode S02E03 --generate
+    python XILP006_cues_ingester.py --episode S02E03 --generate
 
-    # Enrich sfx_the413_S02E03.json with cues-sheet prompts/durations
-    python XILP006_the413_cues_ingester.py --episode S02E03 --enrich-sfx-config
+    # Enrich episode SFX config with cues-sheet prompts/durations
+    python XILP006_cues_ingester.py --episode S02E03 --enrich-sfx-config
 
     # Preview sfx config changes without writing
-    python XILP006_the413_cues_ingester.py --episode S02E03 \\
+    python XILP006_cues_ingester.py --episode S02E03 \\
         --enrich-sfx-config --dry-run
 
     # Full workflow: generate new assets and enrich sfx config
-    python XILP006_the413_cues_ingester.py --episode S02E03 \\
+    python XILP006_cues_ingester.py --episode S02E03 \\
         --generate --enrich-sfx-config
 """
 
@@ -41,6 +41,7 @@ import os
 import re
 
 from sfx_common import run_banner
+from models import resolve_slug, derive_paths
 
 SFX_DIR = "SFX"
 CUES_DIR = "cues"
@@ -446,15 +447,17 @@ def write_manifest(assets: list[dict], episode_tag: str, cues_path: str) -> str:
     return out_path
 
 
-def find_cues_file(episode: str, cues_dir: str = CUES_DIR) -> str | None:
+def find_cues_file(episode: str, slug: str | None = None, cues_dir: str = CUES_DIR) -> str | None:
     """Auto-detect a cues markdown file for the given episode.
 
-    Checks for ``cues/cues_the413_<TAG>.md`` first, then falls back to
+    Checks for ``cues/cues_<slug>_<TAG>.md`` first, then falls back to
     the sole ``.md`` file in ``cues/`` when exactly one exists.
     """
     if not os.path.isdir(cues_dir):
         return None
-    canonical = os.path.join(cues_dir, f"cues_the413_{episode}.md")
+    s = slug or resolve_slug()
+    p = derive_paths(s, episode)
+    canonical = p["cues"]
     if os.path.exists(canonical):
         return canonical
     candidates = _glob.glob(os.path.join(cues_dir, "*.md"))
@@ -479,6 +482,10 @@ def main() -> None:
             help="Episode tag (e.g. S02E03) — derives sfx config path",
         )
         parser.add_argument(
+            "--show", default=None,
+            help="Show name override (default: from project.json)",
+        )
+        parser.add_argument(
             "--cues", default=None,
             help=(
                 "Path to cues markdown file "
@@ -498,20 +505,21 @@ def main() -> None:
         )
         parser.add_argument(
             "--enrich-sfx-config", action="store_true",
-            help="Update sfx_the413_<TAG>.json with cues-sheet prompts/durations",
+            help="Update episode SFX config with cues-sheet prompts/durations",
         )
         args = parser.parse_args()
 
         # Resolve cues file
-        cues_path = args.cues or find_cues_file(args.episode)
+        slug = resolve_slug(args.show)
+        p = derive_paths(slug, args.episode)
+        cues_path = args.cues or find_cues_file(args.episode, slug=slug)
         if cues_path is None:
             parser.error(
                 f"No cues file found for {args.episode}. "
-                "Pass --cues PATH or name your file "
-                f"cues/cues_the413_{args.episode}.md"
+                f"Pass --cues PATH or name your file {p['cues']}"
             )
 
-        sfx_config_path = f"sfx_the413_{args.episode}.json"
+        sfx_config_path = p["sfx"]
 
         # Parse
         print(f"Parsing: {cues_path}")

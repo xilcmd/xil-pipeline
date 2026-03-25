@@ -905,3 +905,91 @@ class TestSfxConfiguration:
             },
         }
         assert models.SfxConfiguration(**raw).model_dump() == raw
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Show slug, derive_paths, resolve_slug
+# ---------------------------------------------------------------------------
+
+import json
+import tempfile
+
+
+class TestShowSlug:
+    """Tests for the show_slug() function."""
+
+    def test_the413(self):
+        assert models.show_slug("THE 413") == "the413"
+
+    def test_lowercase(self):
+        assert models.show_slug("Night Owls") == "nightowls"
+
+    def test_punctuation_stripped(self):
+        assert models.show_slug("Dr. Fate's Hour") == "drfateshour"
+
+    def test_numbers_preserved(self):
+        assert models.show_slug("Channel 5 News") == "channel5news"
+
+    def test_empty_string(self):
+        assert models.show_slug("") == ""
+
+    def test_all_special_chars(self):
+        assert models.show_slug("!!!") == ""
+
+    def test_already_slug(self):
+        assert models.show_slug("the413") == "the413"
+
+
+class TestDerivePaths:
+    """Tests for the derive_paths() function."""
+
+    def test_all_keys_present(self):
+        paths = models.derive_paths("the413", "S01E01")
+        expected_keys = {
+            "cast", "sfx", "parsed", "parsed_csv", "annotated_csv",
+            "master", "cues", "cues_manifest", "orig_parsed", "revised_script",
+        }
+        assert set(paths.keys()) == expected_keys
+
+    def test_the413_paths_match_legacy(self):
+        paths = models.derive_paths("the413", "S01E01")
+        assert paths["cast"] == "cast_the413_S01E01.json"
+        assert paths["sfx"] == "sfx_the413_S01E01.json"
+        assert paths["parsed"] == "parsed/parsed_the413_S01E01.json"
+        assert paths["master"] == "the413_S01E01_master.mp3"
+
+    def test_different_show(self):
+        paths = models.derive_paths("nightowls", "S02E05")
+        assert paths["cast"] == "cast_nightowls_S02E05.json"
+        assert paths["sfx"] == "sfx_nightowls_S02E05.json"
+        assert paths["parsed"] == "parsed/parsed_nightowls_S02E05.json"
+
+    def test_cues_manifest_has_no_slug(self):
+        paths = models.derive_paths("the413", "S01E01")
+        assert paths["cues_manifest"] == "cues/cues_manifest_S01E01.json"
+
+
+class TestResolveSlug:
+    """Tests for the resolve_slug() function."""
+
+    def test_explicit_arg_wins(self):
+        assert models.resolve_slug("Night Owls") == "nightowls"
+
+    def test_project_json_fallback(self, tmp_path):
+        pj = tmp_path / "project.json"
+        pj.write_text(json.dumps({"show": "Night Owls"}))
+        assert models.resolve_slug(None, str(pj)) == "nightowls"
+
+    def test_default_when_no_project_json(self, tmp_path):
+        missing = tmp_path / "nonexistent.json"
+        assert models.resolve_slug(None, str(missing)) == "the413"
+
+    def test_explicit_arg_overrides_project_json(self, tmp_path):
+        pj = tmp_path / "project.json"
+        pj.write_text(json.dumps({"show": "Night Owls"}))
+        assert models.resolve_slug("Channel 5", str(pj)) == "channel5"
+
+    def test_project_json_without_show_key(self, tmp_path):
+        pj = tmp_path / "project.json"
+        pj.write_text(json.dumps({"other": "value"}))
+        assert models.resolve_slug(None, str(pj)) == "the413"

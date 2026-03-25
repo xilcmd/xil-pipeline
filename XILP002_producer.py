@@ -15,7 +15,7 @@ from pydub import AudioSegment
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
 
-from models import VoiceConfig, DialogueEntry, CastConfiguration, SfxConfiguration, episode_tag
+from models import VoiceConfig, DialogueEntry, CastConfiguration, SfxConfiguration, episode_tag, resolve_slug, derive_paths
 from sfx_common import (
     load_sfx_entries,
     generate_sfx as generate_sfx_stems,
@@ -277,13 +277,14 @@ def dry_run(
         print(f"{range_label}: {lines_to_generate} lines, {chars_in_range:,} TTS characters")
     if tbd_voices:
         print(f"\n  WARNING: {len(tbd_voices)} voices still need voice_id assignment: {', '.join(tbd_voices)}")
-        print(f"  Use XILU001_discover_voices_T2S.py to browse voices, then update cast_the413.json")
+        print(f"  Use XILU001_discover_voices_T2S.py to browse voices, then update the cast config")
     print(f"{'='*70}\n")
 
 
 def generate_voices(
     config: dict[str, dict], dialogue_entries: list[dict],
     stems_dir: str, start_from: int = 1, stop_at: int | None = None,
+    show: str = "THE 413",
 ) -> None:
     """Generate individual voice stem MP3s via the ElevenLabs TTS API.
 
@@ -383,6 +384,7 @@ def generate_voices(
         first_five = " ".join(text.split()[:5])
         tag_mp3(
             stem_file,
+            show=show,
             title=f"{full_name}: {first_five}",
             artist=full_name,
             lyrics=text,
@@ -670,14 +672,16 @@ def main() -> None:
     Loads the parsed script and cast config, then generates MP3 stems
     via the ElevenLabs TTS API. Use ``--dry-run`` to preview character
     costs before committing API quota. For audio assembly, run
-    ``XILP003_the413_audio_assembly.py`` separately.
+    ``XILP003_audio_assembly.py`` separately.
     """
     with run_banner():
         parser = argparse.ArgumentParser(
-            description="THE 413 Voice Generation — generate voice stems via ElevenLabs"
+            description="Voice Generation — generate voice stems via ElevenLabs"
         )
         parser.add_argument("--episode", required=True,
                             help="Episode tag (e.g. S01E01) — derives cast and SFX config paths")
+        parser.add_argument("--show", default=None,
+                            help="Show name override (default: from project.json)")
         parser.add_argument("--script", default=None,
                             help="Path to parsed script JSON (default: derived from cast config)")
         parser.add_argument("--dry-run", action="store_true",
@@ -699,8 +703,10 @@ def main() -> None:
         args = parser.parse_args()
 
         # Derive config paths from --episode
-        cast_path = f"cast_the413_{args.episode}.json"
-        sfx_path = f"sfx_the413_{args.episode}.json"
+        slug = resolve_slug(args.show)
+        paths = derive_paths(slug, args.episode)
+        cast_path = paths["cast"]
+        sfx_path = paths["sfx"]
 
         # Always load cast_cfg for metadata (preamble, season_title, tag)
         with open(cast_path, "r", encoding="utf-8") as f:
@@ -709,7 +715,7 @@ def main() -> None:
 
         # Derive default --script path from cast config metadata
         if args.script is None:
-            args.script = f"parsed/parsed_the413_{cast_cfg.tag}.json"
+            args.script = paths["parsed"]
 
         config, dialogue_entries, tag = load_production(args.script, cast_path)
         stems_dir = os.path.join(STEMS_DIR, tag)
@@ -800,7 +806,8 @@ def main() -> None:
                     else:
                         print(" [!] No 'INTRO MUSIC' entry in sfx config — skipping music stem")
             generate_voices(config, dialogue_entries, stems_dir,
-                            start_from=args.start_from, stop_at=args.stop_at)
+                            start_from=args.start_from, stop_at=args.stop_at,
+                            show=cast_cfg.show)
             if sfx_entries and sfx_config_data:
                 generate_sfx_stems(sfx_entries, sfx_config_data, stems_dir,
                                    client=client, start_from=args.start_from)

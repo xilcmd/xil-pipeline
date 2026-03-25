@@ -1,4 +1,4 @@
-"""Tests for XILP004_the413_studio_onboard.py — ElevenLabs Studio project onboarding."""
+"""Tests for XILP004_studio_onboard.py — ElevenLabs Studio project onboarding."""
 
 import os
 import json
@@ -10,7 +10,7 @@ import pytest
 import importlib.util
 spec = importlib.util.spec_from_file_location(
     "studio_onboard",
-    os.path.join(os.path.dirname(__file__), "..", "XILP004_the413_studio_onboard.py")
+    os.path.join(os.path.dirname(__file__), "..", "XILP004_studio_onboard.py")
 )
 onboard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(onboard)

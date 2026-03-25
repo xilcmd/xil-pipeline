@@ -1,4 +1,4 @@
-"""Pydantic data models for THE 413 podcast production pipeline.
+"""Pydantic data models for the podcast production pipeline.
 
 Defines validated, typed structures for script parsing output,
 cast configuration, and production dialogue entries. These models
@@ -6,9 +6,78 @@ replace untyped dictionaries with field-level validation and
 type annotations that render as rich API documentation via mkdocstrings.
 """
 
+import json
+import os
+import re
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
+
+# Hardcoded fallback when no project.json or --show is provided.
+DEFAULT_SLUG = "the413"
+
+
+def show_slug(show_name: str) -> str:
+    """Convert a show title to a filesystem-safe slug.
+
+    Lowercases the string and strips all non-alphanumeric characters.
+
+    Args:
+        show_name: Human-readable show title (e.g., ``"THE 413"``).
+
+    Returns:
+        Compact slug like ``"the413"`` or ``"nightowls"``.
+    """
+    return re.sub(r"[^a-z0-9]", "", show_name.lower())
+
+
+def derive_paths(slug: str, tag: str) -> dict[str, str]:
+    """Derive all standard pipeline file paths from a show slug and episode tag.
+
+    Args:
+        slug: Show slug (e.g., ``"the413"``).
+        tag: Episode tag (e.g., ``"S01E01"``).
+
+    Returns:
+        Dictionary mapping logical names to relative file paths.
+    """
+    return {
+        "cast": f"cast_{slug}_{tag}.json",
+        "sfx": f"sfx_{slug}_{tag}.json",
+        "parsed": f"parsed/parsed_{slug}_{tag}.json",
+        "parsed_csv": f"parsed/parsed_{slug}_{tag}.csv",
+        "annotated_csv": f"parsed/parsed_{slug}_{tag}_annotated.csv",
+        "master": f"{slug}_{tag}_master.mp3",
+        "cues": f"cues/cues_{slug}_{tag}.md",
+        "cues_manifest": f"cues/cues_manifest_{tag}.json",
+        "orig_parsed": f"parsed/orig_parsed_{slug}_{tag}.json",
+        "revised_script": f"scripts/revised_{slug}_{tag}.md",
+    }
+
+
+def resolve_slug(show_arg: str | None = None, project_path: str = "project.json") -> str:
+    """Resolve the show slug from CLI arg, project.json, or the default.
+
+    Resolution order:
+    1. Explicit *show_arg* (passed through :func:`show_slug`).
+    2. ``project.json`` ``"show"`` field (if the file exists).
+    3. :data:`DEFAULT_SLUG` (``"the413"``).
+
+    Args:
+        show_arg: Value of ``--show`` CLI flag, or ``None``.
+        project_path: Path to the project config file.
+
+    Returns:
+        Filesystem-safe show slug.
+    """
+    if show_arg:
+        return show_slug(show_arg)
+    if os.path.exists(project_path):
+        with open(project_path, encoding="utf-8") as f:
+            data = json.load(f)
+        if "show" in data:
+            return show_slug(data["show"])
+    return DEFAULT_SLUG
 
 
 def episode_tag(season: int | None, episode: int) -> str:
@@ -212,7 +281,7 @@ class Preamble(BaseModel):
 class CastConfiguration(BaseModel):
     """Complete cast configuration for a production episode.
 
-    Loaded from ``cast_the413.json`` and used by ``load_production()``
+    Loaded from the cast config JSON and used by ``load_production()``
     to map speaker keys to voice and audio settings.
 
     Attributes:

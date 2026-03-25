@@ -1,4 +1,4 @@
-"""Export THE 413 episode audio as separate DAW layer WAV files.
+"""Export episode audio as separate DAW layer WAV files.
 
 Reads the parsed script JSON and episode stems to build four isolated,
 full-length WAV files — one per audio layer — that can be imported into
@@ -20,9 +20,9 @@ Run it to print the file paths and manual import instructions; if
 Audacity's mod-script-pipe is enabled it will attempt automation.
 
 Usage:
-    python XILP005_the413_daw_export.py --episode S01E02 --dry-run
-    python XILP005_the413_daw_export.py --episode S01E02
-    python XILP005_the413_daw_export.py --episode S01E02 --output-dir exports/
+    python XILP005_daw_export.py --episode S01E02 --dry-run
+    python XILP005_daw_export.py --episode S01E02
+    python XILP005_daw_export.py --episode S01E02 --output-dir exports/
 
 No ElevenLabs API calls are made — this stage is safe to run freely.
 """
@@ -36,7 +36,7 @@ import textwrap
 
 from pydub import AudioSegment
 
-from models import CastConfiguration, VoiceConfig, SfxConfiguration
+from models import CastConfiguration, VoiceConfig, SfxConfiguration, resolve_slug, derive_paths
 from sfx_common import tag_wav, run_banner
 from mix_common import (
     apply_phone_filter,
@@ -126,7 +126,7 @@ def generate_audacity_macro(
     """Write an Audacity macro file that imports all layer WAVs and sets metadata.
 
     The macro is written to the Audacity Macros directory
-    (``%APPDATA%\\audacity\\Macros\\THE413_<TAG>.txt``) so it appears
+    (``%APPDATA%\\audacity\\Macros\\<SLUG>_<TAG>.txt``) so it appears
     immediately under Tools → Macros without restarting Audacity.
 
     Args:
@@ -165,7 +165,9 @@ def generate_audacity_macro(
     lines.append(f'SetProject: X-Genre="Podcast" X-Album="{show}" '
                  f'X-Artist="{artist}" X-Title="{title}" X-Year="{year}"')
 
-    macro_path = os.path.join(macros_dir, f"THE413_{tag}.txt")
+    from models import show_slug as _show_slug
+    macro_slug = _show_slug(show).upper() if show else "THE413"
+    macro_path = os.path.join(macros_dir, f"{macro_slug}_{tag}.txt")
     with open(macro_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     return macro_path
@@ -494,7 +496,9 @@ def export_daw_layers(
     print(f"--- Done! {len(layer_files)} layer WAVs in {output_dir}/ ---")
     print(f"    Import into Audacity: python {output_dir}/{script_fname}")
     if macro:
-        print(f"    Audacity macro:       Tools → Macros → THE413_{tag} → Apply to Project")
+        from models import show_slug as _show_slug
+        macro_label = _show_slug(show).upper() if show else "THE413"
+        print(f"    Audacity macro:       Tools → Macros → {macro_label}_{tag} → Apply to Project")
     if save_aup3:
         print(f"    Will save project:    {output_dir}/{tag}.aup3")
 
@@ -508,15 +512,19 @@ def main() -> None:
     """
     with run_banner():
         parser = argparse.ArgumentParser(
-            description="THE 413 DAW Export — export episode as layered WAV files for Audacity"
+            description="DAW Export — export episode as layered WAV files for Audacity"
         )
         parser.add_argument(
             "--episode", required=True,
             help="Episode tag (e.g. S01E02) — derives cast config, stems, and parsed JSON paths"
         )
         parser.add_argument(
+            "--show", default=None,
+            help="Show name override (default: from project.json)"
+        )
+        parser.add_argument(
             "--parsed", default=None,
-            help="Path to parsed script JSON (default: parsed/parsed_the413_<TAG>.json)"
+            help="Path to parsed script JSON (default: parsed/parsed_<slug>_<TAG>.json)"
         )
         parser.add_argument(
             "--output-dir", default=None,
@@ -548,7 +556,9 @@ def main() -> None:
         )
         args = parser.parse_args()
 
-        cast_path = f"cast_the413_{args.episode}.json"
+        slug = resolve_slug(args.show)
+        p = derive_paths(slug, args.episode)
+        cast_path = p["cast"]
         with open(cast_path, "r", encoding="utf-8") as f:
             cast_data = json.load(f)
 
@@ -560,14 +570,14 @@ def main() -> None:
         }
 
         stems_dir = os.path.join(STEMS_DIR, tag)
-        parsed_path = args.parsed or f"parsed/parsed_the413_{tag}.json"
+        parsed_path = args.parsed or p["parsed"]
         output_dir = args.output_dir or os.path.join(DAW_DIR, tag)
 
         if not os.path.exists(parsed_path):
             print(f" [!] Parsed JSON not found: {parsed_path!r}. Run XILP001 first.")
             return
 
-        sfx_path = f"sfx_the413_{tag}.json"
+        sfx_path = p["sfx"]
         sfx_config = None
         if os.path.exists(sfx_path):
             with open(sfx_path, "r", encoding="utf-8") as f:

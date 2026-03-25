@@ -1,4 +1,4 @@
-"""Tests for XILP002_the413_producer.py — production pipeline (non-API functions)."""
+"""Tests for XILP002_producer.py — production pipeline (non-API functions)."""
 
 import os
 import json
@@ -9,7 +9,7 @@ import pytest
 # Import the producer module
 spec = importlib.util.spec_from_file_location(
     "producer",
-    os.path.join(os.path.dirname(__file__), "..", "XILP002_the413_producer.py")
+    os.path.join(os.path.dirname(__file__), "..", "XILP002_producer.py")
 )
 producer = importlib.util.module_from_spec(spec)
 

@@ -1,6 +1,6 @@
 # XILP Pipeline Diagrams
 
-Documentation of the eight-stage automated podcast production pipeline for **THE 413**, including the cues sheet ingester pre-processing step, stem migration punch-in workflow, and stale stem cleanup.
+Documentation of the nine-stage automated podcast production pipeline for **THE 413**, including the cues sheet ingester pre-processing step, stem migration punch-in workflow, and stale stem cleanup.
 
 ---
 
@@ -18,7 +18,7 @@ flowchart TD
 
     CQ["`📋 cues/*.md
     Sound cues & music prompts`"]
-    P6["XILP006_the413_cues_ingester.py"]
+    P6["XILP006_cues_ingester.py"]
     SFXCFG["`📋 sfx_the413_S01E01.json
     SFX config (prompts + durations)`"]
     SFXLIB["`🎵 SFX/*.mp3
@@ -29,8 +29,8 @@ flowchart TD
     Audit report, no API calls
     Manifest always written`"]
 
-    P2["XILP002_the413_producer.py"]
-    P3["XILP003_the413_audio_assembly.py"]
+    P2["XILP002_producer.py"]
+    P3["XILP003_audio_assembly.py"]
     DRY["`--dry-run
     Preview lines + TTS cost
     No API calls`"]
@@ -92,7 +92,7 @@ flowchart TD
     MIX --> P3
     P3 --> OUT
 
-    P4["XILP004_the413_studio_onboard.py"]
+    P4["XILP004_studio_onboard.py"]
     STUDIO["`🎬 ElevenLabs Studio Project
     Chapters with voice-tagged nodes`"]
     DRY4["`--dry-run
@@ -104,7 +104,7 @@ flowchart TD
     P4 -->|"--dry-run"| DRY4
     P4 --> STUDIO
 
-    P5["XILP005_the413_daw_export.py"]
+    P5["XILP005_daw_export.py"]
     VIZ["timeline_viz.py"]
     DAW["`🎚️ daw/S01E01/
     layer_dialogue.wav + labels
@@ -246,7 +246,7 @@ sequenceDiagram
     participant FS as stems directory
     participant PJ as parsed JSON
 
-    User->>M: python XILP002_the413_producer.py --episode S02E03 [--gen-sfx / --gen-music / --gen-ambience]
+    User->>M: python XILP002_producer.py --episode S02E03 [--gen-sfx / --gen-music / --gen-ambience]
     M->>LP: load cast_the413_S02E03.json + parsed script
     LP-->>M: config dict, dialogue_entries list
     M->>SFX: load sfx_the413_S02E03.json (always, for preamble)
@@ -651,7 +651,7 @@ flowchart TD
     ENR_BRANCH -->|"yes, not dry-run"| ENR["enrich_sfx_config()"]
     ENR_BRANCH -->|"--dry-run"| DIFF["`Show prompt + duration diff
     No file written`"]
-    ENR --> SFXCFG["`📋 sfx_the413_<TAG>.json
+    ENR --> SFXCFG["`📋 sfx_<slug>_<TAG>.json
     Updated prompts + durations
     loop flag set for ambience`"]
 ```
@@ -739,22 +739,22 @@ python XILP001_script_parser.py "scripts/<script>.md" --episode S02E03
 python XILU003_csv_sfx_join.py --episode S02E03                 # annotated CSV: SFX + cast columns
 
 # 2. Ingest cues sheet — enrich sfx config + audit (no API calls yet)
-python XILP006_the413_cues_ingester.py --episode S02E03 \
+python XILP006_cues_ingester.py --episode S02E03 \
     --cues "cues/<cues-file>.md" --enrich-sfx-config
 
 # 3. Preview what needs generating
-python XILP006_the413_cues_ingester.py --episode S02E03 \
+python XILP006_cues_ingester.py --episode S02E03 \
     --cues "cues/<cues-file>.md" --generate --dry-run
 
 # 4. Generate new SFX/music assets into SFX/ library
-python XILP006_the413_cues_ingester.py --episode S02E03 \
+python XILP006_cues_ingester.py --episode S02E03 \
     --cues "cues/<cues-file>.md" --generate
 
 # 5. Generate voice stems (sfx config already enriched)
-#    Preamble: ensure sfx_the413_S02E03.json contains an "INTRO MUSIC" entry with a "source" path
+#    Preamble: ensure sfx_<slug>_S02E03.json contains an "INTRO MUSIC" entry with a "source" path
 #    XILP002 will copy that file → n001_preamble_sfx.mp3 and inject seq -2/-1 into parsed JSON
-python XILP002_the413_producer.py --episode S02E03 --dry-run
-python XILP002_the413_producer.py --episode S02E03
+python XILP002_producer.py --episode S02E03 --dry-run
+python XILP002_producer.py --episode S02E03
 # Generate SFX/music/ambience stems by category (omit flags to generate all):
 python XILU002_generate_SFX.py --episode S02E03 --gen-sfx --dry-run
 python XILU002_generate_SFX.py --episode S02E03 --gen-music --dry-run
@@ -762,12 +762,12 @@ python XILU002_generate_SFX.py --episode S02E03 --gen-ambience --dry-run
 python XILU002_generate_SFX.py --episode S02E03
 
 # 6. Assemble master MP3 or export DAW layers
-python XILP003_the413_audio_assembly.py --episode S02E03
-python XILP005_the413_daw_export.py --episode S02E03 --macro
+python XILP003_audio_assembly.py --episode S02E03
+python XILP005_daw_export.py --episode S02E03 --macro
 
 # 7. Inspect asset placement (no audio decode needed with --dry-run)
-python XILP005_the413_daw_export.py --episode S02E03 --dry-run --timeline
-python XILP005_the413_daw_export.py --episode S02E03 --timeline --timeline-html
+python XILP005_daw_export.py --episode S02E03 --dry-run --timeline
+python XILP005_daw_export.py --episode S02E03 --timeline --timeline-html
 ```
 
 ### 9f. Punch-in run order (script revised after full generation)
@@ -785,12 +785,12 @@ python XILP008_stale_stem_cleanup.py --episode S02E03 --dry-run  # preview first
 python XILP008_stale_stem_cleanup.py --episode S02E03
 
 # 3. Generate only the gaps (XILP002 skips files already on disk)
-python XILP002_the413_producer.py --episode S02E03 --dry-run
-python XILP002_the413_producer.py --episode S02E03
+python XILP002_producer.py --episode S02E03 --dry-run
+python XILP002_producer.py --episode S02E03
 
 # 4. Reassemble
-python XILP003_the413_audio_assembly.py --episode S02E03
-python XILP005_the413_daw_export.py --episode S02E03 --macro
+python XILP003_audio_assembly.py --episode S02E03
+python XILP005_daw_export.py --episode S02E03 --macro
 ```
 
 ---
@@ -928,8 +928,8 @@ python XILP007_stem_migrator.py --episode S02E03 --dry-run
 python XILP007_stem_migrator.py --episode S02E03
 
 # 4. Generate only the missing/changed/new stems
-python XILP002_the413_producer.py --episode S02E03 --dry-run
-python XILP002_the413_producer.py --episode S02E03
+python XILP002_producer.py --episode S02E03 --dry-run
+python XILP002_producer.py --episode S02E03
 ```
 
 ### Matching modes
@@ -973,10 +973,10 @@ python XILU003_csv_sfx_join.py --episode S02E03 --output review/S02E03_annotated
 
 | File | Default path | Override flag |
 |---|---|---|
-| Input CSV | `parsed/parsed_the413_{TAG}.csv` | `--csv` |
-| SFX config | `sfx_the413_{TAG}.json` | `--sfx` |
-| Cast config | `cast_the413_{TAG}.json` | `--cast` |
-| Output CSV | `parsed/annotated_the413_{TAG}.csv` | `--output` |
+| Input CSV | `parsed/parsed_<slug>_{TAG}.csv` | `--csv` |
+| SFX config | `sfx_<slug>_{TAG}.json` | `--sfx` |
+| Cast config | `cast_<slug>_{TAG}.json` | `--cast` |
+| Output CSV | `parsed/annotated_<slug>_{TAG}.csv` | `--output` |
 
 ### Output columns appended
 
@@ -1135,3 +1135,45 @@ flowchart TD
 
 > **No API key required** — extraction only, no API calls made.
 > After import, run XILU002 for SFX stems and XILP002 for preamble/postamble injection.
+
+## 17. XILP011 — Final Master MP3 Export
+
+Overlays the four DAW layer WAV files produced by XILP005 into a single stereo MP3 file suitable for podcast distribution.
+
+```bash
+python XILP011_master_export.py --episode S02E03 --dry-run
+python XILP011_master_export.py --episode S02E03
+python XILP011_master_export.py --episode S02E03 --show "Night Owls"
+```
+
+### Data flow
+
+```mermaid
+flowchart TD
+    DIALOGUE["`🎙️ daw/S02E03/
+    S02E03_layer_dialogue.wav`"]
+    AMBIENCE["`🌿 daw/S02E03/
+    S02E03_layer_ambience.wav`"]
+    MUSIC["`🎵 daw/S02E03/
+    S02E03_layer_music.wav`"]
+    SFX["`💥 daw/S02E03/
+    S02E03_layer_sfx.wav`"]
+    MIX["XILP011_master_export.py
+    pydub overlay (unity gain)"]
+    CAST["`📋 cast_the413_S02E03.json
+    Show name, title, artist`"]
+    MASTER["`🎧 masters/
+    S02E03_the413_2026-03-24.mp3
+    Stereo · 48 kHz · VBR ~145–185 kbps`"]
+
+    DIALOGUE --> MIX
+    AMBIENCE --> MIX
+    MUSIC --> MIX
+    SFX --> MIX
+    CAST --> MIX
+    MIX --> MASTER
+```
+
+> **No API key required** — local audio processing only.
+> Mix balance is handled by XILP005; XILP011 overlays all four layers at unity gain.
+> Output filename includes the run date: `{TAG}_{slug}_{YYYY-MM-DD}.mp3`.

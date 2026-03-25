@@ -17,6 +17,7 @@ import os
 import sys
 
 from sfx_common import slugify_effect_key, run_banner
+from models import resolve_slug, derive_paths as _derive_paths
 
 # ---------------------------------------------------------------------------
 # Column definitions
@@ -44,17 +45,15 @@ OUTPUT_COLS = _INPUT_COLS + _SFX_COLS + _CAST_COLS
 # Path helpers
 # ---------------------------------------------------------------------------
 
-def derive_paths(episode: str) -> tuple[str, str, str, str]:
+def derive_paths(episode: str, show: str | None = None) -> tuple[str, str, str, str]:
     """Derive default file paths from the episode tag (e.g. ``'S02E03'``).
 
     Returns:
         ``(csv_path, sfx_path, cast_path, out_path)``
     """
-    csv_path = f"parsed/parsed_the413_{episode}.csv"
-    sfx_path = f"sfx_the413_{episode}.json"
-    cast_path = f"cast_the413_{episode}.json"
-    out_path = f"parsed/parsed_the413_{episode}_annotated.csv"
-    return csv_path, sfx_path, cast_path, out_path
+    slug = resolve_slug(show)
+    p = _derive_paths(slug, episode)
+    return p["parsed_csv"], p["sfx"], p["cast"], p["annotated_csv"]
 
 
 # ---------------------------------------------------------------------------
@@ -199,13 +198,14 @@ def main() -> None:
             "--episode", required=True,
             help="Episode tag (e.g. S02E03) — derives default input/output paths",
         )
+        parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
         parser.add_argument("--csv", dest="csv_path", help="Override input CSV path")
         parser.add_argument("--sfx", dest="sfx_path", help="Override SFX JSON path")
         parser.add_argument("--cast", dest="cast_path", help="Override cast JSON path")
         parser.add_argument("--output", dest="out_path", help="Override output CSV path")
         args = parser.parse_args()
 
-        csv_def, sfx_def, cast_def, out_def = derive_paths(args.episode)
+        csv_def, sfx_def, cast_def, out_def = derive_paths(args.episode, show=args.show)
         csv_path = args.csv_path or csv_def
         sfx_path = args.sfx_path or sfx_def
         cast_path = args.cast_path or cast_def

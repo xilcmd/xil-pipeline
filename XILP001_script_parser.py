@@ -1,6 +1,6 @@
 """Parse markdown production scripts into structured JSON.
 
-Converts THE 413 podcast scripts from markdown format into
+Converts podcast scripts from markdown format into
 sequence-numbered entries suitable for voice generation.
 
 Module Attributes:
@@ -17,7 +17,7 @@ import argparse
 import os
 import sys
 
-from models import ScriptEntry, ScriptStats, ParsedScript, episode_tag
+from models import ScriptEntry, ScriptStats, ParsedScript, episode_tag, show_slug, derive_paths, resolve_slug
 from sfx_common import run_banner
 
 # Known speakers — ordered longest-first so compound names match before short ones
@@ -863,12 +863,14 @@ def generate_sfx_config(parsed: dict, sfx_path: str) -> None:
 def main() -> None:
     """CLI entry point for script parsing."""
     with run_banner():
-        parser = argparse.ArgumentParser(description="Parse THE 413 production script markdown into structured JSON")
+        parser = argparse.ArgumentParser(description="Parse production script markdown into structured JSON")
         parser.add_argument("script", help="Path to the production script markdown file")
         parser.add_argument("--episode", default=None,
                             help="Episode tag (e.g. S01E01) — validates header and auto-generates absent cast/sfx configs")
+        parser.add_argument("--show", default=None,
+                            help="Show name override (default: from project.json)")
         parser.add_argument("--output", "-o", default=None,
-                            help="Output JSON path (default: parsed/parsed_the413_<TAG>.json)")
+                            help="Output JSON path (default: parsed/parsed_<slug>_<TAG>.json)")
         parser.add_argument("--preview", type=int, default=None,
                             help="Show first N dialogue lines (default: show all)")
         parser.add_argument("--quiet", action="store_true",
@@ -892,8 +894,10 @@ def main() -> None:
             sys.exit(1)
 
         # Derive default output path from parsed season/episode
+        slug = show_slug(parsed.get("show", "")) or resolve_slug(args.show)
+        paths = derive_paths(slug, tag)
         if args.output is None:
-            args.output = f"parsed/parsed_the413_{tag}.json"
+            args.output = paths["parsed"]
 
         # Write debug CSV if requested (must happen after output path is resolved)
         if args.debug:
@@ -919,8 +923,8 @@ def main() -> None:
 
         # Auto-generate cast/sfx configs if --episode provided and files absent
         if args.episode:
-            cast_path = f"cast_the413_{args.episode}.json"
-            sfx_path = f"sfx_the413_{args.episode}.json"
+            cast_path = paths["cast"]
+            sfx_path = paths["sfx"]
             if not os.path.exists(cast_path):
                 generate_cast_config(parsed, cast_path)
             if not os.path.exists(sfx_path):

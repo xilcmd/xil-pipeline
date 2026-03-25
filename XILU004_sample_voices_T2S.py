@@ -19,7 +19,7 @@ import argparse
 
 from elevenlabs.client import ElevenLabs
 
-from models import CastConfiguration
+from models import CastConfiguration, resolve_slug, derive_paths
 from sfx_common import tag_mp3, run_banner
 
 # Setup ElevenLabs Client
@@ -117,13 +117,14 @@ def main() -> None:
         group.add_argument(
             "--episode",
             metavar="TAG",
-            help="Episode tag (e.g. S02E03); derives cast_the413_<TAG>.json",
+            help="Episode tag (e.g. S02E03); derives cast config path",
         )
         group.add_argument(
             "--cast",
             metavar="PATH",
             help="Explicit path to cast JSON file",
         )
+        parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -140,7 +141,9 @@ def main() -> None:
         if args.cast:
             cast_path = args.cast
         else:
-            cast_path = f"cast_the413_{args.episode}.json"
+            slug = resolve_slug(args.show)
+            p = derive_paths(slug, args.episode)
+            cast_path = p["cast"]
 
         if not os.path.exists(cast_path):
             print(f"[!] Cast config not found: {cast_path}")

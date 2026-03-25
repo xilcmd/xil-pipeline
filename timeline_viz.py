@@ -1,4 +1,4 @@
-"""Multitrack timeline visualization for THE 413 audio pipeline.
+"""Multitrack timeline visualization for the audio pipeline.
 
 Renders a visual representation of asset placement across all four audio
 layers (dialogue, ambience, music, SFX).  Two output formats are supported:
@@ -9,8 +9,8 @@ layers (dialogue, ambience, music, SFX).  Two output formats are supported:
 No pydub dependency — consumes label tuples only.
 
 Usage (from XILP005):
-    python XILP005_the413_daw_export.py --episode S02E03 --timeline
-    python XILP005_the413_daw_export.py --episode S02E03 --timeline-html
+    python XILP005_daw_export.py --episode S02E03 --timeline
+    python XILP005_daw_export.py --episode S02E03 --timeline-html
 """
 
 import html

@@ -2,7 +2,7 @@
 
 Provides common functions for managing a shared SFX asset library and
 generating episode-specific stems.  Both ``XILU002_generate_SFX.py`` and
-``XILP002_the413_producer.py`` delegate to this module to avoid code
+``XILP002_producer.py`` delegate to this module to avoid code
 duplication and to ensure that each unique sound effect is generated only
 once into the shared ``SFX/`` directory.
 

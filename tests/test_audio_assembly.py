@@ -1,4 +1,4 @@
-"""Tests for XILP003_the413_audio_assembly.py and mix_common.py."""
+"""Tests for XILP003_audio_assembly.py and mix_common.py."""
 
 import importlib.util
 import json
@@ -12,7 +12,7 @@ from pydub.generators import Sine
 # ─── Import modules ───
 
 _assembly_path = os.path.join(
-    os.path.dirname(__file__), "..", "XILP003_the413_audio_assembly.py"
+    os.path.dirname(__file__), "..", "XILP003_audio_assembly.py"
 )
 spec = importlib.util.spec_from_file_location("audio_assembly", _assembly_path)
 assembly = importlib.util.module_from_spec(spec)

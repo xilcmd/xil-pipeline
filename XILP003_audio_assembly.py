@@ -31,7 +31,7 @@ import argparse
 
 from pydub import AudioSegment
 
-from models import CastConfiguration, VoiceConfig, SfxConfiguration
+from models import CastConfiguration, VoiceConfig, SfxConfiguration, resolve_slug, derive_paths
 from mix_common import (
     apply_phone_filter,
     collect_stem_plans,
@@ -163,19 +163,23 @@ def main() -> None:
     """
     with run_banner():
         parser = argparse.ArgumentParser(
-            description="THE 413 Audio Assembly — assemble voice stems into master MP3"
+            description="Audio Assembly — assemble voice stems into master MP3"
         )
         parser.add_argument(
             "--episode", required=True,
             help="Episode tag (e.g. S01E01) — derives cast config path"
         )
         parser.add_argument(
+            "--show", default=None,
+            help="Show name override (default: from project.json)"
+        )
+        parser.add_argument(
             "--output", default=None,
-            help="Output master MP3 path (default: the413_<TAG>_master.mp3)"
+            help="Output master MP3 path (default: <slug>_<TAG>_master.mp3)"
         )
         parser.add_argument(
             "--parsed", default=None,
-            help="Path to parsed script JSON (default: parsed/parsed_the413_<TAG>.json)"
+            help="Path to parsed script JSON (default: parsed/parsed_<slug>_<TAG>.json)"
         )
         parser.add_argument(
             "--gap-ms", type=int, default=SILENCE_GAP_MS,
@@ -183,7 +187,9 @@ def main() -> None:
         )
         args = parser.parse_args()
 
-        cast_path = f"cast_the413_{args.episode}.json"
+        slug = resolve_slug(args.show)
+        p = derive_paths(slug, args.episode)
+        cast_path = p["cast"]
         with open(cast_path, "r", encoding="utf-8") as f:
             cast_data = json.load(f)
 
@@ -195,10 +201,10 @@ def main() -> None:
         }
 
         stems_dir = os.path.join(STEMS_DIR, tag)
-        output = args.output or f"the413_{tag}_master.mp3"
+        output = args.output or p["master"]
 
-        parsed_path = args.parsed or f"parsed/parsed_the413_{tag}.json"
-        sfx_path = f"sfx_the413_{tag}.json"
+        parsed_path = args.parsed or p["parsed"]
+        sfx_path = p["sfx"]
         sfx_config = None
         if os.path.exists(sfx_path):
             with open(sfx_path, "r", encoding="utf-8") as f:

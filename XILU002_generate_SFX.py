@@ -30,7 +30,7 @@ import argparse
 
 from elevenlabs.client import ElevenLabs
 
-from models import CastConfiguration
+from models import CastConfiguration, resolve_slug, derive_paths
 from sfx_common import load_sfx_entries, generate_sfx, dry_run_sfx, run_banner
 
 client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
@@ -83,6 +83,8 @@ def main() -> None:
         )
         parser.add_argument("--episode", required=True,
                             help="Episode tag (e.g. S01E01) — derives cast and SFX config paths")
+        parser.add_argument("--show", default=None,
+                            help="Show name override (default: from project.json)")
         parser.add_argument("--script", default=None,
                             help="Path to parsed script JSON (default: derived from cast config)")
         parser.add_argument("--dry-run", action="store_true",
@@ -100,15 +102,17 @@ def main() -> None:
         args = parser.parse_args()
 
         # Derive config paths from --episode
-        cast_path = f"cast_the413_{args.episode}.json"
-        sfx_path = f"sfx_the413_{args.episode}.json"
+        slug = resolve_slug(args.show)
+        p = derive_paths(slug, args.episode)
+        cast_path = p["cast"]
+        sfx_path = p["sfx"]
 
         # Derive default --script from cast config
         if args.script is None:
             with open(cast_path, "r", encoding="utf-8") as f:
                 cast_data = json.load(f)
             cast_cfg = CastConfiguration(**cast_data)
-            args.script = f"parsed/parsed_the413_{cast_cfg.tag}.json"
+            args.script = p["parsed"]
 
         direction_types: set[str] | None = None
         if args.gen_sfx or args.gen_music or args.gen_ambience or args.sfx_music:

@@ -27,6 +27,7 @@ import zipfile
 
 from sfx_common import run_banner
 from XILP007_stem_migrator import make_stem_name
+from models import resolve_slug, derive_paths
 
 SCRIPT_NAME = "XILP010 · Studio Import"
 
@@ -178,6 +179,7 @@ def main():
         required=True,
         help="Episode tag (e.g. S02E02) — derives parsed JSON and stems dir",
     )
+    parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
     parser.add_argument(
         "--zip",
         required=True,
@@ -186,7 +188,7 @@ def main():
     )
     parser.add_argument(
         "--parsed",
-        help="Override parsed JSON path (default: parsed/parsed_the413_{TAG}.json)",
+        help="Override parsed JSON path (default: parsed/parsed_<slug>_{TAG}.json)",
     )
     parser.add_argument(
         "--stems-dir",
@@ -237,7 +239,9 @@ def main():
         include_dtypes.add("AMBIENCE")
 
     tag = args.episode
-    parsed_path = args.parsed or f"parsed/parsed_the413_{tag}.json"
+    slug = resolve_slug(args.show)
+    p = derive_paths(slug, tag)
+    parsed_path = args.parsed or p["parsed"]
     stems_dir = args.stems_dir or f"stems/{tag}"
 
     with run_banner(SCRIPT_NAME):

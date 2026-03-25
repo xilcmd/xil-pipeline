@@ -15,6 +15,19 @@ Automated podcast/audio production pipeline using ElevenLabs TTS API. The projec
 - ElevenLabs API key via `ELEVENLABS_API_KEY` env var
 - Audio playback via `mpg123` in WSL
 
+## Project Configuration
+
+`project.json` at the repo root declares the show name used to derive all pipeline file paths:
+```json
+{
+    "show": "THE 413"
+}
+```
+
+All scripts accept a `--show` CLI flag to override the show name. Resolution order: `--show` arg > `project.json` > hardcoded fallback `"the413"`.
+
+File paths are derived dynamically: `cast_<slug>_<TAG>.json`, `sfx_<slug>_<TAG>.json`, `parsed/parsed_<slug>_<TAG>.json`, etc. The slug is the show name lowercased with all non-alphanumeric characters removed (e.g., `"THE 413"` → `"the413"`, `"Night Owls"` → `"nightowls"`).
+
 ## Pre-Flight Script Scanner
 
 `XILP000_script_scanner.py` — Scans a raw markdown script and reports recognized/unrecognized speakers and sections **before** running XILP001. Use this whenever onboarding a new script to catch missing `KNOWN_SPEAKERS` or `SECTION_MAP` entries early.
@@ -44,10 +57,11 @@ python XILP001_script_parser.py "scripts/<script>.md" --episode S01E01 --preview
 - Standalone parenthetical acting notes like `(beat)` or `(pause)` within dialogue continuations are filtered from spoken text
 - Dividers: accepts both `===` (plain text) and `---` (markdown horizontal rules)
 - End markers: stops at `END OF EPISODE` or `END OF PRODUCTION SCRIPT`
-- Output: `parsed/parsed_the413_S01E01.json` — entries with seq, type, section, scene, speaker, direction, text, direction_type
+- Output: `parsed/parsed_<slug>_S01E01.json` — entries with seq, type, section, scene, speaker, direction, text, direction_type
 - Output path derived from script header metadata (season/episode); override with `--output`
 - `--episode S01E01` (optional) validates that the script header matches the intended episode tag
-- When `--episode` is provided and `cast_the413_S01E01.json` / `sfx_the413_S01E01.json` don't exist, auto-generates skeleton configs with `voice_id=TBD` and default SFX prompts
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
+- When `--episode` is provided and `cast_<slug>_S01E01.json` / `sfx_<slug>_S01E01.json` don't exist, auto-generates skeleton configs with `voice_id=TBD` and default SFX prompts
 - Supports `--quiet` (JSON only, skip summary) and `--debug` (write diagnostic CSV alongside JSON)
 - Auto-generates BEAT variants (`BEAT — 3 SECONDS` etc.) as `type: "silence"` with duration parsed from the text (e.g. 3.0s)
 - Auto-generates `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives as `type: "silence", duration_seconds: 0.0` stop markers — no audio asset needed
@@ -55,33 +69,35 @@ python XILP001_script_parser.py "scripts/<script>.md" --episode S01E01 --preview
 - Sections: COLD OPEN, OPENING CREDITS, ACT ONE, ACT TWO, MID-EPISODE BREAK, CLOSING
 
 ### Stage 1.5: Cues Sheet Ingestion (Pre-processing)
-`XILP006_the413_cues_ingester.py` — Parses a sound cues & music prompts markdown file into a structured asset manifest, audits the shared SFX library, and optionally enriches the episode sfx config or generates new assets.
+`XILP006_cues_ingester.py` — Parses a sound cues & music prompts markdown file into a structured asset manifest, audits the shared SFX library, and optionally enriches the episode sfx config or generates new assets.
 
 ```bash
-python XILP006_the413_cues_ingester.py --episode S02E03 --cues "cues/<file>.md"
-python XILP006_the413_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --enrich-sfx-config
-python XILP006_the413_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --generate
-python XILP006_the413_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --generate --enrich-sfx-config
+python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md"
+python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --enrich-sfx-config
+python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --generate
+python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --generate --enrich-sfx-config
 ```
 
-- `--episode` (required) derives the sfx config path (`sfx_the413_S02E03.json`)
-- `--cues PATH` explicit path to the cues markdown file; auto-detected from `cues/` if omitted and exactly one `.md` exists there (canonical name: `cues/cues_the413_S02E03.md`)
+- `--episode` (required) derives the sfx config path (`sfx_<slug>_S02E03.json`)
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
+- `--cues PATH` explicit path to the cues markdown file; auto-detected from `cues/` if omitted and exactly one `.md` exists there (canonical name: `cues/cues_<slug>_S02E03.md`)
 - Always writes `cues/cues_manifest_<TAG>.json` — structured JSON catalog of all parsed assets
 - Always prints an audit report: EXISTS / REUSE / NEW status per asset, credit estimate for NEW generation
-- `--enrich-sfx-config` — updates `sfx_the413_<TAG>.json` entries that reference a cues-sheet asset ID: replaces stub prompts with the full cues-sheet prompt and corrects duration (capped at 30s API limit)
+- `--enrich-sfx-config` — updates `sfx_<slug>_<TAG>.json` entries that reference a cues-sheet asset ID: replaces stub prompts with the full cues-sheet prompt and corrects duration (capped at 30s API limit)
 - `--generate` — calls ElevenLabs Sound Effects API to generate NEW assets into `SFX/<asset-id>.mp3` (e.g. `SFX/sfx-boots-stamp-01.mp3`); skips assets already on disk; REUSE assets are never generated here
 - `--dry-run` — suppresses API calls and sfx config writes; shows enrichment diff and generation credit estimate
 - Parses three cue sheet sections: MUSIC CUES (heading blocks), AMBIENCE (heading blocks), SOUND EFFECTS (markdown tables per scene)
 - Duration cap: assets longer than 30s are generated at 30s and flagged `[CAPPED]` in the audit
 
 ### Stage 2: Voice Generation
-`XILP002_the413_producer.py` — Calls ElevenLabs API to generate voice stems.
+`XILP002_producer.py` — Calls ElevenLabs API to generate voice stems.
 
 ```bash
-python XILP002_the413_producer.py --episode S01E01 --dry-run
+python XILP002_producer.py --episode S01E01 --dry-run
 ```
 
-- `--episode` (required) derives `cast_the413_S01E01.json` and `sfx_the413_S01E01.json`
+- `--episode` (required) derives `cast_<slug>_S01E01.json` and `sfx_<slug>_S01E01.json`
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
 - Reads: parsed JSON + cast config; always loads SFX config (for preamble music lookup and `--sfx-music`)
 - Outputs: `stems/<TAG>/{seq:03d}_{section}[-{scene}]_{speaker}.mp3` (e.g. `stems/S01E01/003_cold-open_adam.mp3`)
 - **Preamble stems** (when cast config has a `preamble` block): `n002_preamble_tina.mp3` (voice, seq −2) and `n001_preamble_sfx.mp3` (intro music, seq −1); music source read from `sfx_config.effects["INTRO MUSIC"].source`
@@ -96,11 +112,11 @@ python XILP002_the413_producer.py --episode S01E01 --dry-run
 - Skips stems that already exist on disk
 
 ### Stage 3: Audio Assembly
-`XILP003_the413_audio_assembly.py` — Two-pass multi-track mix into a final master MP3.
+`XILP003_audio_assembly.py` — Two-pass multi-track mix into a final master MP3.
 
 ```bash
-python XILP003_the413_audio_assembly.py --episode S01E01
-python XILP003_the413_audio_assembly.py --episode S01E01 --parsed parsed/parsed_the413_S01E01.json
+python XILP003_audio_assembly.py --episode S01E01
+python XILP003_audio_assembly.py --episode S01E01 --parsed parsed/parsed_<slug>_S01E01.json
 ```
 
 - When a parsed script JSON is available (auto-derived or via `--parsed`), runs a two-pass multi-track mix:
@@ -111,20 +127,22 @@ python XILP003_the413_audio_assembly.py --episode S01E01 --parsed parsed/parsed_
 - Stem classification uses `direction_type` from the parsed JSON, keyed by seq number in the filename
 - Shared mixing logic lives in `mix_common.py` — also used by XILP005
 - Applies per-speaker effects (pan, phone filter) from cast config
-- Supports `--output` to set the master MP3 path (default: `the413_S01E01_master.mp3`)
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
+- Supports `--output` to set the master MP3 path (default: `<slug>_S01E01_master.mp3`)
 - `--gap-ms N` sets the silence gap between foreground stems in milliseconds (default: 600); reducing to 200–300 can shorten episode runtime by 1.5–2 minutes
 - No ElevenLabs API key required — safe to re-run freely
 
 ### Stage 4: Studio Project Onboarding
-`XILP004_the413_studio_onboard.py` — Creates an ElevenLabs Studio project from parsed episode data.
+`XILP004_studio_onboard.py` — Creates an ElevenLabs Studio project from parsed episode data.
 
 ```bash
-python XILP004_the413_studio_onboard.py --episode S01E02 --dry-run
-python XILP004_the413_studio_onboard.py --episode S01E02
-python XILP004_the413_studio_onboard.py --episode S01E02 --quality high
+python XILP004_studio_onboard.py --episode S01E02 --dry-run
+python XILP004_studio_onboard.py --episode S01E02
+python XILP004_studio_onboard.py --episode S01E02 --quality high
 ```
 
-- `--episode` (required) derives `parsed_the413_S01E02.json` and `cast_the413_S01E02.json`
+- `--episode` (required) derives `parsed_<slug>_S01E02.json` and `cast_<slug>_S01E02.json`
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
 - Builds `from_content_json` payload for the Studio Projects API with per-node `voice_id` assignments
 - Solves the speaker-name problem: voice assignments are embedded directly — no speaker names in TTS text
 - Content mapping: sections → chapters, dialogue → `tts_node` blocks, scene headers → `h2` blocks, directions → skipped
@@ -135,18 +153,19 @@ python XILP004_the413_studio_onboard.py --episode S01E02 --quality high
 - Requires `ELEVENLABS_API_KEY` env var for non-dry-run mode
 
 ### Stage 5: DAW Layer Export
-`XILP005_the413_daw_export.py` — Exports four isolated, full-length WAV layers for human mixing in Audacity.
+`XILP005_daw_export.py` — Exports four isolated, full-length WAV layers for human mixing in Audacity.
 
 ```bash
-python XILP005_the413_daw_export.py --episode S01E01 --dry-run
-python XILP005_the413_daw_export.py --episode S01E01
-python XILP005_the413_daw_export.py --episode S01E01 --macro
-python XILP005_the413_daw_export.py --episode S01E01 --output-dir exports/S01E01/
-python XILP005_the413_daw_export.py --episode S01E01 --dry-run --timeline
-python XILP005_the413_daw_export.py --episode S01E01 --timeline --timeline-html
+python XILP005_daw_export.py --episode S01E01 --dry-run
+python XILP005_daw_export.py --episode S01E01
+python XILP005_daw_export.py --episode S01E01 --macro
+python XILP005_daw_export.py --episode S01E01 --output-dir exports/S01E01/
+python XILP005_daw_export.py --episode S01E01 --dry-run --timeline
+python XILP005_daw_export.py --episode S01E01 --timeline --timeline-html
 ```
 
-- `--episode` (required) derives `cast_the413_S01E01.json` and `parsed/parsed_the413_S01E01.json`
+- `--episode` (required) derives `cast_<slug>_S01E01.json` and `parsed/parsed_<slug>_S01E01.json`
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
 - Outputs four WAV files to `daw/{TAG}/` — all identical duration, all aligned at t=0:
   - `{TAG}_layer_dialogue.wav` — spoken dialogue (phone filter + pan applied)
   - `{TAG}_layer_ambience.wav` — environmental background looped to fill scene durations
@@ -172,19 +191,20 @@ python XILP005_the413_daw_export.py --episode S01E01 --timeline --timeline-html
 python XILP007_stem_migrator.py --episode S02E03 --dry-run
 python XILP007_stem_migrator.py --episode S02E03
 python XILP007_stem_migrator.py \
-    --old parsed/orig_parsed_the413_S02E03.json \
-    --new parsed/parsed_the413_S02E03.json \
+    --old parsed/orig_parsed_<slug>_S02E03.json \
+    --new parsed/parsed_<slug>_S02E03.json \
     --stems stems/S02E03 [--dry-run] [--strict]
 ```
 
-- `--episode TAG` derives `--old` (`parsed/orig_parsed_the413_{TAG}.json`), `--new` (`parsed/parsed_the413_{TAG}.json`), and `--stems` (`stems/{TAG}`) automatically
+- `--episode TAG` derives `--old` (`parsed/orig_parsed_<slug>_{TAG}.json`), `--new` (`parsed/parsed_<slug>_{TAG}.json`), and `--stems` (`stems/{TAG}`) automatically
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
 - `--orig-prefix` (default: `orig_`) sets the filename prefix for the old parsed JSON
 - `--dry-run` — shows the full plan without copying any files
 - `--strict` — exact text match only; default is **fuzzy** (normalises em-dash, ellipsis, curly quotes so punctuation-only edits don't force unnecessary regen)
 - `--quiet` — prints only the summary, not per-stem details
 - Status codes printed per stem: `COPY` (unchanged, will be/was copied), `SPEAKER` (text matches but speaker reassigned → regen), `NEW` (no old entry matches → generate), `MISSING` (match found but old file absent → generate)
 - Two-phase matching: phase 1 matches on (text, speaker); phase 2 (dialogue only) falls back to text-only to detect speaker reassignments
-- After running (without `--dry-run`), run `XILP002_the413_producer.py --episode TAG` — it skips stems already on disk, so only SPEAKER/NEW/MISSING slots get API calls
+- After running (without `--dry-run`), run `XILP002_producer.py --episode TAG` — it skips stems already on disk, so only SPEAKER/NEW/MISSING slots get API calls
 - No ElevenLabs API key required — no API calls made
 
 ### Stage 7: Stale Stem Cleanup
@@ -194,11 +214,12 @@ python XILP007_stem_migrator.py \
 python XILP008_stale_stem_cleanup.py --episode S02E03 --dry-run
 python XILP008_stale_stem_cleanup.py --episode S02E03
 python XILP008_stale_stem_cleanup.py \
-    --parsed parsed/parsed_the413_S02E03.json \
+    --parsed parsed/parsed_<slug>_S02E03.json \
     --stems stems/S02E03 [--dry-run]
 ```
 
-- `--episode TAG` derives `--parsed` (`parsed/parsed_the413_{TAG}.json`) and `--stems` (`stems/{TAG}`) automatically
+- `--episode TAG` derives `--parsed` (`parsed/parsed_<slug>_{TAG}.json`) and `--stems` (`stems/{TAG}`) automatically
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
 - `--parsed` and `--stems` override individual paths (both required if `--episode` is omitted)
 - `--dry-run` — lists stale stems without deleting them
 - A stem is stale when its filename disagrees with the current parsed entry: entry type is a header (`section_header`/`scene_header`), `_sfx` suffix but entry is now `dialogue`, speaker suffix but entry is now `direction`, dialogue stem whose speaker suffix doesn't match the parsed speaker, or seq not present in parsed JSON at all
@@ -217,8 +238,9 @@ python XILP010_studio_import.py --episode S02E02 --zip "ElevenLabs_exports/expor
 ```
 
 - `--episode TAG` (required) derives parsed JSON path and stems output directory
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
 - `--zip PATH` (required) path to the ElevenLabs Studio export ZIP
-- `--parsed PATH` overrides parsed JSON path (default: `parsed/parsed_the413_{TAG}.json`)
+- `--parsed PATH` overrides parsed JSON path (default: `parsed/parsed_<slug>_{TAG}.json`)
 - `--stems-dir PATH` overrides stems output directory (default: `stems/{TAG}`)
 - `--dry-run` — shows extraction plan without writing files
 - `--force` — overwrites existing stems on disk (default: skip if exists)
@@ -229,6 +251,26 @@ python XILP010_studio_import.py --episode S02E02 --zip "ElevenLabs_exports/expor
 - Dialogue entries are always extracted; direction entries require one of the `--gen-*` or `--all` flags
 - ElevenLabs Studio exports one MP3 per parsed entry (`NNN_Chapter N.mp3`)
 - Reuses `make_stem_name()` from XILP007 for canonical stem filename generation
+- No ElevenLabs API key required — no API calls made
+
+### Stage 9: Final Master MP3 Export
+`XILP011_master_export.py` — Overlays the four DAW layer WAVs from XILP005 into a single podcast-ready MP3.
+
+```bash
+python XILP011_master_export.py --episode S02E03 --dry-run
+python XILP011_master_export.py --episode S02E03
+python XILP011_master_export.py --episode S02E03 --show "Night Owls"
+```
+
+- `--episode` (required) derives DAW layer paths and cast config
+- `--show` overrides the show name (default: from `project.json`)
+- `--daw-dir` overrides the DAW layer directory (default: `daw/<TAG>/`)
+- `--output` overrides the output MP3 path (default: `masters/<TAG>_<slug>_<YYYY-MM-DD>.mp3`)
+- `--dry-run` shows layer summary without writing files
+- Output format: stereo, 48 kHz, VBR MP3 (~145–185 kbps, LAME quality 2)
+- Output filename: `S02E03_the413_2026-03-24.mp3` (episode tag, show slug, run date)
+- Overlays all four layers at unity gain (XILP005 handles mix balance)
+- Reads cast config for ID3 metadata (album, title, artist)
 - No ElevenLabs API key required — no API calls made
 
 ## ElevenLabs API Cost Controls
@@ -259,13 +301,15 @@ Scripts use prefix `XIL` (ElevenLabs, avoiding numeric prefixes). The suffix pat
 - `XILP008_*` — stale stem cleanup (delete stems whose seq no longer matches the current parsed JSON)
 - `XILP009_*` — reverse script generator (parsed JSON → production script markdown)
 - `XILP010_*` — Studio export importer (ElevenLabs Studio ZIP → pipeline stems)
+- `XILP011_*` — final master MP3 export (overlay 4 DAW layer WAVs → single stereo 48 kHz VBR MP3)
 - `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing
 - `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency
+- `models.py` — Pydantic data models plus `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "the413"` fallback
 
 ## Cast Configuration
 
-`cast_the413_S01E01.json` contains show-level metadata (`show`, `season`, `episode`, `title`) and a `cast` dict mapping character keys to settings:
+`cast_<slug>_S01E01.json` (e.g. `cast_the413_S01E01.json`) contains show-level metadata (`show`, `season`, `episode`, `title`) and a `cast` dict mapping character keys to settings:
 ```json
 {
   "show": "THE 413", "season": 1, "episode": 1, "title": "The Holiday Shift",
@@ -302,7 +346,7 @@ Legacy single-string `"text"` field still works as a fallback for un-migrated ep
 
 ## SFX Configuration
 
-`sfx_the413_S01E01.json` maps parsed direction entry text to ElevenLabs Sound Effects API parameters:
+`sfx_<slug>_S01E01.json` (e.g. `sfx_the413_S01E01.json`) maps parsed direction entry text to ElevenLabs Sound Effects API parameters:
 ```json
 {
   "show": "THE 413", "season": 1, "episode": 1,
@@ -345,7 +389,8 @@ python XILU002_generate_SFX.py --episode S01E01 --max-duration 5.0
 python XILU002_generate_SFX.py --episode S01E01
 ```
 
-- `--episode` (required) derives `cast_the413_S01E01.json` and `sfx_the413_S01E01.json`
+- `--episode` (required) derives `cast_<slug>_S01E01.json` and `sfx_<slug>_S01E01.json`
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
 - Reads: parsed script JSON + SFX config + cast config (for episode tag)
 - Outputs: shared assets to `SFX/`, episode stems to `stems/<TAG>/`
 - `--dry-run` shows EXISTS/CACHED/NEW status per stem with credit estimates
@@ -363,9 +408,10 @@ python XILU003_csv_sfx_join.py --episode S02E03
 python XILU003_csv_sfx_join.py --episode S02E03 --output my_review.csv
 ```
 
-- `--episode` (required) derives `parsed/parsed_the413_{TAG}.csv`, `sfx_the413_{TAG}.json`, and `cast_the413_{TAG}.json`
+- `--episode` (required) derives `parsed/parsed_<slug>_{TAG}.csv`, `sfx_<slug>_{TAG}.json`, and `cast_<slug>_{TAG}.json`
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
 - `--csv`, `--sfx`, `--cast` override individual input paths
-- `--output` overrides the output CSV path (default: `parsed/annotated_the413_{TAG}.csv`)
+- `--output` overrides the output CSV path (default: `parsed/annotated_<slug>_{TAG}.csv`)
 - No API key required — read-only join utility
 
 ### Voice Sample Utility
@@ -378,6 +424,7 @@ python XILU004_sample_voices_T2S.py --episode S02E03 --force
 ```
 
 - `--episode` (required) or `--cast PATH` to specify the cast config
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
 - Sample text: `"I am {full_name} not yo momma"` using `cast_member.full_name`
 - Output: `voice_samples/{TAG}/{actor}.mp3` (e.g. `voice_samples/S02E03/adam.mp3`)
 - Skips members with `voice_id=TBD`; `--force` regenerates existing samples

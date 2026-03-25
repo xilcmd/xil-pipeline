@@ -9,8 +9,8 @@ on disk, so only the gaps get generated.
 Usage:
     python XILP007_stem_migrator.py --episode S02E03 [--dry-run] [--strict]
     python XILP007_stem_migrator.py \\
-        --old parsed/orig_parsed_the413_S02E03.json \\
-        --new parsed/parsed_the413_S02E03.json \\
+        --old parsed/orig_parsed_<slug>_S02E03.json \\
+        --new parsed/parsed_<slug>_S02E03.json \\
         --stems stems/S02E03 [--dry-run] [--strict]
 """
 
@@ -22,6 +22,7 @@ import shutil
 from dataclasses import dataclass
 
 from sfx_common import run_banner
+from models import resolve_slug, derive_paths
 
 
 # ── Status codes ──────────────────────────────────────────────────────────────
@@ -276,7 +277,7 @@ def print_summary(counts: dict[str, int], dry_run: bool) -> None:
         print("  Re-run without --dry-run to copy the COPY stems.")
     else:
         print(f"  {counts.get(COPY, 0)} stems copied.")
-    print("  Then run:  python XILP002_the413_producer.py --episode <TAG>")
+    print("  Then run:  python XILP002_producer.py --episode <TAG>")
     print("  XILP002 skips stems already on disk — only gaps get generated.")
 
 
@@ -295,6 +296,7 @@ def main() -> None:
             "--episode", metavar="TAG",
             help="Episode tag (e.g. S02E03); derives --old, --new, and --stems paths automatically",
         )
+        parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
         parser.add_argument("--old", metavar="PATH", help="Old parsed JSON (overrides --episode)")
         parser.add_argument("--new", metavar="PATH", help="New parsed JSON (overrides --episode)")
         parser.add_argument("--stems", metavar="DIR", help="Stems directory (overrides --episode)")
@@ -323,8 +325,10 @@ def main() -> None:
         # Resolve paths
         if args.episode:
             tag = args.episode
-            old_path = args.old or f"parsed/{args.orig_prefix}parsed_the413_{tag}.json"
-            new_path = args.new or f"parsed/parsed_the413_{tag}.json"
+            slug = resolve_slug(args.show)
+            p = derive_paths(slug, tag)
+            old_path = args.old or f"parsed/{args.orig_prefix}parsed_{slug}_{tag}.json"
+            new_path = args.new or p["parsed"]
             stems_dir = args.stems or f"stems/{tag}"
         else:
             if not (args.old and args.new and args.stems):

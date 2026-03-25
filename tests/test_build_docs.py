@@ -192,7 +192,7 @@ class TestCodeRootPath:
         assert expected_code_root.exists()
         # And it should contain our known source files
         assert (expected_code_root / "XILP001_script_parser.py").exists()
-        assert (expected_code_root / "XILP002_the413_producer.py").exists()
+        assert (expected_code_root / "XILP002_producer.py").exists()
 
     def test_rejects_file_in_docs_subdir(self, tmp_path):
         # docs/ is the output dir — scanning it causes docs/docs/ duplication

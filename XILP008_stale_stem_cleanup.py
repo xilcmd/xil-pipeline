@@ -9,7 +9,7 @@ Usage:
     python XILP008_stale_stem_cleanup.py --episode S02E03 --dry-run
     python XILP008_stale_stem_cleanup.py --episode S02E03
     python XILP008_stale_stem_cleanup.py \
-        --parsed parsed/parsed_the413_S02E03.json \
+        --parsed parsed/parsed_<slug>_S02E03.json \
         --stems stems/S02E03 [--dry-run]
 """
 
@@ -19,6 +19,7 @@ import os
 
 from mix_common import extract_seq, load_entries_index
 from sfx_common import run_banner
+from models import resolve_slug, derive_paths
 
 
 def _expected_stem_basename(entry: dict) -> str:
@@ -132,6 +133,7 @@ def main() -> None:
             "--episode", metavar="TAG",
             help="Episode tag (e.g. S02E03); derives --parsed and --stems",
         )
+        parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
         parser.add_argument(
             "--parsed", metavar="PATH",
             help="Parsed script JSON (overrides --episode)",
@@ -150,7 +152,9 @@ def main() -> None:
         # Resolve paths
         if args.episode:
             tag = args.episode
-            parsed_path = args.parsed or f"parsed/parsed_the413_{tag}.json"
+            slug = resolve_slug(args.show)
+            p = derive_paths(slug, tag)
+            parsed_path = args.parsed or p["parsed"]
             stems_dir = args.stems or f"stems/{tag}"
         else:
             if not (args.parsed and args.stems):

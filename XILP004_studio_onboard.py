@@ -7,9 +7,9 @@ speaker names never appear in TTS text.
 
 Usage::
 
-    python XILP004_the413_studio_onboard.py --episode S01E02 --dry-run
-    python XILP004_the413_studio_onboard.py --episode S01E02
-    python XILP004_the413_studio_onboard.py --episode S01E02 --quality high
+    python XILP004_studio_onboard.py --episode S01E02 --dry-run
+    python XILP004_studio_onboard.py --episode S01E02
+    python XILP004_studio_onboard.py --episode S01E02 --quality high
 """
 
 import os
@@ -19,6 +19,7 @@ import argparse
 
 from elevenlabs.client import ElevenLabs
 from sfx_common import run_banner
+from models import resolve_slug, derive_paths
 
 # ---------------------------------------------------------------------------
 # ElevenLabs client (lazily used — only needed for non-dry-run)
@@ -31,7 +32,7 @@ client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
 # Data loading
 # ---------------------------------------------------------------------------
 
-def load_episode(episode_tag: str):
+def load_episode(episode_tag: str, slug: str | None = None):
     """Load parsed JSON and cast config for *episode_tag* (e.g. ``S01E02``).
 
     Validates that no cast member has ``voice_id == "TBD"``.
@@ -42,8 +43,10 @@ def load_episode(episode_tag: str):
     Raises:
         SystemExit: If files are missing or a voice_id is TBD.
     """
-    parsed_path = os.path.join("parsed", f"parsed_the413_{episode_tag}.json")
-    cast_path = f"cast_the413_{episode_tag}.json"
+    s = slug or resolve_slug()
+    p = derive_paths(s, episode_tag)
+    parsed_path = p["parsed"]
+    cast_path = p["cast"]
 
     if not os.path.exists(parsed_path):
         print(f"[ERROR] Parsed file not found: {parsed_path}")
@@ -265,6 +268,10 @@ def main():
             help="Episode tag (e.g. S01E02)"
         )
         parser.add_argument(
+            "--show", default=None,
+            help="Show name override (default: from project.json)"
+        )
+        parser.add_argument(
             "--dry-run", action="store_true",
             help="Build and display content JSON without calling the API"
         )
@@ -280,7 +287,8 @@ def main():
 
         args = parser.parse_args()
 
-        parsed, cast = load_episode(args.episode)
+        slug = resolve_slug(args.show)
+        parsed, cast = load_episode(args.episode, slug=slug)
         chapters = build_content_json(parsed, cast)
 
         if args.dry_run:
