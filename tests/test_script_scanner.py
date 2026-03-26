@@ -7,13 +7,7 @@ import unittest.mock
 
 import pytest
 
-import importlib.util
-spec = importlib.util.spec_from_file_location(
-    "scanner",
-    os.path.join(os.path.dirname(__file__), "..", "XILP000_script_scanner.py")
-)
-scanner = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(scanner)
+from xil_pipeline import XILP000_script_scanner as scanner
 
 
 # ─── Fixtures ───

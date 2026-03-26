@@ -12,14 +12,15 @@ Usage::
     python XILP004_studio_onboard.py --episode S01E02 --quality high
 """
 
+import argparse
+import json
 import os
 import sys
-import json
-import argparse
 
 from elevenlabs.client import ElevenLabs
-from sfx_common import run_banner
-from models import resolve_slug, derive_paths
+
+from xil_pipeline.models import derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner
 
 # ---------------------------------------------------------------------------
 # ElevenLabs client (lazily used — only needed for non-dry-run)
@@ -167,14 +168,14 @@ def check_elevenlabs_quota() -> int | None:
         limit = sub.character_limit
         remaining = limit - used
         print(f"\n{'=' * 40}")
-        print(f"ELEVENLABS API STATUS:")
+        print("ELEVENLABS API STATUS:")
         print(f"  Tier:      {sub.tier.upper()}")
         print(f"  Usage:     {used:,} / {limit:,} characters")
         print(f"  Remaining: {remaining:,}")
         print(f"{'=' * 40}\n")
         return remaining
     except Exception as e:
-        print(f"\n[!] API Error: Unable to fetch subscription data.")
+        print("\n[!] API Error: Unable to fetch subscription data.")
         print(f"    Details: {e}")
         return None
 
@@ -319,7 +320,7 @@ def main():
             quality=args.quality,
         )
 
-        print(f"\nProject created successfully!")
+        print("\nProject created successfully!")
         print(f"  Project ID: {response.project.project_id}")
 
 

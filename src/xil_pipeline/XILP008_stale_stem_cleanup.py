@@ -17,9 +17,9 @@ import argparse
 import glob
 import os
 
-from mix_common import extract_seq, load_entries_index
-from sfx_common import run_banner
-from models import resolve_slug, derive_paths
+from xil_pipeline.mix_common import extract_seq, load_entries_index
+from xil_pipeline.models import derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner
 
 
 def _expected_stem_basename(entry: dict) -> str:

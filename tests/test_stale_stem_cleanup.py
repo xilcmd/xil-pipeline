@@ -2,18 +2,11 @@
 
 import json
 import os
-import importlib.util
 import tempfile
 
 import pytest
 
-# Load module via importlib (filename starts with digits-not-importable directly)
-spec = importlib.util.spec_from_file_location(
-    "stale_stem_cleanup",
-    os.path.join(os.path.dirname(__file__), "..", "XILP008_stale_stem_cleanup.py"),
-)
-m = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(m)
+from xil_pipeline import XILP008_stale_stem_cleanup as m
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

@@ -1,19 +1,15 @@
 """Tests for XILP004_studio_onboard.py — ElevenLabs Studio project onboarding."""
 
-import os
 import json
+import os
 import unittest.mock
 
 import pytest
 
-# Import the module
-import importlib.util
-spec = importlib.util.spec_from_file_location(
-    "studio_onboard",
-    os.path.join(os.path.dirname(__file__), "..", "XILP004_studio_onboard.py")
-)
-onboard = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(onboard)
+# Patch out ElevenLabs client before loading module (no API key needed for these tests)
+with unittest.mock.patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test_key"}):
+    with unittest.mock.patch("elevenlabs.client.ElevenLabs"):
+        from xil_pipeline import XILP004_studio_onboard as onboard
 
 
 # ─── Fixtures ───

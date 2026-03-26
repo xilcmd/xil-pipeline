@@ -57,6 +57,13 @@ flowchart TD
     XILU005["XILU005_discover_SFX.py"]
     SFXLIB --> XILU005
 
+    XILU006["XILU006_splice_parsed.py"]
+    JSPLICE["`📋 parsed/pre_splice_parsed_*.json
+    Backup before splice`"]
+    J --> XILU006
+    XILU006 --> J
+    XILU006 --> JSPLICE
+
     XILU003["XILU003_csv_sfx_join.py"]
     ANNOT["`📋 parsed/annotated_*.csv
     Script + SFX/cast metadata joined`"]

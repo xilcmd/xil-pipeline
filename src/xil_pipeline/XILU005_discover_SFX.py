@@ -30,9 +30,10 @@ import json as _json
 import os
 
 import httpx
+from mutagen.id3 import ID3
 from mutagen.mp3 import MP3
-from mutagen.id3 import ID3, USLT
-from sfx_common import run_banner
+
+from xil_pipeline.sfx_common import run_banner
 
 SFX_DIR = "SFX"
 ELEVENLABS_BASE = "https://api.elevenlabs.io"
@@ -46,7 +47,7 @@ def _fmt_unix(ts: int | None) -> str:
     """Format a Unix timestamp as YYYY-MM-DD HH:MM UTC, or '' if None."""
     if ts is None:
         return ""
-    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+    return datetime.datetime.fromtimestamp(ts, datetime.UTC).strftime("%Y-%m-%d %H:%M")
 
 
 def _fmt_duration(seconds: float | None) -> str:

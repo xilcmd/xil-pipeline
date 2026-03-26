@@ -27,33 +27,31 @@ Usage:
 No ElevenLabs API calls are made — this stage is safe to run freely.
 """
 
+import argparse
 import datetime
 import json
 import os
-import argparse
 import subprocess
 import textwrap
 
-from pydub import AudioSegment
-
-from models import CastConfiguration, VoiceConfig, SfxConfiguration, resolve_slug, derive_paths
-from sfx_common import tag_wav, run_banner
-from mix_common import (
+from xil_pipeline.mix_common import (
     apply_phone_filter,
-    collect_stem_plans,
-    load_entries_index,
+    build_ambience_layer,
+    build_dialogue_layer,
     build_foreground,
     build_foreground_timeline_only,
-    build_ambience_layer,
     build_music_layer,
-    build_dialogue_layer,
     build_sfx_layer,
-    compute_dialogue_labels,
+    collect_stem_plans,
     compute_ambience_labels,
+    compute_dialogue_labels,
     compute_music_labels,
     compute_sfx_labels,
+    load_entries_index,
 )
-from timeline_viz import build_timeline_data, render_terminal_timeline, render_html_timeline
+from xil_pipeline.models import CastConfiguration, SfxConfiguration, VoiceConfig, derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner, tag_wav
+from xil_pipeline.timeline_viz import build_timeline_data, render_html_timeline, render_terminal_timeline
 
 STEMS_DIR = "stems"
 DAW_DIR = "daw"
@@ -165,7 +163,7 @@ def generate_audacity_macro(
     lines.append(f'SetProject: X-Genre="Podcast" X-Album="{show}" '
                  f'X-Artist="{artist}" X-Title="{title}" X-Year="{year}"')
 
-    from models import show_slug as _show_slug
+    from xil_pipeline.models import show_slug as _show_slug
     macro_slug = _show_slug(show).upper() if show else "THE413"
     macro_path = os.path.join(macros_dir, f"{macro_slug}_{tag}.txt")
     with open(macro_path, "w", encoding="utf-8") as f:
@@ -321,7 +319,6 @@ def dry_run_daw(tag: str, stem_plans, entries_index: dict, output_dir: str) -> N
         entries_index: Parsed entry index.
         output_dir: Target directory (shown in summary).
     """
-    fg_plans = [p for p in stem_plans if not p.is_background]
     bg_plans = [p for p in stem_plans if p.is_background]
     ambience = [p for p in bg_plans if p.direction_type == "AMBIENCE"]
     music = [p for p in bg_plans if p.direction_type == "MUSIC"]
@@ -332,14 +329,14 @@ def dry_run_daw(tag: str, stem_plans, entries_index: dict, output_dir: str) -> N
     print(f"   Stems directory : stems/{tag}/")
     print(f"   Output directory: {output_dir}/")
     print()
-    print(f"   Layer             Stems")
-    print(f"   ─────────────────────────────")
+    print("   Layer             Stems")
+    print("   ─────────────────────────────")
     print(f"   dialogue          {len(dialogue):3d} stems")
     print(f"   ambience          {len(ambience):3d} stems  (looped to scene boundaries)")
     print(f"   music             {len(music):3d} stems  (one-shot at cue points)")
     print(f"   sfx               {len(sfx):3d} stems")
     print()
-    print(f"   Output files (all same duration as foreground track):")
+    print("   Output files (all same duration as foreground track):")
     for _, suffix, desc in LAYERS:
         print(f"     {output_dir}/{tag}_{suffix}.wav  — {desc}")
     print(f"     {output_dir}/{tag}_open_in_audacity.py")
@@ -496,7 +493,7 @@ def export_daw_layers(
     print(f"--- Done! {len(layer_files)} layer WAVs in {output_dir}/ ---")
     print(f"    Import into Audacity: python {output_dir}/{script_fname}")
     if macro:
-        from models import show_slug as _show_slug
+        from xil_pipeline.models import show_slug as _show_slug
         macro_label = _show_slug(show).upper() if show else "THE413"
         print(f"    Audacity macro:       Tools → Macros → {macro_label}_{tag} → Apply to Project")
     if save_aup3:
@@ -559,7 +556,7 @@ def main() -> None:
         slug = resolve_slug(args.show)
         p = derive_paths(slug, args.episode)
         cast_path = p["cast"]
-        with open(cast_path, "r", encoding="utf-8") as f:
+        with open(cast_path, encoding="utf-8") as f:
             cast_data = json.load(f)
 
         cast_cfg = CastConfiguration(**cast_data)
@@ -580,7 +577,7 @@ def main() -> None:
         sfx_path = p["sfx"]
         sfx_config = None
         if os.path.exists(sfx_path):
-            with open(sfx_path, "r", encoding="utf-8") as f:
+            with open(sfx_path, encoding="utf-8") as f:
                 sfx_config = SfxConfiguration(**json.load(f))
 
         entries_index = load_entries_index(parsed_path)

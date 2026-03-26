@@ -20,7 +20,7 @@ import json
 import math
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from pydub import AudioSegment
 
@@ -107,7 +107,7 @@ def load_entries_index(parsed_path: str) -> dict[int, dict]:
     Returns:
         Dict mapping each sequence number to its full entry dict.
     """
-    with open(parsed_path, "r", encoding="utf-8") as f:
+    with open(parsed_path, encoding="utf-8") as f:
         data = json.load(f)
     return {entry["seq"]: entry for entry in data["entries"]}
 

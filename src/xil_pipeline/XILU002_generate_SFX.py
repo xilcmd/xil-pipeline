@@ -24,14 +24,14 @@ Module Attributes:
     STEMS_DIR: Base directory for stem subdirectories.
 """
 
-import os
-import json
 import argparse
+import json
+import os
 
 from elevenlabs.client import ElevenLabs
 
-from models import CastConfiguration, resolve_slug, derive_paths
-from sfx_common import load_sfx_entries, generate_sfx, dry_run_sfx, run_banner
+from xil_pipeline.models import CastConfiguration, derive_paths, resolve_slug
+from xil_pipeline.sfx_common import dry_run_sfx, generate_sfx, load_sfx_entries, run_banner
 
 client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
 
@@ -62,7 +62,7 @@ def load_sfx_plan(
         a list of dicts and ``stems_dir`` is the full path to the episode
         stems directory.
     """
-    with open(cast_json_path, "r", encoding="utf-8") as f:
+    with open(cast_json_path, encoding="utf-8") as f:
         cast_data = json.load(f)
     cast_cfg = CastConfiguration(**cast_data)
     stems_dir = os.path.join(STEMS_DIR, cast_cfg.tag)
@@ -109,17 +109,20 @@ def main() -> None:
 
         # Derive default --script from cast config
         if args.script is None:
-            with open(cast_path, "r", encoding="utf-8") as f:
+            with open(cast_path, encoding="utf-8") as f:
                 cast_data = json.load(f)
-            cast_cfg = CastConfiguration(**cast_data)
+            CastConfiguration(**cast_data)  # validate cast config
             args.script = p["parsed"]
 
         direction_types: set[str] | None = None
         if args.gen_sfx or args.gen_music or args.gen_ambience or args.sfx_music:
             direction_types = set()
-            if args.gen_sfx   or args.sfx_music: direction_types |= {"SFX", "BEAT"}
-            if args.gen_music or args.sfx_music: direction_types.add("MUSIC")
-            if args.gen_ambience or args.sfx_music: direction_types.add("AMBIENCE")
+            if args.gen_sfx or args.sfx_music:
+                direction_types |= {"SFX", "BEAT"}
+            if args.gen_music or args.sfx_music:
+                direction_types.add("MUSIC")
+            if args.gen_ambience or args.sfx_music:
+                direction_types.add("AMBIENCE")
 
         entries, stems_dir = load_sfx_plan(
             args.script, sfx_path, cast_path,
@@ -127,7 +130,7 @@ def main() -> None:
             direction_types=direction_types,
         )
 
-        with open(sfx_path, "r", encoding="utf-8") as f:
+        with open(sfx_path, encoding="utf-8") as f:
             sfx_config_data = json.load(f)
 
         if args.dry_run:

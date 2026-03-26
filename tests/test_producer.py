@@ -1,23 +1,16 @@
 """Tests for XILP002_producer.py — production pipeline (non-API functions)."""
 
-import os
 import json
+import os
 import tempfile
-import importlib.util
+import unittest.mock
+
 import pytest
 
-# Import the producer module
-spec = importlib.util.spec_from_file_location(
-    "producer",
-    os.path.join(os.path.dirname(__file__), "..", "XILP002_producer.py")
-)
-producer = importlib.util.module_from_spec(spec)
-
 # Patch out ElevenLabs client before loading module (no API key needed for these tests)
-import unittest.mock
 with unittest.mock.patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test_key"}):
     with unittest.mock.patch("elevenlabs.client.ElevenLabs"):
-        spec.loader.exec_module(producer)
+        from xil_pipeline import XILP002_producer as producer
 
 
 # ─── Fixtures ───
@@ -413,10 +406,7 @@ class TestGenerateVoices:
 
 # ─── Contract Tests: load_production output validates against Pydantic models ───
 
-_models_path = os.path.join(os.path.dirname(__file__), "..", "models.py")
-_models_spec = importlib.util.spec_from_file_location("models", _models_path)
-models = importlib.util.module_from_spec(_models_spec)
-_models_spec.loader.exec_module(models)
+from xil_pipeline import models
 
 
 class TestLoadProductionModelContract:
@@ -853,7 +843,7 @@ class TestPreambleSegments:
 
     def _make_cast_cfg(self, preamble_dict: dict):
         import json
-        from models import CastConfiguration
+        from xil_pipeline.models import CastConfiguration
         data = {
             "show": "TEST", "season": 2, "episode": 3,
             "title": "The Bridge", "season_title": "The Letters",
@@ -988,7 +978,7 @@ class TestPostambleHelpers:
     """Unit tests for postamble inject, resolve, dry-run, and generate helpers."""
 
     def _make_cast_cfg(self, postamble_dict: dict | None, preamble_dict: dict | None = None):
-        from models import CastConfiguration
+        from xil_pipeline.models import CastConfiguration
         data = {
             "show": "TEST", "season": 2, "episode": 3,
             "title": "The Bridge", "season_title": "The Letters",
@@ -1097,7 +1087,7 @@ class TestPostambleHelpers:
 
     def test_inject_postamble_music_gets_foreground_override(self, tmp_path):
         """OUTRO MUSIC entry (section=postamble) must be foreground in mix."""
-        from mix_common import collect_stem_plans
+        from xil_pipeline.mix_common import collect_stem_plans
         stems = tmp_path / "stems"
         stems.mkdir()
         sfx_stem = stems / "306_postamble_sfx.mp3"

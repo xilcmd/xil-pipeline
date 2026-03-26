@@ -1,16 +1,12 @@
 """Tests for timeline_viz.py — multitrack timeline visualization."""
 
-import importlib.util
 import os
 
 import pytest
 
 # ─── Import timeline_viz ───
 
-_viz_path = os.path.join(os.path.dirname(__file__), "..", "timeline_viz.py")
-spec = importlib.util.spec_from_file_location("timeline_viz", _viz_path)
-timeline_viz = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(timeline_viz)
+from xil_pipeline import timeline_viz
 
 build_timeline_data = timeline_viz.build_timeline_data
 render_terminal_timeline = timeline_viz.render_terminal_timeline
@@ -210,10 +206,7 @@ class TestRenderHtmlTimeline:
 
 # ─── Tests: mix_common label helpers ───
 
-_mix_common_path = os.path.join(os.path.dirname(__file__), "..", "mix_common.py")
-mc_spec = importlib.util.spec_from_file_location("mix_common", _mix_common_path)
-mix_common = importlib.util.module_from_spec(mc_spec)
-mc_spec.loader.exec_module(mix_common)
+from xil_pipeline import mix_common
 
 StemPlan = mix_common.StemPlan
 build_foreground_timeline_only = mix_common.build_foreground_timeline_only

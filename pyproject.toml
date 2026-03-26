@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xil-pipeline"
+version = "0.1.0"
+description = "Show-agnostic audio production pipeline: markdown script to podcast-ready MP3 via ElevenLabs"
+requires-python = ">=3.12"
+dependencies = [
+    "elevenlabs>=2.38,<3",
+    "pydub>=0.25,<1",
+    "pydantic>=2.0,<3",
+    "mutagen>=1.47",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+google = ["google-genai>=1.60,<2"]
+tts-alt = ["gTTS>=2.5,<3", "pyttsx3>=2.99,<3"]
+ollama = ["ollama>=0.6,<1"]
+all = ["xil-pipeline[google,tts-alt,ollama]"]
+dev = [
+    "pytest>=9.0,<10",
+    "pytest-cov>=7.0,<8",
+    "ruff>=0.15",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocs-awesome-pages-plugin>=2.10",
+    "mkdocstrings[python]>=0.27",
+    "mkdocs-autorefs>=1.4",
+    "pymdown-extensions>=10.16",
+]
+
+[project.scripts]
+xil-scan       = "xil_pipeline.XILP000_script_scanner:main"
+xil-parse      = "xil_pipeline.XILP001_script_parser:main"
+xil-produce    = "xil_pipeline.XILP002_producer:main"
+xil-assemble   = "xil_pipeline.XILP003_audio_assembly:main"
+xil-studio     = "xil_pipeline.XILP004_studio_onboard:main"
+xil-daw        = "xil_pipeline.XILP005_daw_export:main"
+xil-cues       = "xil_pipeline.XILP006_cues_ingester:main"
+xil-migrate    = "xil_pipeline.XILP007_stem_migrator:main"
+xil-cleanup    = "xil_pipeline.XILP008_stale_stem_cleanup:main"
+xil-regen      = "xil_pipeline.XILP009_script_regenerator:main"
+xil-import     = "xil_pipeline.XILP010_studio_import:main"
+xil-master     = "xil_pipeline.XILP011_master_export:main"
+xil-voices     = "xil_pipeline.XILU001_discover_voices_T2S:main"
+xil-sfx        = "xil_pipeline.XILU002_generate_SFX:main"
+xil-csv-join   = "xil_pipeline.XILU003_csv_sfx_join:main"
+xil-sample     = "xil_pipeline.XILU004_sample_voices_T2S:main"
+xil-sfx-lib    = "xil_pipeline.XILU005_discover_SFX:main"
+xil-splice     = "xil_pipeline.XILU006_splice_parsed:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xil_pipeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "W"]
+ignore = [
+    "E501",   # line-too-long (relaxed to 120 via line-length above)
+    "E741",   # ambiguous variable name (single-char vars fine in context)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["xil_pipeline"]

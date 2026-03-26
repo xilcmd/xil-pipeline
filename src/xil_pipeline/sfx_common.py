@@ -23,7 +23,7 @@ from mutagen.id3 import ID3, TALB, TCON, TDRC, TIT2, TPE1, USLT
 from mutagen.wave import WAVE
 from pydub import AudioSegment
 
-from models import SfxConfiguration, SfxEntry
+from xil_pipeline.models import SfxConfiguration, SfxEntry
 
 SFX_DIR = "SFX"
 
@@ -294,9 +294,9 @@ def load_sfx_entries(
         A list of SFX entry dicts with ``seq``, ``text``, ``direction_type``,
         ``stem_name``, ``sfx_type``, ``section``, and ``scene``.
     """
-    with open(script_json_path, "r", encoding="utf-8") as f:
+    with open(script_json_path, encoding="utf-8") as f:
         script_data = json.load(f)
-    with open(sfx_json_path, "r", encoding="utf-8") as f:
+    with open(sfx_json_path, encoding="utf-8") as f:
         sfx_data = json.load(f)
 
     sfx_cfg = SfxConfiguration(**sfx_data)

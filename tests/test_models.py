@@ -1,16 +1,8 @@
 """Tests for Pydantic data models (TDD — tests written before models)."""
 
-import importlib.util
-import os
-import sys
-
 import pytest
 
-# Import models using importlib (consistent with other test files)
-_models_path = os.path.join(os.path.dirname(__file__), "..", "models.py")
-spec = importlib.util.spec_from_file_location("models", _models_path)
-models = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(models)
+from xil_pipeline import models
 
 
 # ---------------------------------------------------------------------------

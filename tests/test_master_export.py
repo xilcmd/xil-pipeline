@@ -1,17 +1,11 @@
 """Tests for XILP011_master_export.py — Final Master MP3 Export."""
 
-import importlib.util
 import json
 import os
 
 import pytest
 
-_mod_path = os.path.join(
-    os.path.dirname(__file__), "..", "XILP011_master_export.py"
-)
-spec = importlib.util.spec_from_file_location("master_export", _mod_path)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+from xil_pipeline import XILP011_master_export as mod
 
 
 # ---------------------------------------------------------------------------

@@ -19,29 +19,18 @@ import json
 import os
 import sys
 
-import importlib.util as _il
-
-from sfx_common import run_banner
-
-# Import XILP001's pure utility functions — no re-implementation needed.
-_spec = _il.spec_from_file_location(
-    "_parser",
-    os.path.join(os.path.dirname(__file__), "XILP001_script_parser.py"),
+from xil_pipeline.sfx_common import run_banner
+from xil_pipeline.XILP001_script_parser import (
+    SECTION_MAP,
+    is_divider,
+    is_scene_header,
+    is_section_header,
+    is_stage_direction,
+    parse_script_header,
+    strip_markdown_escapes,
+    strip_markdown_formatting,
+    try_match_speaker,
 )
-_parser = _il.module_from_spec(_spec)
-_spec.loader.exec_module(_parser)
-
-strip_markdown_escapes = _parser.strip_markdown_escapes
-strip_markdown_formatting = _parser.strip_markdown_formatting
-try_match_speaker = _parser.try_match_speaker
-is_section_header = _parser.is_section_header
-is_scene_header = _parser.is_scene_header
-is_stage_direction = _parser.is_stage_direction
-is_divider = _parser.is_divider
-parse_script_header = _parser.parse_script_header
-SECTION_MAP = _parser.SECTION_MAP
-SPEAKER_KEYS = _parser.SPEAKER_KEYS
-
 
 # ---------------------------------------------------------------------------
 # Candidate heuristic

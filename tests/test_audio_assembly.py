@@ -1,6 +1,5 @@
 """Tests for XILP003_audio_assembly.py and mix_common.py."""
 
-import importlib.util
 import json
 import os
 import unittest.mock
@@ -11,19 +10,8 @@ from pydub.generators import Sine
 
 # ─── Import modules ───
 
-_assembly_path = os.path.join(
-    os.path.dirname(__file__), "..", "XILP003_audio_assembly.py"
-)
-spec = importlib.util.spec_from_file_location("audio_assembly", _assembly_path)
-assembly = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(assembly)
-
-_mix_common_path = os.path.join(
-    os.path.dirname(__file__), "..", "mix_common.py"
-)
-spec2 = importlib.util.spec_from_file_location("mix_common", _mix_common_path)
-mix_common = importlib.util.module_from_spec(spec2)
-spec2.loader.exec_module(mix_common)
+from xil_pipeline import XILP003_audio_assembly as assembly
+from xil_pipeline import mix_common
 
 
 # ─── Helpers ───
@@ -127,7 +115,8 @@ class TestModuleImport:
     def test_no_elevenlabs_import(self):
         """XILP003 must not import elevenlabs — assembly is API-free."""
         import ast
-        with open(_assembly_path, "r", encoding="utf-8") as f:
+        import inspect
+        with open(inspect.getfile(assembly), "r", encoding="utf-8") as f:
             tree = ast.parse(f.read())
         imports = []
         for node in ast.walk(tree):

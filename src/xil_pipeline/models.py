@@ -9,7 +9,7 @@ type annotations that render as rich API documentation via mkdocstrings.
 import json
 import os
 import re
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 

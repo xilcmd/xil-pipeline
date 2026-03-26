@@ -1,0 +1,27 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install package with dev dependencies
+        run: pip install -e ".[all,dev]"
+      - name: Lint
+        run: ruff check src/xil_pipeline/
+      - name: Run tests
+        run: pytest tests/ -v --tb=short

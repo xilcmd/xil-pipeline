@@ -16,8 +16,9 @@ import json
 import os
 import sys
 
-from sfx_common import slugify_effect_key, run_banner
-from models import resolve_slug, derive_paths as _derive_paths
+from xil_pipeline.models import derive_paths as _derive_paths
+from xil_pipeline.models import resolve_slug
+from xil_pipeline.sfx_common import run_banner, slugify_effect_key
 
 # ---------------------------------------------------------------------------
 # Column definitions

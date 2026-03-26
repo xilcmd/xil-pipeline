@@ -2,18 +2,11 @@
 
 import json
 import os
-import importlib.util
 import tempfile
 
 import pytest
 
-# Load module via importlib (filename starts with digits-not-importable directly)
-spec = importlib.util.spec_from_file_location(
-    "stem_migrator",
-    os.path.join(os.path.dirname(__file__), "..", "XILP007_stem_migrator.py"),
-)
-m = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(m)
+from xil_pipeline import XILP007_stem_migrator as m
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

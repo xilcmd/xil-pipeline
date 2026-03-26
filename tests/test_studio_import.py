@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from XILP010_studio_import import _parse_zip_seq, extract_stems
+from xil_pipeline.XILP010_studio_import import _parse_zip_seq, extract_stems
 
 
 # --- Helpers ---

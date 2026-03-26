@@ -40,8 +40,8 @@ import json
 import os
 import re
 
-from sfx_common import run_banner
-from models import resolve_slug, derive_paths
+from xil_pipeline.models import derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner
 
 SFX_DIR = "SFX"
 CUES_DIR = "cues"
@@ -99,7 +99,7 @@ def parse_cues_markdown(path: str) -> list[dict]:
         loop             – True for ambience and loop-marked assets
         scene            – scene label from SFX section, or None
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         lines = f.readlines()
 
     assets: list[dict] = []
@@ -370,7 +370,7 @@ def enrich_sfx_config(
 
     In dry-run mode, prints a diff of what would change without writing.
     """
-    with open(sfx_config_path, "r", encoding="utf-8") as f:
+    with open(sfx_config_path, encoding="utf-8") as f:
         config = json.load(f)
     effects = config.get("effects", {})
     update_count = 0

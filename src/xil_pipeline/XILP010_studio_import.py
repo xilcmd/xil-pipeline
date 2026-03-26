@@ -25,9 +25,9 @@ import os
 import re
 import zipfile
 
-from sfx_common import run_banner
-from XILP007_stem_migrator import make_stem_name
-from models import resolve_slug, derive_paths
+from xil_pipeline.models import derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner
+from xil_pipeline.XILP007_stem_migrator import make_stem_name
 
 SCRIPT_NAME = "XILP010 · Studio Import"
 

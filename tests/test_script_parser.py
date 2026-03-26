@@ -1,21 +1,13 @@
 """Tests for XILP001_script_parser.py — markdown production script parser."""
 
-import os
 import json
+import os
 import tempfile
-import importlib
 import unittest.mock
 
 import pytest
 
-# Import the parser module (filename starts with digits, so use importlib)
-import importlib.util
-spec = importlib.util.spec_from_file_location(
-    "script_parser",
-    os.path.join(os.path.dirname(__file__), "..", "XILP001_script_parser.py")
-)
-parser = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(parser)
+from xil_pipeline import XILP001_script_parser as parser
 
 
 # ─── Unit Tests: strip_markdown_escapes ───
@@ -598,11 +590,7 @@ class TestMetadataSectionPath:
 
 # ─── Contract Tests: parse_script output validates against Pydantic models ───
 
-# Import models
-_models_path = os.path.join(os.path.dirname(__file__), "..", "models.py")
-_models_spec = importlib.util.spec_from_file_location("models", _models_path)
-models = importlib.util.module_from_spec(_models_spec)
-_models_spec.loader.exec_module(models)
+from xil_pipeline import models
 
 
 class TestParseScriptModelContract:

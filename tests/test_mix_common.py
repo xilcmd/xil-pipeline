@@ -1,9 +1,7 @@
 """Tests for mix_common.py — stem plans, clip effects, and layer builders."""
 
-import importlib.util
 import math
 import os
-import sys
 
 import pytest
 from pydub import AudioSegment
@@ -11,10 +9,7 @@ from pydub.generators import Sine
 
 # ─── Import mix_common ───
 
-_mix_common_path = os.path.join(os.path.dirname(__file__), "..", "mix_common.py")
-spec = importlib.util.spec_from_file_location("mix_common", _mix_common_path)
-mix_common = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mix_common)
+from xil_pipeline import mix_common
 
 collect_stem_plans = mix_common.collect_stem_plans
 extract_seq = mix_common.extract_seq
@@ -28,10 +23,7 @@ StemPlan = mix_common.StemPlan
 
 # ─── Import models for SfxConfiguration ───
 
-_models_path = os.path.join(os.path.dirname(__file__), "..", "models.py")
-_models_spec = importlib.util.spec_from_file_location("models", _models_path)
-models = importlib.util.module_from_spec(_models_spec)
-_models_spec.loader.exec_module(models)
+from xil_pipeline import models
 SfxConfiguration = models.SfxConfiguration
 
 

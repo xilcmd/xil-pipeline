@@ -14,13 +14,13 @@ Usage::
     python XILU004_sample_voices_T2S.py --episode S02E03 --force
 """
 
-import os
 import argparse
+import os
 
 from elevenlabs.client import ElevenLabs
 
-from models import CastConfiguration, resolve_slug, derive_paths
-from sfx_common import tag_mp3, run_banner
+from xil_pipeline.models import CastConfiguration, derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner, tag_mp3
 
 # Setup ElevenLabs Client
 client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
@@ -42,8 +42,8 @@ def check_elevenlabs_quota() -> int | None:
         limit = sub.character_limit
         remaining = limit - used
 
-        print(f"\n" + "="*40)
-        print(f"ELEVENLABS API STATUS:")
+        print("\n" + "="*40)
+        print("ELEVENLABS API STATUS:")
         print(f"  Tier:      {sub.tier.upper()}")
         print(f"  Usage:     {used:,} / {limit:,} characters")
         print(f"  Remaining: {remaining:,}")
@@ -51,7 +51,7 @@ def check_elevenlabs_quota() -> int | None:
 
         return remaining
     except Exception as e:
-        print(f"\n[!] API Error: Unable to fetch user subscription data.")
+        print("\n[!] API Error: Unable to fetch user subscription data.")
         print(f"    Details: {e}")
         return None
 
@@ -77,8 +77,8 @@ def has_enough_characters(text_to_generate: str) -> bool:
         else:
             print(f" [Guard] STOP: Line requires {required} chars, but only {remaining:,} remain.")
             return False
-    except Exception as e:
-        print(f" [Guard] Warning: Permission 'user_read' missing. Skipping quota check.")
+    except Exception:
+        print(" [Guard] Warning: Permission 'user_read' missing. Skipping quota check.")
         return True
 
 
@@ -150,7 +150,7 @@ def main() -> None:
             raise SystemExit(1)
 
         import json
-        with open(cast_path, "r", encoding="utf-8") as f:
+        with open(cast_path, encoding="utf-8") as f:
             cast_data = json.load(f)
         cast_cfg = CastConfiguration(**cast_data)
         tag = cast_cfg.tag

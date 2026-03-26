@@ -24,8 +24,8 @@ import os
 
 from pydub import AudioSegment
 
-from models import CastConfiguration, resolve_slug, derive_paths, show_slug
-from sfx_common import tag_mp3, run_banner
+from xil_pipeline.models import CastConfiguration, derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner, tag_mp3
 
 MASTERS_DIR = "masters"
 DAW_DIR = "daw"
@@ -141,7 +141,7 @@ def main() -> None:
         episode_title = None
         artist = None
         if os.path.exists(cast_path):
-            with open(cast_path, "r", encoding="utf-8") as f:
+            with open(cast_path, encoding="utf-8") as f:
                 cast_cfg = CastConfiguration(**json.load(f))
             show_name = cast_cfg.show
             episode_title = cast_cfg.title
@@ -191,7 +191,7 @@ def main() -> None:
         seconds = duration_s % 60
 
         print(f"  Duration   : {minutes}:{seconds:05.2f}")
-        print(f"--- Exporting master MP3 ---")
+        print("--- Exporting master MP3 ---")
 
         title = f"{show_name} — {episode_title}" if episode_title else tag
         export_master(
@@ -204,7 +204,7 @@ def main() -> None:
 
         file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
         print(f"  Written    : {output_path} ({file_size_mb:.1f} MB)")
-        print(f"--- Done! ---")
+        print("--- Done! ---")
 
 
 if __name__ == "__main__":

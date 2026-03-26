@@ -8,9 +8,9 @@ import unittest.mock
 import pytest
 
 
-# ─── Module import (deferred until sfx_common.py exists) ───
+# ─── Module import ───
 
-sfx_common = pytest.importorskip("sfx_common")
+from xil_pipeline import sfx_common
 
 
 # ─── Fixtures ───
@@ -149,7 +149,7 @@ class TestSharedSfxPath:
 
 class TestTagMp3:
     def test_tags_silence_mp3(self, tmp_path):
-        from models import SfxEntry
+        from xil_pipeline.models import SfxEntry
         from pydub import AudioSegment
         # Create a real silence MP3
         mp3_path = tmp_path / "test.mp3"
@@ -214,7 +214,7 @@ class TestTagMp3:
 
 class TestEnsureSharedSfx:
     def test_silence_creates_file_without_api(self, tmp_path):
-        from models import SfxEntry
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(type="silence", duration_seconds=1.0)
         sfx_dir = str(tmp_path / "SFX")
 
@@ -225,7 +225,7 @@ class TestEnsureSharedSfx:
         assert path.endswith("beat.mp3")
 
     def test_sfx_calls_api(self, tmp_path):
-        from models import SfxEntry
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(prompt="Phone buzz", duration_seconds=2.0)
         sfx_dir = str(tmp_path / "SFX")
         mock_client = unittest.mock.MagicMock()
@@ -241,7 +241,7 @@ class TestEnsureSharedSfx:
         mock_client.text_to_sound_effects.convert.assert_called_once()
 
     def test_cached_skips_generation(self, tmp_path):
-        from models import SfxEntry
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(type="silence", duration_seconds=1.0)
         sfx_dir = str(tmp_path / "SFX")
 
@@ -259,7 +259,7 @@ class TestEnsureSharedSfx:
         assert os.path.getmtime(path2) == mtime1
 
     def test_sfx_without_client_raises(self, tmp_path):
-        from models import SfxEntry
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(prompt="Phone buzz", duration_seconds=2.0)
         sfx_dir = str(tmp_path / "SFX")
 
@@ -270,7 +270,7 @@ class TestEnsureSharedSfx:
             )
 
     def test_generated_file_has_id3_tags(self, tmp_path):
-        from models import SfxEntry
+        from xil_pipeline.models import SfxEntry
         from mutagen.id3 import ID3
         effect = SfxEntry(type="silence", duration_seconds=1.0)
         sfx_dir = str(tmp_path / "SFX")
@@ -285,7 +285,7 @@ class TestEnsureSharedSfx:
         assert str(tags.get("TIT2")) == "BEAT"
 
     def test_uses_effect_prompt_influence_over_default(self, tmp_path):
-        from models import SfxEntry
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(
             prompt="Phone buzz", duration_seconds=2.0, prompt_influence=0.7,
         )

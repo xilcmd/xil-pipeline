@@ -7,21 +7,30 @@ Module Attributes:
     STEMS_DIR: Directory for generated voice stem MP3 files.
 """
 
-import os
-import json
-import shutil
 import argparse
-from pydub import AudioSegment
+import json
+import os
+
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
+from pydub import AudioSegment
 
-from models import VoiceConfig, DialogueEntry, CastConfiguration, SfxConfiguration, episode_tag, resolve_slug, derive_paths
-from sfx_common import (
-    load_sfx_entries,
-    generate_sfx as generate_sfx_stems,
+from xil_pipeline.models import (
+    CastConfiguration,
+    DialogueEntry,
+    SfxConfiguration,
+    VoiceConfig,
+    derive_paths,
+    resolve_slug,
+)
+from xil_pipeline.sfx_common import (
     dry_run_sfx,
-    tag_mp3,
+    load_sfx_entries,
     run_banner,
+    tag_mp3,
+)
+from xil_pipeline.sfx_common import (
+    generate_sfx as generate_sfx_stems,
 )
 
 # Setup ElevenLabs Client
@@ -44,8 +53,8 @@ def check_elevenlabs_quota() -> int | None:
         limit = sub.character_limit
         remaining = limit - used
 
-        print(f"\n" + "="*40)
-        print(f"ELEVENLABS API STATUS:")
+        print("\n" + "="*40)
+        print("ELEVENLABS API STATUS:")
         print(f"  Tier:      {sub.tier.upper()}")
         print(f"  Usage:     {used:,} / {limit:,} characters")
         print(f"  Remaining: {remaining:,}")
@@ -53,7 +62,7 @@ def check_elevenlabs_quota() -> int | None:
 
         return remaining
     except Exception as e:
-        print(f"\n[!] API Error: Unable to fetch user subscription data.")
+        print("\n[!] API Error: Unable to fetch user subscription data.")
         print(f"    Details: {e}")
         return None
 
@@ -79,8 +88,8 @@ def has_enough_characters(text_to_generate: str) -> bool:
         else:
             print(f" [Guard] STOP: Line requires {required} chars, but only {remaining:,} remain.")
             return False
-    except Exception as e:
-        print(f" [Guard] Warning: Permission 'user_read' missing. Skipping quota check.")
+    except Exception:
+        print(" [Guard] Warning: Permission 'user_read' missing. Skipping quota check.")
         return True
 
 
@@ -150,10 +159,10 @@ def load_production(
     Raises:
         FileNotFoundError: If either JSON file does not exist.
     """
-    with open(cast_json_path, "r", encoding="utf-8") as f:
+    with open(cast_json_path, encoding="utf-8") as f:
         cast_data = json.load(f)
 
-    with open(script_json_path, "r", encoding="utf-8") as f:
+    with open(script_json_path, encoding="utf-8") as f:
         script_data = json.load(f)
 
     # Build config: speaker_key -> {id, pan, filter}
@@ -277,7 +286,7 @@ def dry_run(
         print(f"{range_label}: {lines_to_generate} lines, {chars_in_range:,} TTS characters")
     if tbd_voices:
         print(f"\n  WARNING: {len(tbd_voices)} voices still need voice_id assignment: {', '.join(tbd_voices)}")
-        print(f"  Use XILU001_discover_voices_T2S.py to browse voices, then update the cast config")
+        print("  Use XILU001_discover_voices_T2S.py to browse voices, then update the cast config")
     print(f"{'='*70}\n")
 
 
@@ -408,7 +417,7 @@ def inject_preamble_entries(parsed_path: str, preamble_text: str, speaker: str) 
         preamble_text: Resolved preamble text (placeholders already substituted).
         speaker: Cast key for the TTS speaker (e.g. "tina").
     """
-    with open(parsed_path, "r", encoding="utf-8") as f:
+    with open(parsed_path, encoding="utf-8") as f:
         data = json.load(f)
     # Strip any existing preamble entries (seq <= 0)
     data["entries"] = [e for e in data["entries"] if e["seq"] > 0]
@@ -456,7 +465,7 @@ def inject_postamble_entries(parsed_path: str, postamble_text: str, speaker: str
     Returns:
         Tuple of (music_seq, voice_seq) — the assigned sequence numbers.
     """
-    with open(parsed_path, "r", encoding="utf-8") as f:
+    with open(parsed_path, encoding="utf-8") as f:
         data = json.load(f)
     # Strip any existing postamble entries
     data["entries"] = [e for e in data["entries"] if e.get("section") != "postamble"]
@@ -709,7 +718,7 @@ def main() -> None:
         sfx_path = paths["sfx"]
 
         # Always load cast_cfg for metadata (preamble, season_title, tag)
-        with open(cast_path, "r", encoding="utf-8") as f:
+        with open(cast_path, encoding="utf-8") as f:
             cast_data = json.load(f)
         cast_cfg = CastConfiguration(**cast_data)
 
@@ -729,7 +738,7 @@ def main() -> None:
         sfx_config_model = None
         sfx_config_data = None
         if os.path.exists(sfx_path):
-            with open(sfx_path, "r", encoding="utf-8") as f:
+            with open(sfx_path, encoding="utf-8") as f:
                 sfx_config_data = json.load(f)
             sfx_config_model = SfxConfiguration(**sfx_config_data)
 
@@ -740,9 +749,12 @@ def main() -> None:
         sfx_entries = None
         if gen_sfx or gen_music or gen_ambience:
             direction_types: set[str] = set()
-            if gen_sfx:      direction_types |= {"SFX", "BEAT"}
-            if gen_music:    direction_types.add("MUSIC")
-            if gen_ambience: direction_types.add("AMBIENCE")
+            if gen_sfx:
+                direction_types |= {"SFX", "BEAT"}
+            if gen_music:
+                direction_types.add("MUSIC")
+            if gen_ambience:
+                direction_types.add("AMBIENCE")
             sfx_entries = load_sfx_entries(args.script, sfx_path,
                                            direction_types=direction_types)
             # Pre-filter SFX entries to the requested range
@@ -765,7 +777,7 @@ def main() -> None:
         postamble_music_stem = None
         if cast_cfg.postamble and os.path.exists(args.script):
             postamble_text = _resolve_postamble_text(cast_cfg)
-            with open(args.script, "r", encoding="utf-8") as f:
+            with open(args.script, encoding="utf-8") as f:
                 _parsed = json.load(f)
             _episode_seqs = [e["seq"] for e in _parsed["entries"]
                              if e["seq"] > 0 and e.get("section") != "postamble"]

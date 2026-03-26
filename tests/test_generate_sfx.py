@@ -1,22 +1,15 @@
 """Tests for XILU002_generate_SFX.py — standalone SFX stem generation utility."""
 
-import importlib.util
 import json
 import os
 import unittest.mock
 
 import pytest
 
-# Import the module under test
-_module_path = os.path.join(
-    os.path.dirname(__file__), "..", "XILU002_generate_SFX.py"
-)
-spec = importlib.util.spec_from_file_location("generate_sfx", _module_path)
-generate_sfx = importlib.util.module_from_spec(spec)
-
+# Patch out ElevenLabs client before loading module (no API key needed for these tests)
 with unittest.mock.patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test_key"}):
     with unittest.mock.patch("elevenlabs.client.ElevenLabs"):
-        spec.loader.exec_module(generate_sfx)
+        from xil_pipeline import XILU002_generate_SFX as generate_sfx
 
 
 # ─── Fixtures ───
@@ -106,7 +99,7 @@ class TestModuleImport:
 
     def test_delegates_to_sfx_common(self):
         """XILU002 should import shared functions from sfx_common."""
-        import sfx_common
+        from xil_pipeline import sfx_common
         assert generate_sfx.load_sfx_entries is sfx_common.load_sfx_entries
         assert generate_sfx.generate_sfx is sfx_common.generate_sfx
         assert generate_sfx.dry_run_sfx is sfx_common.dry_run_sfx

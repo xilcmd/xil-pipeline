@@ -25,22 +25,22 @@ Module Attributes:
     SILENCE_GAP_MS: Milliseconds of silence inserted between foreground stems.
 """
 
-import os
-import json
 import argparse
+import json
+import os
 
 from pydub import AudioSegment
 
-from models import CastConfiguration, VoiceConfig, SfxConfiguration, resolve_slug, derive_paths
-from mix_common import (
+from xil_pipeline.mix_common import (
     apply_phone_filter,
+    build_ambience_layer,
+    build_foreground,
+    build_music_layer,
     collect_stem_plans,
     load_entries_index,
-    build_foreground,
-    build_ambience_layer,
-    build_music_layer,
 )
-from sfx_common import run_banner
+from xil_pipeline.models import CastConfiguration, SfxConfiguration, VoiceConfig, derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner
 
 STEMS_DIR = "stems"
 SILENCE_GAP_MS = 600
@@ -190,7 +190,7 @@ def main() -> None:
         slug = resolve_slug(args.show)
         p = derive_paths(slug, args.episode)
         cast_path = p["cast"]
-        with open(cast_path, "r", encoding="utf-8") as f:
+        with open(cast_path, encoding="utf-8") as f:
             cast_data = json.load(f)
 
         cast_cfg = CastConfiguration(**cast_data)
@@ -207,7 +207,7 @@ def main() -> None:
         sfx_path = p["sfx"]
         sfx_config = None
         if os.path.exists(sfx_path):
-            with open(sfx_path, "r", encoding="utf-8") as f:
+            with open(sfx_path, encoding="utf-8") as f:
                 sfx_config = SfxConfiguration(**json.load(f))
 
         if os.path.exists(parsed_path):

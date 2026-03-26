@@ -29,7 +29,8 @@ import json as _json
 import os
 
 from elevenlabs.client import ElevenLabs
-from sfx_common import run_banner
+
+from xil_pipeline.sfx_common import run_banner
 
 # Human-readable category labels matching the portal display
 CATEGORY_LABELS = {
@@ -50,7 +51,7 @@ def _fmt_unix(ts: int | None) -> str:
     """Format a Unix timestamp as YYYY-MM-DD, or '' if None."""
     if ts is None:
         return ""
-    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%d")
+    return datetime.datetime.fromtimestamp(ts, datetime.UTC).strftime("%Y-%m-%d")
 
 
 def _fmt_languages(verified_languages: list) -> str:
@@ -169,7 +170,7 @@ def update_cast(cast_path: str, records_by_id: dict, dry_run: bool = False) -> N
             :func:`build_voice_record`.
         dry_run: When ``True``, print the diff but do not write the file.
     """
-    with open(cast_path, "r", encoding="utf-8") as f:
+    with open(cast_path, encoding="utf-8") as f:
         cast_data = _json.load(f)
 
     changes: list[str] = []

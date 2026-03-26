@@ -3,7 +3,7 @@
 import json
 import pytest
 
-from XILP009_script_regenerator import (
+from xil_pipeline.XILP009_script_regenerator import (
     regenerate_script,
     section_display_name,
     speaker_display_name,

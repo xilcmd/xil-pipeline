@@ -15,7 +15,6 @@ Usage (from XILP005):
 
 import html
 import json
-import math
 import os
 import shutil
 from dataclasses import dataclass, field
@@ -158,7 +157,6 @@ def render_terminal_timeline(data: TimelineData, width: int | None = None) -> st
 
     # ── Time ruler ──
     ruler_line = " " * label_col
-    tick_line = " " * label_col
     num_ticks = int(total_s // interval) + 1
     for i in range(num_ticks):
         t = i * interval

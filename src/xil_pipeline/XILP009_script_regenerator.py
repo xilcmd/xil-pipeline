@@ -11,9 +11,9 @@ import json
 import os
 import sys
 
-from XILP001_script_parser import SPEAKER_KEYS, SECTION_MAP
-from sfx_common import run_banner
-from models import resolve_slug, derive_paths
+from xil_pipeline.models import derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner
+from xil_pipeline.XILP001_script_parser import SECTION_MAP, SPEAKER_KEYS
 
 SCRIPT_NAME = os.path.basename(__file__)
 
@@ -77,7 +77,6 @@ def regenerate_script(parsed: dict, cast: dict | None = None) -> str:
     entries = [e for e in entries if e.get("seq", 0) >= 1
                and e.get("section") != "postamble"]
 
-    prev_type = None
     after_header = False
 
     for entry in entries:
@@ -91,7 +90,6 @@ def regenerate_script(parsed: dict, cast: dict | None = None) -> str:
             lines.append(f"## {text}")
             lines.append("")
             after_header = True
-            prev_type = entry_type
             continue
 
         if entry_type == "scene_header":
@@ -99,7 +97,6 @@ def regenerate_script(parsed: dict, cast: dict | None = None) -> str:
             lines.append(f"## {text}")
             lines.append("")
             after_header = True
-            prev_type = entry_type
             continue
 
         # Insert === divider before the first direction/dialogue after a header
@@ -111,7 +108,6 @@ def regenerate_script(parsed: dict, cast: dict | None = None) -> str:
         if entry_type == "direction":
             lines.append(f"[{text}]")
             lines.append("")
-            prev_type = entry_type
             continue
 
         if entry_type == "dialogue":
@@ -123,7 +119,6 @@ def regenerate_script(parsed: dict, cast: dict | None = None) -> str:
                 lines.append(display_name)
             lines.append(text)
             lines.append("")
-            prev_type = entry_type
             continue
 
     # End marker

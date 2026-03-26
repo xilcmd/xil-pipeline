@@ -10,15 +10,22 @@ Module Attributes:
     DIRECTION_TYPES: Recognized direction subtypes for stage directions.
 """
 
-import re
-import json
-import csv
 import argparse
+import csv
+import json
 import os
+import re
 import sys
 
-from models import ScriptEntry, ScriptStats, ParsedScript, episode_tag, show_slug, derive_paths, resolve_slug
-from sfx_common import run_banner
+from xil_pipeline.models import (
+    ParsedScript,
+    ScriptStats,
+    derive_paths,
+    episode_tag,
+    resolve_slug,
+    show_slug,
+)
+from xil_pipeline.sfx_common import run_banner
 
 # Known speakers — ordered longest-first so compound names match before short ones
 KNOWN_SPEAKERS = [
@@ -392,7 +399,7 @@ def parse_script(filepath: str, debug_output: str | None = None) -> dict:
     Raises:
         FileNotFoundError: If the script file does not exist.
     """
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         raw = f.read()
 
     raw = strip_markdown_escapes(raw)

@@ -1,6 +1,5 @@
 """Tests for XILP005_daw_export.py — DAW layer export."""
 
-import importlib.util
 import json
 import os
 import unittest.mock
@@ -11,12 +10,7 @@ from pydub.generators import Sine
 
 # ─── Import XILP005 ───
 
-_daw_path = os.path.join(
-    os.path.dirname(__file__), "..", "XILP005_daw_export.py"
-)
-spec = importlib.util.spec_from_file_location("daw_export", _daw_path)
-daw = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(daw)
+from xil_pipeline import XILP005_daw_export as daw
 
 
 # ─── Helpers ───
@@ -121,7 +115,8 @@ class TestModuleImport:
 
     def test_no_elevenlabs_import(self):
         import ast
-        with open(_daw_path, "r", encoding="utf-8") as f:
+        import inspect
+        with open(inspect.getfile(daw), "r", encoding="utf-8") as f:
             tree = ast.parse(f.read())
         imports = []
         for node in ast.walk(tree):
@@ -162,7 +157,7 @@ class TestMakeAudacityScript:
 
 class TestDryRunDaw:
     def test_prints_summary(self, stems_dir, parsed_file, config, capsys):
-        from mix_common import load_entries_index, collect_stem_plans
+        from xil_pipeline.mix_common import load_entries_index, collect_stem_plans
         idx = load_entries_index(parsed_file)
         plans = collect_stem_plans(stems_dir, idx)
         daw.dry_run_daw("S01E01", plans, idx, "daw/S01E01")

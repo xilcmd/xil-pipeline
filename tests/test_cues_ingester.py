@@ -1,21 +1,14 @@
 """Tests for XILP006_cues_ingester.py — Cues Sheet Ingester."""
 
-import importlib.util
 import json
 import os
-import sys
 import unittest.mock
 
 import pytest
 
 # ── Module import ────────────────────────────────────────────────────────────
 
-_module_path = os.path.join(
-    os.path.dirname(__file__), "..", "XILP006_cues_ingester.py"
-)
-spec = importlib.util.spec_from_file_location("cues_ingester", _module_path)
-cues_ingester = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(cues_ingester)
+from xil_pipeline import XILP006_cues_ingester as cues_ingester
 
 
 # ── Sample markdown fixture ───────────────────────────────────────────────────

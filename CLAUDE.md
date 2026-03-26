@@ -6,12 +6,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Automated podcast/audio production pipeline using ElevenLabs TTS API. The project evolved from a simple multi-voice ad proof-of-concept into a full podcast episode producer for "THE 413" fiction podcast.
 
+## Package Structure
+
+The project is packaged as `xil-pipeline` (import name `xil_pipeline`) using hatchling. All pipeline and utility scripts live under `src/xil_pipeline/`:
+
+```
+src/xil_pipeline/          # Python package (22 modules)
+  __init__.py              # version + key re-exports
+  models.py                # Pydantic data models, slug/path resolution
+  mix_common.py            # Shared mixing utilities
+  sfx_common.py            # SFX library management, ID3 tagging
+  timeline_viz.py          # Timeline visualization
+  XILP000_*.py … XILP011_*.py   # Pipeline stages
+  XILU001_*.py … XILU006_*.py   # Utility scripts
+tests/                     # Pytest test suite
+docs/                      # MkDocs documentation
+pyproject.toml             # Packaging config (hatchling)
+project.json               # Show name config (runtime, read from CWD)
+cast_*.json, sfx_*.json    # Episode configs (workspace data, stays at root)
+```
+
+Install for development: `pip install -e ".[all,dev]"`
+
+All internal imports use the package namespace: `from xil_pipeline.models import ...`
+
 ## Environment
 
-- Python 3.13, virtualenv at `venv/`
+- Python 3.12+, virtualenv at `venv/`
 - WSL2 (Linux on Windows)
 - Activate: `source venv/bin/activate`
-- Key packages: `elevenlabs`, `pydub`, `google-genai`, `gTTS`, `pyttsx3`, `ollama`
+- Install: `pip install -e ".[all,dev]"` (editable install with all optional deps)
+- Core packages: `elevenlabs`, `pydub`, `pydantic`, `mutagen`, `httpx`
+- Optional: `google-genai`, `gTTS`, `pyttsx3`, `ollama`
 - ElevenLabs API key via `ELEVENLABS_API_KEY` env var
 - Audio playback via `mpg123` in WSL
 
@@ -284,13 +310,14 @@ Always use `--dry-run` before running voice generation on a new script to verify
 
 ## File Naming Convention
 
-Scripts use prefix `XIL` (ElevenLabs, avoiding numeric prefixes). The suffix pattern is:
+All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console entry points via `pyproject.toml`. Scripts use prefix `XIL` (ElevenLabs, avoiding numeric prefixes). The suffix pattern is:
 - `XILP000_*` — pre-flight script scanner (no API, no side effects)
 - `XILU001_*` — voice discovery (browse ElevenLabs voices; `--update-cast` back-fills role/language_code into a cast JSON)
 - `XILU002_*` — standalone SFX stem generation
 - `XILU003_*` — CSV + SFX/cast annotation utility (joins parsed episode CSV with SFX JSON and cast JSON for review)
 - `XILU004_*` — voice sample generator (audition cast voices)
 - `XILU005_*` — SFX library discovery (`--local` scans `SFX/` directory, default; `--api` queries ElevenLabs history)
+- `XILU006_*` — parsed JSON splice utility (insert/delete entries with automatic seq renumbering)
 - `XILP001_*` — script parser
 - `XILP002_*` — voice generation (ElevenLabs TTS)
 - `XILP003_*` — audio assembly (stems → master MP3, two-pass multi-track mix)
@@ -452,6 +479,34 @@ python XILU005_discover_SFX.py --api --all        # paginate full API history (d
 - `--api` attempts to query ElevenLabs sound generation history (endpoint is not publicly accessible as of March 2026 regardless of API key permissions)
 - `--all` (API mode only) paginates through the full account history; default retrieves only the most recent 100 results
 
+### Parsed JSON Splice Utility
+`XILU006_splice_parsed.py` — Inserts entries into or deletes entries from a parsed episode JSON with automatic seq renumbering.
+
+```bash
+python XILU006_splice_parsed.py --episode S02E03 --insert-after 322 \
+    --from-parsed parsed/parsed_the413_S02E02.json --from-seq-range 232-233 \
+    --section post-interview --dry-run
+python XILU006_splice_parsed.py --episode S02E03 --delete-seq-range 100-105 --dry-run
+python XILU006_splice_parsed.py --episode S02E03 --insert-after 322 \
+    --from-json new_entries.json
+```
+
+- `--episode` (required) derives target parsed JSON path
+- `--show` overrides the show name used for slug derivation (see Project Configuration)
+- `--parsed PATH` overrides target parsed JSON path
+- `--insert-after N` — seq number to insert after
+- `--from-parsed PATH` + `--from-seq-range N-M` — extract entries from another parsed JSON by seq range
+- `--from-json PATH` — read entries from a standalone JSON array file
+- `--section` / `--scene` — override section/scene on inserted entries (default: inherit from insertion point)
+- `--delete-seq-range N-M` — remove entries in range and renumber (can combine with insertion: delete first, then insert)
+- `--dry-run` — show plan without writing files
+- `--no-backup` — skip writing backup file
+- `--quiet` — summary only, no per-entry detail
+- Before modifying, writes `parsed/pre_splice_parsed_<slug>_<TAG>.json` as a backup (compatible with `XILP007 --orig-prefix pre_splice_`)
+- Preamble entries (seq <= 0) are never renumbered or deleted
+- Recomputes the `stats` block after modification
+- No ElevenLabs API key required — no API calls made
+
 ## Developer/Maintainer Rules
 
 Automated testing via Python and Bash serves as the fundamental mechanism for the Verification Loop. The project mandates that Claude must mention how it will verify its work before it begins any task.
@@ -491,11 +546,13 @@ This keeps the `__main__` block to a single line, makes the entry point testable
 ## Running Tests
 
 ```bash
-python -m pytest tests/ -v
+pip install -e ".[all,dev]"
+pytest tests/ -v
 ```
 
 ## Key Directories
 
+- `src/xil_pipeline/` — Python package (all pipeline and utility scripts, shared modules)
 - `tests/` — Automated test suite (pytest)
 - `scripts/` — Source markdown production scripts (authored manually)
 - `parsed/` — Parser JSON output (generated, cacheable)

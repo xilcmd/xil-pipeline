@@ -190,9 +190,9 @@ class TestCodeRootPath:
         script = Path(__file__).parent.parent / "docs" / "build_docs_Gemini-project.py"
         expected_code_root = script.parent.parent  # gemini-project/
         assert expected_code_root.exists()
-        # And it should contain our known source files
-        assert (expected_code_root / "XILP001_script_parser.py").exists()
-        assert (expected_code_root / "XILP002_producer.py").exists()
+        # And it should contain our known source files (now in src/xil_pipeline/)
+        assert (expected_code_root / "src" / "xil_pipeline" / "XILP001_script_parser.py").exists()
+        assert (expected_code_root / "src" / "xil_pipeline" / "XILP002_producer.py").exists()
 
     def test_rejects_file_in_docs_subdir(self, tmp_path):
         # docs/ is the output dir — scanning it causes docs/docs/ duplication

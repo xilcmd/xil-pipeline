@@ -21,9 +21,8 @@ import re
 import shutil
 from dataclasses import dataclass
 
-from sfx_common import run_banner
-from models import resolve_slug, derive_paths
-
+from xil_pipeline.models import derive_paths, resolve_slug
+from xil_pipeline.sfx_common import run_banner
 
 # ── Status codes ──────────────────────────────────────────────────────────────
 COPY = "COPY"       # unchanged — will be copied to new filename
@@ -270,7 +269,7 @@ def print_summary(counts: dict[str, int], dry_run: bool) -> None:
     print(f"  NEW     : {counts.get(NEW, 0):4d}  (no old match → must generate)")
     print(f"  MISSING : {counts.get(MISSING, 0):4d}  (old match but file absent → generate)")
     print(f"  SKIP    : {counts.get(SKIP, 0):4d}  (non-stem entries, no action)")
-    print(f"  ─────────────────────────────────────")
+    print("  ─────────────────────────────────────")
     print(f"  Need generation : {need_gen}")
     print()
     if dry_run:

@@ -4,7 +4,6 @@ import csv
 import io
 import json
 import os
-import sys
 import textwrap
 from pathlib import Path
 
@@ -123,8 +122,7 @@ def read_annotated(out_path: str) -> list[dict]:
 # Import the module under test
 # ---------------------------------------------------------------------------
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from XILU003_csv_sfx_join import (
+from xil_pipeline.XILU003_csv_sfx_join import (
     annotate_csv,
     derive_paths,
     join_cast,
@@ -191,7 +189,7 @@ class TestJoinSfx:
         assert result["sfx_type"] == "sfx"
 
     def test_slug_column(self):
-        from sfx_common import slugify_effect_key
+        from xil_pipeline.sfx_common import slugify_effect_key
         row = {"type": "direction", "text": "AMBIENCE: RADIO BOOTH"}
         result = join_sfx(row, self._effects(), 0.3)
         assert result["sfx_slug"] == slugify_effect_key("AMBIENCE: RADIO BOOTH")
