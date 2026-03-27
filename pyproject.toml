@@ -52,6 +52,7 @@ docs = [
 ]
 
 [project.scripts]
+xil            = "xil_pipeline.xil:main"
 xil-scan       = "xil_pipeline.XILP000_script_scanner:main"
 xil-parse      = "xil_pipeline.XILP001_script_parser:main"
 xil-produce    = "xil_pipeline.XILP002_producer:main"

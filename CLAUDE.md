@@ -11,8 +11,9 @@ Automated podcast/audio production pipeline using ElevenLabs TTS API. The projec
 The project is packaged as `xil-pipeline` (import name `xil_pipeline`) using hatchling. All pipeline and utility scripts live under `src/xil_pipeline/`:
 
 ```
-src/xil_pipeline/          # Python package (23 modules)
+src/xil_pipeline/          # Python package (24 modules)
   __init__.py              # version + key re-exports
+  xil.py                   # Unified `xil` command dispatcher
   models.py                # Pydantic data models, slug/path resolution
   mix_common.py            # Shared mixing utilities
   sfx_common.py            # SFX library management, ID3 tagging
@@ -337,7 +338,7 @@ Always use `--dry-run` before running voice generation on a new script to verify
 
 ## File Naming Convention
 
-All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console entry points via `pyproject.toml`. Scripts use prefix `XIL` (ElevenLabs, avoiding numeric prefixes). The suffix pattern is:
+All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console entry points plus a unified `xil` command via `pyproject.toml` (example: `xil parse ...` routes to `xil-parse`). Scripts use prefix `XIL` (ElevenLabs, avoiding numeric prefixes). The suffix pattern is:
 - `XILP000_*` — pre-flight script scanner (no API, no side effects)
 - `XILU001_*` — voice discovery (browse ElevenLabs voices; `--update-cast` back-fills role/language_code into a cast JSON)
 - `XILU002_*` — standalone SFX stem generation
@@ -360,6 +361,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency
 - `models.py` — Pydantic data models plus `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "sample"` fallback
+- `xil.py` — unified dispatcher that maps subcommands (`scan`, `parse`, `produce`, etc.) to existing module `main()` entry points; prints command list on `xil --help`; `xil-*` commands remain supported
 - `xil_init.py` — project scaffolding; `scaffold()` creates workspace with `project.json`, `speakers.json`, sample script, and empty subdirectories
 
 ## Cast Configuration
