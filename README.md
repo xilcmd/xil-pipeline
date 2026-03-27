@@ -70,7 +70,7 @@ xil-master --episode S01E01
 ## Configuration
 
 - **`project.json`** -- show name (derives all file paths via slug)
-- **`speakers.json`** -- speaker names the parser recognizes (optional, built-in defaults for THE 413)
+- **`speakers.json`** -- speaker names the parser recognizes (optional, built-in defaults for sample)
 - **`cast_<slug>_<TAG>.json`** -- voice assignments, speaker settings
 - **`sfx_<slug>_<TAG>.json`** -- sound effect mappings and API parameters
 

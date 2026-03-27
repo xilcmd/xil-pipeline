@@ -27,7 +27,7 @@ def show_slug(show_name: str) -> str:
     Lowercases the string and strips all non-alphanumeric characters.
 
     Args:
-        show_name: Human-readable show title (e.g., ``"THE 413"``).
+        show_name: Human-readable show title (e.g., ``"nightowls"``).
 
     Returns:
         Compact slug like ``"the413"`` or ``"nightowls"``.
@@ -65,7 +65,7 @@ def resolve_slug(show_arg: str | None = None, project_path: str = "project.json"
     Resolution order:
     1. Explicit *show_arg* (passed through :func:`show_slug`).
     2. ``project.json`` ``"show"`` field (if the file exists).
-    3. :data:`DEFAULT_SLUG` (``"the413"``).
+    3. :data:`DEFAULT_SLUG` (``"sample"``).
 
     Args:
         show_arg: Value of ``--show`` CLI flag, or ``None``.
@@ -163,7 +163,7 @@ class ParsedScript(BaseModel):
     ``load_production()`` in XILP002.
 
     Attributes:
-        show: Show title (e.g., ``"THE 413"``).
+        show: Show title (e.g., ``"nightowls"``).
         season: Season number, or ``None`` if not declared in the script header.
         episode: Episode number.
         title: Episode title.
@@ -289,7 +289,7 @@ class CastConfiguration(BaseModel):
     to map speaker keys to voice and audio settings.
 
     Attributes:
-        show: Show title (e.g., ``"THE 413"``).
+        show: Show title (e.g., ``"nightowls"``).
         season: Season number, or ``None`` if not set in the cast file.
         episode: Episode number.
         title: Episode title (optional, not used during production).
@@ -439,7 +439,7 @@ class SfxConfiguration(BaseModel):
     direction entry text to ElevenLabs Sound Effects API parameters.
 
     Attributes:
-        show: Show title (e.g., ``"THE 413"``).
+        show: Show title (e.g., ``"nightowls"``).
         season: Season number, or ``None`` if not declared.
         episode: Episode number.
         defaults: Shared default settings (e.g., ``prompt_influence``).

@@ -1,6 +1,6 @@
 # XILP Pipeline Diagrams
 
-Documentation of the nine-stage automated podcast production pipeline for **THE 413**, including the cues sheet ingester pre-processing step, stem migration punch-in workflow, and stale stem cleanup.
+Documentation of the nine-stage automated podcast production pipeline, including the cues sheet ingester pre-processing step, stem migration punch-in workflow, and stale stem cleanup.
 
 ---
 
@@ -123,7 +123,7 @@ flowchart TD
     Show stem counts + paths
     No files written`"]
     MACRO["`--macro → Audacity macro
-    THE413_S01E01.txt
+    SAMPLE_S01E01.txt
     (WAV import only)`"]
     TL5["`--timeline
     ASCII timeline to stdout`"]
@@ -563,7 +563,7 @@ flowchart TD
     TAG5 --> SCRIPT5["`S01E01_open_in_audacity.py
     Manual import instructions
     (WAVs + optional labels)`"]
-    TAG5 --> MACRO5["`--macro → THE413_S01E01.txt
+    TAG5 --> MACRO5["`--macro → SAMPLE_S01E01.txt
     Audacity macro (WAVs only)
     written to %APPDATA%/audacity/Macros/`"]
 
@@ -589,7 +589,7 @@ flowchart TD
 > **Label tracks:** Audacity-format label files (tab-separated start/end/text) are generated alongside
 > each WAV layer. Import labels separately via `File > Import > Labels...` in Audacity.
 
-> **Audacity macro:** `--macro` writes a one-click macro (`THE413_<TAG>.txt`) to the Audacity Macros
+> **Audacity macro:** `--macro` writes a one-click macro (`<SLUG>_<TAG>.txt`) to the Audacity Macros
 > directory. The macro imports the four WAV files only (labels are imported manually). Access via
 > `Tools > Macros` in Audacity.
 

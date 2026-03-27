@@ -168,28 +168,36 @@ def generate_audacity_macro(
                  f'X-Artist="{artist}" X-Title="{title}" X-Year="{year}"')
 
     from xil_pipeline.models import show_slug as _show_slug
-    macro_slug = _show_slug(show).upper() if show else "THE413"
+    from xil_pipeline.models import DEFAULT_SLUG
+    macro_slug = _show_slug(show).upper() if show else DEFAULT_SLUG.upper()
     macro_path = os.path.join(macros_dir, f"{macro_slug}_{tag}.txt")
     with open(macro_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     return macro_path
 
 
-def _make_audacity_script(tag: str, layer_files: list[tuple[str, str]], save_aup3: bool = False) -> str:
+def _make_audacity_script(
+    tag: str,
+    layer_files: list[tuple[str, str]],
+    save_aup3: bool = False,
+    show: str | None = None,
+) -> str:
     """Generate the content of the Audacity import helper script.
 
     Args:
         tag: Episode tag (e.g. ``"S01E01"``).
         layer_files: List of ``(track_name, relative_filename)`` pairs.
         save_aup3: When True, include a SaveProject2 command after imports.
+        show: Human-readable show title for display in the generated script.
 
     Returns:
         Python source code for the helper script as a string.
     """
+    show_label = show if show else "Episode"
     layers_repr = repr(layer_files)
     script = textwrap.dedent(f"""\
         #!/usr/bin/env python3
-        \"\"\"Open THE 413 {tag} DAW layers in Audacity.
+        \"\"\"Open {show_label} {tag} DAW layers in Audacity.
 
         Run this script while Audacity is open.  If mod-script-pipe is
         enabled the four layer WAVs are imported automatically.  Otherwise
@@ -269,7 +277,7 @@ def _make_audacity_script(tag: str, layer_files: list[tuple[str, str]], save_aup
             wavs = [(n, f) for n, f in layers if f.endswith(".wav")]
             labels = [(n, f) for n, f in layers if f.endswith(".txt")]
             print()
-            print(f"THE 413 {tag} — Audacity Layer Import")
+            print(f"{show_label} {tag} — Audacity Layer Import")
             print("=" * 45)
             print()
             print(f"Import these {{len(wavs)}} WAV files into Audacity:")
@@ -463,7 +471,7 @@ def export_daw_layers(
     script_fname = f"{tag}_open_in_audacity.py"
     script_path = os.path.join(output_dir, script_fname)
     with open(script_path, "w", encoding="utf-8") as f:
-        f.write(_make_audacity_script(tag, layer_files, save_aup3=save_aup3))
+        f.write(_make_audacity_script(tag, layer_files, save_aup3=save_aup3, show=show))
     os.chmod(script_path, 0o755)
     print(f"    Written: {output_dir}/{script_fname}")
 
