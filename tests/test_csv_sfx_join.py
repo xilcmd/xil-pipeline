@@ -346,10 +346,10 @@ def tmp_path_for_extra(tmp_files, extra_rows):
 class TestDerivePaths:
     def test_episode_path_derivation(self):
         csv_p, sfx_p, cast_p, out_p = derive_paths("S02E03")
-        assert csv_p == "parsed/parsed_the413_S02E03.csv"
-        assert sfx_p == "sfx_the413_S02E03.json"
-        assert cast_p == "cast_the413_S02E03.json"
-        assert out_p == "parsed/parsed_the413_S02E03_annotated.csv"
+        assert csv_p == "parsed/parsed_sample_S02E03.csv"
+        assert sfx_p == "sfx_sample_S02E03.json"
+        assert cast_p == "cast_sample_S02E03.json"
+        assert out_p == "parsed/parsed_sample_S02E03_annotated.csv"
 
     def test_s01e01_derivation(self):
         csv_p, sfx_p, cast_p, out_p = derive_paths("S01E01")

@@ -28,7 +28,7 @@ xil-parse scripts/sample_S01E01.md --episode S01E01
 # Preview TTS character cost (no API calls)
 xil-produce --episode S01E01 --dry-run
 
-# Generate voice and SFX stems (requires ELEVENLABS_API_KEY)
+# Generate voice and SFX stems (requires ELEVENLABS_API_KEY — see Environment below)
 xil-produce --episode S01E01
 
 # Export DAW layers for mixing in Audacity
@@ -79,8 +79,36 @@ All scripts accept `--show` to override the show name. Resolution order: `--show
 ## Environment
 
 - Python 3.12+
-- ElevenLabs API key via `ELEVENLABS_API_KEY` environment variable
 - `ffmpeg` required for audio processing (pydub dependency)
+
+### ElevenLabs API Key
+
+Several pipeline commands call the ElevenLabs API and require an API key:
+
+| Commands | Requires key |
+|----------|--------------|
+| `xil-produce`, `xil-sfx`, `xil-studio`, `xil-sample`, `xil-cues --generate` | Yes |
+| All other commands (`xil-scan`, `xil-parse`, `xil-daw`, `xil-master`, etc.) | No |
+
+**Obtain a key:** <https://elevenlabs.io> → Profile → API Keys
+
+**Set for the current shell session:**
+```bash
+export ELEVENLABS_API_KEY=your_key_here
+```
+
+**Persist it** (add to `~/.bashrc` or `~/.zshrc`):
+```bash
+echo 'export ELEVENLABS_API_KEY=your_key_here' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Verify it is set:**
+```bash
+echo $ELEVENLABS_API_KEY
+```
+
+Always use `--dry-run` first to preview character cost before making API calls.
 
 ## Development
 
