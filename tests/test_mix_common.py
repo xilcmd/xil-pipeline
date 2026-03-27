@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for mix_common.py — stem plans, clip effects, and layer builders."""
 
 import math

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """XILU003 — CSV + SFX/Cast JSON annotation utility.
 
 Reads a parsed episode CSV, joins it with the SFX JSON (keyed on direction

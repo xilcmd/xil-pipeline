@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Assemble voice stems into the final master audio file.
 
 Reads cast configuration for per-speaker audio settings (pan, filter),

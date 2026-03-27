@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Parse markdown production scripts into structured JSON.
 
 Converts podcast scripts from markdown format into

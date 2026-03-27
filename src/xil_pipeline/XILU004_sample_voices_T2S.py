@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Audition cast voices by generating a short sample MP3 per voice.
 
 Reads a cast configuration file and calls the ElevenLabs TTS API to produce

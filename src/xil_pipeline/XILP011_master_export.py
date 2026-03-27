@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """XILP011 — Final Master MP3 Export.
 
 Overlays the four DAW layer WAV files produced by XILP005 into a single

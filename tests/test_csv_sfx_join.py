@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for XILU003_csv_sfx_join.py — CSV + SFX/Cast join utility."""
 
 import csv

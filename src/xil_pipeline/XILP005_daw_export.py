@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Export episode audio as separate DAW layer WAV files.
 
 Reads the parsed script JSON and episode stems to build four isolated,

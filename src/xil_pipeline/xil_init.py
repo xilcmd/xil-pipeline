@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Scaffold a new xil-pipeline project workspace.
 
 Creates the directory structure, project.json, speakers.json, and a

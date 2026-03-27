@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Pre-flight scanner for production scripts.
 
 Reads a raw markdown script, applies the same two-pass normalization that

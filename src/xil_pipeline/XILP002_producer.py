@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Generate individual voice stems via the ElevenLabs TTS API.
 
 Reads parsed script JSON and cast configuration to produce one MP3 stem

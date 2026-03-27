@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Shared multi-track mixing utilities for the audio pipeline.
 
 Provides timeline construction and per-layer audio building used by

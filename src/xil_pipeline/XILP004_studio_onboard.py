@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Onboard an episode to an ElevenLabs Studio project.
 
 Reads a parsed script JSON and cast configuration, then builds the

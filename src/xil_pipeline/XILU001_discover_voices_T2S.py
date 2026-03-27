@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Discover and inspect ElevenLabs voices available in this workspace.
 
 Lists all voices returned by the API with enriched metadata drawn from

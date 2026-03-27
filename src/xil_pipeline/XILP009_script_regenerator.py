@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """XILP009 — Reverse Script Generator.
 
 Reconstructs a readable markdown production script from a parsed JSON,

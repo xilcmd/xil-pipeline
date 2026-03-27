@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """XILP010 — ElevenLabs Studio Export Importer.
 
 Extracts dialogue and direction stems from an ElevenLabs Studio export ZIP

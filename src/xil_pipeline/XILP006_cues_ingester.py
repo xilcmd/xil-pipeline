@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """XILP006_cues_ingester.py — Cues Sheet Ingester
 
 Parses a sound cues & music prompts markdown file into a structured asset
