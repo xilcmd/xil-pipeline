@@ -13,22 +13,42 @@ import sys
 
 from xil_pipeline.models import derive_paths, resolve_slug
 from xil_pipeline.sfx_common import run_banner
-from xil_pipeline.XILP001_script_parser import SECTION_MAP, SPEAKER_KEYS
+from xil_pipeline.XILP001_script_parser import SECTION_MAP, SPEAKER_KEYS, load_speakers
 
 SCRIPT_NAME = os.path.basename(__file__)
 
-# Reverse mappings — prefer canonical display forms
-# For sections with multiple aliases (e.g. "ACT 1" and "ACT ONE"), prefer the
-# word form by picking the longest key for each slug.
-_SECTION_SLUG_TO_DISPLAY: dict[str, str] = {}
-for display, slug in sorted(SECTION_MAP.items(), key=lambda kv: len(kv[0])):
-    _SECTION_SLUG_TO_DISPLAY[slug] = display
 
-# For speakers, prefer the canonical short form (first entry per key value).
-_SPEAKER_KEY_TO_DISPLAY: dict[str, str] = {}
-for display, key in SPEAKER_KEYS.items():
-    if key not in _SPEAKER_KEY_TO_DISPLAY:
-        _SPEAKER_KEY_TO_DISPLAY[key] = display
+def _build_reverse_mappings(
+    speaker_keys: dict[str, str] | None = None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Build reverse lookup dicts for section slugs and speaker keys.
+
+    Args:
+        speaker_keys: Mapping from display names to normalized keys.
+            Defaults to the module-level ``SPEAKER_KEYS`` from XILP001.
+
+    Returns:
+        A tuple of ``(section_slug_to_display, speaker_key_to_display)``.
+    """
+    if speaker_keys is None:
+        speaker_keys = SPEAKER_KEYS
+
+    # For sections with multiple aliases, prefer the longest key for each slug
+    section_slug_to_display: dict[str, str] = {}
+    for display, slug in sorted(SECTION_MAP.items(), key=lambda kv: len(kv[0])):
+        section_slug_to_display[slug] = display
+
+    # For speakers, prefer the canonical short form (first entry per key value)
+    speaker_key_to_display: dict[str, str] = {}
+    for display, key in speaker_keys.items():
+        if key not in speaker_key_to_display:
+            speaker_key_to_display[key] = display
+
+    return section_slug_to_display, speaker_key_to_display
+
+
+# Module-level defaults (built at import time from built-in speakers)
+_SECTION_SLUG_TO_DISPLAY, _SPEAKER_KEY_TO_DISPLAY = _build_reverse_mappings()
 
 
 def section_display_name(slug: str) -> str:
@@ -51,7 +71,7 @@ def regenerate_script(parsed: dict, cast: dict | None = None) -> str:
     Returns:
         The reconstructed markdown script as a string.
     """
-    show = parsed.get("show", "THE 413")
+    show = parsed.get("show", "Unknown Show")
     season = parsed.get("season")
     episode = parsed.get("episode", 1)
     title = parsed.get("title", "")
@@ -142,11 +162,18 @@ def main():
                         help="Show name override (default: from project.json)")
     parser.add_argument("--output", default=None,
                         help="Output markdown path (default: scripts/revised_<slug>_{TAG}.md)")
+    parser.add_argument("--speakers", default=None,
+                        help="Path to speakers.json (default: auto-detect from CWD, then built-in)")
 
     args = parser.parse_args()
     tag = args.episode
 
     with run_banner(SCRIPT_NAME):
+        # Load speakers and rebuild reverse mappings
+        _loaded_speakers, loaded_keys = load_speakers(args.speakers)
+        global _SECTION_SLUG_TO_DISPLAY, _SPEAKER_KEY_TO_DISPLAY
+        _SECTION_SLUG_TO_DISPLAY, _SPEAKER_KEY_TO_DISPLAY = _build_reverse_mappings(loaded_keys)
+
         slug = resolve_slug(args.show)
         p = derive_paths(slug, tag)
         parsed_path = args.parsed or p["parsed"]

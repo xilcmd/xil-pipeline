@@ -219,7 +219,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    RAW["`KNOWN_SPEAKERS list
+    RAW["`speakers.json / built-in list
     Ordered longest-first
     Compound names before simple`"]
     RAW --> MATCH{"`startswith match
@@ -267,8 +267,7 @@ sequenceDiagram
         M->>SFX: look up effects["INTRO MUSIC"].source
         SFX-->>M: "SFX/The Porch Light.mp3"
         M->>FS: copy source → n001_preamble_sfx.mp3
-        note over FS: play_duration % applied at copy time
-Stem file reflects actual playback length
+        note over FS: play_duration % applied at copy time<br>Stem file reflects actual playback length
     end
 
     M->>QG: get_best_model_for_budget
@@ -295,9 +294,7 @@ Stem file reflects actual playback length
 
     alt preamble block in cast config
         M->>PJ: inject_preamble_entries()
-        note over PJ: Strip any seq ≤ 0 entries
-Prepend seq −2 (dialogue)
-and seq −1 (INTRO MUSIC)
+        note over PJ: Strip any seq ≤ 0 entries<br>Prepend seq −2 (dialogue)<br>and seq −1 (INTRO MUSIC)
         PJ-->>M: parsed JSON updated in-place (idempotent)
     end
 

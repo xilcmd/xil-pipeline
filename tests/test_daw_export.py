@@ -222,6 +222,7 @@ class TestDawExportMain:
     def test_main_dry_run(self, cast_file, parsed_file, stems_dir, tmp_path, capsys):
         cast_path = cast_file
         parsed_path = parsed_file
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         try:
@@ -239,6 +240,7 @@ class TestDawExportMain:
         assert "Dry Run" in out or "dry" in out.lower()
 
     def test_main_exits_gracefully_no_parsed(self, cast_file, tmp_path, capsys):
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         try:
@@ -318,7 +320,7 @@ class TestGenerateAudacityMacro:
             unittest.mock.patch.object(daw, "_find_audacity_macros_dir", return_value=macros_dir),
             unittest.mock.patch.object(daw, "_to_windows_path", side_effect=lambda p: p.replace("/", "\\")),
         ):
-            macro_path = daw.generate_audacity_macro(output_dir, tag, layer_files)
+            macro_path = daw.generate_audacity_macro(output_dir, tag, layer_files, show="THE 413")
         return macro_path, macros_dir, output_dir
 
     def test_returns_macro_path(self, tmp_path):
@@ -360,7 +362,7 @@ class TestGenerateAudacityMacro:
             unittest.mock.patch.object(daw, "_find_audacity_macros_dir", return_value=macros_dir),
             unittest.mock.patch.object(daw, "_to_windows_path", side_effect=lambda p: p.replace("/", "\\")),
         ):
-            daw.export_daw_layers(config, stems_dir, parsed_file, output_dir, "S01E01", macro=True)
+            daw.export_daw_layers(config, stems_dir, parsed_file, output_dir, "S01E01", macro=True, show="THE 413")
         macro_path = os.path.join(macros_dir, "THE413_S01E01.txt")
         assert os.path.exists(macro_path)
         content = open(macro_path).read()

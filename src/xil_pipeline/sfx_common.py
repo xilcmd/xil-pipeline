@@ -100,7 +100,7 @@ def shared_sfx_path(sfx_dir: str, effect_key: str) -> str:
 
 def tag_mp3(
     path: str,
-    show: str = "THE 413",
+    show: str = "Sample Show",
     title: str | None = None,
     artist: str | None = None,
     lyrics: str | None = None,
@@ -112,7 +112,7 @@ def tag_mp3(
 
     Args:
         path: Path to the MP3 file.
-        show: Album name (default ``"THE 413"``).
+        show: Album name (default ``"Sample Show"``).
         title: Optional TIT2 title tag (e.g. the effect key or dialogue
             song label).
         artist: Optional TPE1 artist tag (e.g. the speaker's full name).
@@ -138,7 +138,7 @@ def tag_mp3(
 
 def tag_wav(
     path: str,
-    show: str = "THE 413",
+    show: str = "Sample Show",
     title: str | None = None,
     artist: str | None = None,
 ) -> None:
@@ -148,7 +148,7 @@ def tag_wav(
 
     Args:
         path: Path to the WAV file.
-        show: Album name (default ``"THE 413"``).
+        show: Album name (default ``"Sample Show"``).
         title: Optional TIT2 title tag (e.g. the layer name).
         artist: Optional TPE1 artist tag.
     """
@@ -171,7 +171,7 @@ def ensure_shared_sfx(
     sfx_dir: str,
     defaults: dict,
     client=None,
-    show: str = "THE 413",
+    show: str = "Sample Show",
 ) -> str:
     """Ensure the shared SFX asset exists, generating if needed.
 

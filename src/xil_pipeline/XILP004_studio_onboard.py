@@ -305,7 +305,7 @@ def main():
         if narrator_voice is None:
             narrator_voice = next(iter(cast["cast"].values()))["voice_id"]
 
-        show = parsed.get("show", "THE 413")
+        show = parsed.get("show", "Unknown Show")
         title = parsed.get("title", args.episode)
         project_name = f"XILP004 - {show} — {title} ({args.episode})"
 

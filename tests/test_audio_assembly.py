@@ -401,6 +401,7 @@ class TestAssembleAudioFromCastFile:
         cast_episode = tmp_path / "cast_the413_S01E01.json"
         import shutil
         shutil.copy2(sample_cast, str(cast_episode))
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         episode_stems = tmp_path / "stems" / "S01E01"
         episode_stems.mkdir(parents=True)
         original_dir = assembly.STEMS_DIR
@@ -421,6 +422,7 @@ class TestAssembleAudioFromCastFile:
         import shutil
         cast_episode = tmp_path / "cast_the413_S01E01.json"
         shutil.copy2(sample_cast, str(cast_episode))
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
 
         parsed_dir = tmp_path / "parsed"
         parsed_dir.mkdir()

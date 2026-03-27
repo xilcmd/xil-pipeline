@@ -147,7 +147,7 @@ def main() -> None:
             episode_title = cast_cfg.title
             artist = cast_cfg.artist
 
-        show_name = show_name or "THE 413"
+        show_name = show_name or "Sample Show"
         today = datetime.date.today().isoformat()
 
         # Derive output path

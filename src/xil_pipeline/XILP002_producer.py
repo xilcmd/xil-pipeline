@@ -293,7 +293,7 @@ def dry_run(
 def generate_voices(
     config: dict[str, dict], dialogue_entries: list[dict],
     stems_dir: str, start_from: int = 1, stop_at: int | None = None,
-    show: str = "THE 413",
+    show: str = "Sample Show",
 ) -> None:
     """Generate individual voice stem MP3s via the ElevenLabs TTS API.
 

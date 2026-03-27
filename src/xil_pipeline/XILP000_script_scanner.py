@@ -26,6 +26,7 @@ from xil_pipeline.XILP001_script_parser import (
     is_scene_header,
     is_section_header,
     is_stage_direction,
+    load_speakers,
     parse_script_header,
     strip_markdown_escapes,
     strip_markdown_formatting,
@@ -80,8 +81,19 @@ def load_and_normalize(path: str) -> list[str]:
 # Scanner
 # ---------------------------------------------------------------------------
 
-def scan_script(lines: list[str]) -> dict:
+def scan_script(
+    lines: list[str],
+    known_speakers: list[str] | None = None,
+    speaker_keys: dict[str, str] | None = None,
+) -> dict:
     """Scan normalized *lines* and classify every ALL-CAPS candidate.
+
+    Args:
+        lines: Normalized script lines.
+        known_speakers: Ordered list of speaker display names (longest-first).
+            Defaults to the module-level speakers from XILP001.
+        speaker_keys: Mapping from display names to normalized keys.
+            Defaults to the module-level speakers from XILP001.
 
     Returns a dict::
 
@@ -119,7 +131,7 @@ def scan_script(lines: list[str]) -> dict:
             continue
 
         # Try speaker match
-        match = try_match_speaker(line)
+        match = try_match_speaker(line, known_speakers, speaker_keys)
         if match:
             speaker_key, _direction, _spoken = match
             display = line.split("(")[0].strip()  # display name without direction
@@ -197,7 +209,7 @@ def format_report(scan: dict, header: dict) -> str:
         lines.append("")
         lines.append(
             f"⚠️  {n_unknown} unrecognized candidate(s). "
-            "Add to KNOWN_SPEAKERS / SECTION_MAP in XILP001 before parsing."
+            "Add to speakers.json or SECTION_MAP before parsing."
         )
     else:
         lines.append("UNRECOGNIZED CANDIDATES")
@@ -222,11 +234,16 @@ def main():
             "--json", action="store_true",
             help="Output machine-readable JSON instead of the human report"
         )
+        parser.add_argument("--speakers", default=None,
+                            help="Path to speakers.json (default: auto-detect from CWD, then built-in)")
         args = parser.parse_args()
 
         if not os.path.exists(args.path):
             print(f"[ERROR] File not found: {args.path}")
             sys.exit(1)
+
+        # Load speakers
+        known_speakers, speaker_keys = load_speakers(args.speakers)
 
         lines = load_and_normalize(args.path)
 
@@ -240,7 +257,7 @@ def main():
                     header = {"show": show, "season": season, "episode": episode, "title": title}
                 break
 
-        scan = scan_script(lines)
+        scan = scan_script(lines, known_speakers, speaker_keys)
 
         if args.json:
             print(json.dumps(scan, indent=2))

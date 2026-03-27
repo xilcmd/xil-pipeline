@@ -27,8 +27,8 @@ from xil_pipeline.models import (
 )
 from xil_pipeline.sfx_common import run_banner
 
-# Known speakers — ordered longest-first so compound names match before short ones
-KNOWN_SPEAKERS = [
+# Built-in speaker definitions for THE 413 — used as fallback when no speakers.json exists
+_BUILTIN_KNOWN_SPEAKERS = [
     "FILM AUDIO (MARGARET'S VOICE)",
     "STRANGER (MALE VOICE, FLAT)",
     "MARGARET (V.O.)",
@@ -52,8 +52,7 @@ KNOWN_SPEAKERS = [
     "TINA",
 ]
 
-# Map display names to normalized keys for cast_config lookup
-SPEAKER_KEYS = {
+_BUILTIN_SPEAKER_KEYS = {
     "FILM AUDIO (MARGARET'S VOICE)": "film_audio",
     "STRANGER (MALE VOICE, FLAT)": "stranger",
     "MR. PATTERSON": "mr_patterson",
@@ -76,6 +75,65 @@ SPEAKER_KEYS = {
     "FRANK": "frank",
     "TINA": "tina",
 }
+
+# Module-level aliases — set to built-in defaults, updated by load_speakers()
+KNOWN_SPEAKERS = list(_BUILTIN_KNOWN_SPEAKERS)
+SPEAKER_KEYS = dict(_BUILTIN_SPEAKER_KEYS)
+
+
+def load_speakers(
+    path: str | None = None,
+) -> tuple[list[str], dict[str, str]]:
+    """Load speaker definitions from a JSON file or fall back to built-in defaults.
+
+    Resolution order:
+
+    1. Explicit *path* (from ``--speakers`` CLI flag)
+    2. ``speakers.json`` in the current working directory
+    3. Built-in ``_BUILTIN_KNOWN_SPEAKERS`` / ``_BUILTIN_SPEAKER_KEYS``
+
+    The JSON file is an array of objects with ``display`` and ``key`` fields::
+
+        [
+            {"display": "ADAM", "key": "adam"},
+            {"display": "MR. PATTERSON", "key": "mr_patterson"}
+        ]
+
+    The returned list is automatically sorted longest-first so compound names
+    match before short ones.
+
+    Args:
+        path: Explicit path to a speakers JSON file.  ``None`` triggers
+            auto-detection.
+
+    Returns:
+        A tuple of ``(known_speakers_list, speaker_keys_dict)``.
+    """
+    # Determine which file to load
+    speakers_file = path
+    if speakers_file is None:
+        cwd_file = os.path.join(os.getcwd(), "speakers.json")
+        if os.path.exists(cwd_file):
+            speakers_file = cwd_file
+
+    if speakers_file is None:
+        return list(_BUILTIN_KNOWN_SPEAKERS), dict(_BUILTIN_SPEAKER_KEYS)
+
+    with open(speakers_file, encoding="utf-8") as f:
+        data = json.load(f)
+
+    known: list[str] = []
+    keys: dict[str, str] = {}
+    for entry in data:
+        display = entry["display"]
+        key = entry["key"]
+        known.append(display)
+        keys[display] = key
+
+    # Sort longest-first for correct compound-name matching
+    known.sort(key=len, reverse=True)
+
+    return known, keys
 
 # Section detection
 SECTION_MAP = {
@@ -169,17 +227,30 @@ def classify_direction(text: str) -> str | None:
     return None
 
 
-def try_match_speaker(line: str) -> tuple[str, str | None, str] | None:
+def try_match_speaker(
+    line: str,
+    known_speakers: list[str] | None = None,
+    speaker_keys: dict[str, str] | None = None,
+) -> tuple[str, str | None, str] | None:
     """Match a known speaker name at the start of a line.
 
     Args:
         line: A stripped line from the script.
+        known_speakers: Ordered list of speaker display names (longest-first).
+            Defaults to the module-level ``KNOWN_SPEAKERS``.
+        speaker_keys: Mapping from display names to normalized keys.
+            Defaults to the module-level ``SPEAKER_KEYS``.
 
     Returns:
         A tuple of ``(speaker_key, direction, spoken_text)`` if a known
         speaker is found, or ``None`` if no speaker matches.
     """
-    for speaker in KNOWN_SPEAKERS:
+    if known_speakers is None:
+        known_speakers = KNOWN_SPEAKERS
+    if speaker_keys is None:
+        speaker_keys = SPEAKER_KEYS
+
+    for speaker in known_speakers:
         if not line.startswith(speaker):
             continue
         rest = line[len(speaker):]
@@ -197,7 +268,7 @@ def try_match_speaker(line: str) -> tuple[str, str | None, str] | None:
                 rest = rest[paren_end + 1:].strip()
 
         spoken_text = rest
-        return SPEAKER_KEYS[speaker], direction, spoken_text
+        return speaker_keys[speaker], direction, spoken_text
 
     return None
 
@@ -329,7 +400,7 @@ def write_debug_csv(
             ])
 
 
-def parse_script_header(line: str) -> tuple[str, int | None, int, str]:
+def parse_script_header(line: str) -> tuple[str, int | None, int, str] | None:
     """Extract show, season, episode, and title from the script header line.
 
     Parses the first line of a production script, which follows the format::
@@ -347,19 +418,23 @@ def parse_script_header(line: str) -> tuple[str, int | None, int, str]:
 
     Returns:
         A tuple of ``(show, season, episode, title)`` where ``season``
-        is ``None`` if not declared in the header.
+        is ``None`` if not declared in the header, or ``None`` if the
+        line does not match the expected header format.
     """
+    # Must contain "Episode N" to be a valid header
+    ep_match = re.search(r"Episode\s+(\d+)", line)
+    if not ep_match:
+        return None
+
     # Show: text before the first Season or Episode keyword
     show_match = re.match(r"^(.+?)\s+(?:Season\s+\d+|Episode\s+\d+)", line)
-    show = show_match.group(1).strip() if show_match else "THE 413"
+    show = show_match.group(1).strip() if show_match else "Unknown Show"
 
     # Season: optional
     season_match = re.search(r"Season\s+(\d+)", line)
     season = int(season_match.group(1)) if season_match else None
 
-    # Episode
-    ep_match = re.search(r"Episode\s+(\d+)", line)
-    episode = int(ep_match.group(1)) if ep_match else 1
+    episode = int(ep_match.group(1))
 
     # Title: first double-quoted string after "Episode N:", or bare text
     ep_rest = re.search(r"Episode\s+\d+[:\s]+(.*)", line)
@@ -376,12 +451,16 @@ def parse_script_header(line: str) -> tuple[str, int | None, int, str]:
     return show, season, episode, title
 
 
-def parse_script(filepath: str, debug_output: str | None = None) -> dict:
+def parse_script(
+    filepath: str,
+    debug_output: str | None = None,
+    speakers_path: str | None = None,
+) -> dict:
     """Parse a markdown production script into structured entries.
 
-    Reads a markdown file following THE 413 script format, extracts
-    dialogue lines, stage directions, section headers, and scene headers
-    into a sequence-numbered list of entries.
+    Reads a markdown file and extracts dialogue lines, stage directions,
+    section headers, and scene headers into a sequence-numbered list of
+    entries.
 
     Args:
         filepath: Path to the markdown production script file.
@@ -389,6 +468,8 @@ def parse_script(filepath: str, debug_output: str | None = None) -> dict:
             mapping each markdown source line to its parsed entry.
             Text fields are truncated at 200 characters. Defaults to
             ``None`` (no CSV written).
+        speakers_path: Path to a ``speakers.json`` file.  ``None`` uses
+            the default resolution order (see :func:`load_speakers`).
 
     Returns:
         Dictionary with keys ``show``, ``season``, ``episode``, ``title``,
@@ -399,6 +480,8 @@ def parse_script(filepath: str, debug_output: str | None = None) -> dict:
     Raises:
         FileNotFoundError: If the script file does not exist.
     """
+    known_speakers, speaker_keys = load_speakers(speakers_path)
+
     with open(filepath, encoding="utf-8") as f:
         raw = f.read()
 
@@ -418,11 +501,13 @@ def parse_script(filepath: str, debug_output: str | None = None) -> dict:
 
     # Parse metadata from the header line, then skip it
     start = 0
-    if lines and lines[0].startswith("THE 413"):
-        show, season, episode, title = parse_script_header(lines[0])
+    first_line = lines[0].strip() if lines else ""
+    header = parse_script_header(first_line) if first_line else None
+    if header and header[2] is not None:
+        show, season, episode, title = header
         start = 1
     else:
-        show, season, episode, title = "THE 413", None, 1, ""
+        show, season, episode, title = "Unknown Show", None, 1, ""
 
     # Skip CAST section
     in_cast = False
@@ -566,7 +651,7 @@ def parse_script(filepath: str, debug_output: str | None = None) -> dict:
             continue
 
         # Dialogue lines: SPEAKER (direction) text
-        match = try_match_speaker(line)
+        match = try_match_speaker(line, known_speakers, speaker_keys)
         if match:
             speaker_key, direction, spoken_text = match
             # Skip lines that are just stage directions disguised as speaker turns
@@ -761,8 +846,11 @@ def generate_cast_config(parsed: dict, cast_path: str) -> None:
         parsed: Parsed script dict from :func:`parse_script`.
         cast_path: Output path for the cast config JSON.
     """
-    # Build reverse mapping: speaker_key -> display name
-    key_to_display = {v: k for k, v in SPEAKER_KEYS.items()}
+    # Build reverse mapping: speaker_key -> display name (first entry per key wins)
+    key_to_display: dict[str, str] = {}
+    for display, key in SPEAKER_KEYS.items():
+        if key not in key_to_display:
+            key_to_display[key] = display
 
     speakers = parsed["stats"]["speakers"]
     cast = {}
@@ -778,7 +866,7 @@ def generate_cast_config(parsed: dict, cast_path: str) -> None:
         }
 
     config = {
-        "show": parsed.get("show", "THE 413"),
+        "show": parsed.get("show", "Unknown Show"),
         "season": parsed.get("season"),
         "episode": parsed.get("episode", 1),
         "title": parsed.get("title", ""),
@@ -851,7 +939,7 @@ def generate_sfx_config(parsed: dict, sfx_path: str) -> None:
             sfx_count += 1
 
     config = {
-        "show": parsed.get("show", "THE 413"),
+        "show": parsed.get("show", "Unknown Show"),
         "season": parsed.get("season"),
         "episode": parsed.get("episode", 1),
         "defaults": {"prompt_influence": 0.3},
@@ -886,10 +974,18 @@ def main() -> None:
                             help="Write diagnostic CSV alongside JSON output")
         parser.add_argument("--stats", action="store_true",
                             help="Print per-speaker dialogue distribution (lines, words, chars, %%)")
+        parser.add_argument("--speakers", default=None,
+                            help="Path to speakers.json (default: auto-detect from CWD, then built-in)")
         args = parser.parse_args()
 
+        # Load speakers (updates module-level KNOWN_SPEAKERS/SPEAKER_KEYS for downstream use)
+        loaded_speakers, loaded_keys = load_speakers(args.speakers)
+        global KNOWN_SPEAKERS, SPEAKER_KEYS
+        KNOWN_SPEAKERS = loaded_speakers
+        SPEAKER_KEYS = loaded_keys
+
         # Parse first so we can derive the output path from metadata
-        parsed = parse_script(args.script)
+        parsed = parse_script(args.script, speakers_path=args.speakers)
 
         # Derive tag from parsed header
         tag = episode_tag(parsed.get("season"), parsed["episode"])

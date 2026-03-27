@@ -1,1 +1,0 @@
-/mnt/c/Users/shaba/src/python/gemini-project/CLAUDE.md

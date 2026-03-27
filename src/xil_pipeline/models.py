@@ -14,7 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 # Hardcoded fallback when no project.json or --show is provided.
-DEFAULT_SLUG = "the413"
+DEFAULT_SLUG = "sample"
 
 
 def show_slug(show_name: str) -> str:
@@ -300,7 +300,7 @@ class CastConfiguration(BaseModel):
     title: str | None = Field(default=None, description="Episode title")
     season_title: str | None = Field(default=None, description="Season subtitle/arc title")
     artist: str = Field(
-        default="Tina Brissette for Berkshire Talking Chronicles",
+        default="XIL Pipeline",
         description="Artist/creator credit for audio metadata",
     )
     preamble: Preamble | None = Field(default=None, description="Broadcast intro config")

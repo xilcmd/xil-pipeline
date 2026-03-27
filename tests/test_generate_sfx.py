@@ -22,6 +22,7 @@ def sample_cast(tmp_path):
     }
     cast_file = tmp_path / "cast_the413_S01E01.json"
     cast_file.write_text(json.dumps(cast), encoding="utf-8")
+    (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
     return str(cast_file)
 
 

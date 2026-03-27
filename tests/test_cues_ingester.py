@@ -573,6 +573,7 @@ class TestMainCli:
         original_cues = cues_ingester.CUES_DIR
         cues_ingester.SFX_DIR = str(tmp_path / "SFX")
         cues_ingester.CUES_DIR = str(tmp_path / "cues")
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         # sfx_config_file fixture already writes to tmp_path — no copy needed

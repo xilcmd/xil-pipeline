@@ -172,6 +172,7 @@ class TestLoadEpisode:
         cast_path = tmp_path / "cast_the413_S01E02.json"
         parsed_path.write_text(json.dumps(SAMPLE_PARSED), encoding="utf-8")
         cast_path.write_text(json.dumps(SAMPLE_CAST), encoding="utf-8")
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         try:
@@ -237,6 +238,7 @@ class TestMainCLI:
         cast_path = tmp_path / "cast_the413_S01E02.json"
         parsed_path.write_text(json.dumps(SAMPLE_PARSED), encoding="utf-8")
         cast_path.write_text(json.dumps(SAMPLE_CAST), encoding="utf-8")
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         try:
@@ -254,6 +256,7 @@ class TestMainCLI:
         cast_path = tmp_path / "cast_the413_S01E02.json"
         parsed_path.write_text(json.dumps(SAMPLE_PARSED), encoding="utf-8")
         cast_path.write_text(json.dumps(SAMPLE_CAST), encoding="utf-8")
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         try:

@@ -15,13 +15,20 @@ pip install xil-pipeline[dev]       # development and testing
 ## Quick Start
 
 ```bash
-# Parse a production script into structured JSON
-xil-parse scripts/my_episode.md --episode S01E01
+# Scaffold a new project workspace
+xil-init my-show --show "My Podcast"
+cd my-show
+
+# Scan the sample script (pre-flight check)
+xil-scan scripts/sample_S01E01.md
+
+# Parse into structured JSON
+xil-parse scripts/sample_S01E01.md --episode S01E01
 
 # Preview TTS character cost (no API calls)
 xil-produce --episode S01E01 --dry-run
 
-# Generate voice and SFX stems
+# Generate voice and SFX stems (requires ELEVENLABS_API_KEY)
 xil-produce --episode S01E01
 
 # Export DAW layers for mixing in Audacity
@@ -35,6 +42,7 @@ xil-master --episode S01E01
 
 | Command | Script | Description |
 |---------|--------|-------------|
+| `xil-init` | xil_init | Scaffold a new project workspace |
 | `xil-scan` | XILP000 | Pre-flight script scanner |
 | `xil-parse` | XILP001 | Markdown script parser |
 | `xil-produce` | XILP002 | Voice + SFX generation (ElevenLabs API) |
@@ -62,10 +70,11 @@ xil-master --episode S01E01
 ## Configuration
 
 - **`project.json`** -- show name (derives all file paths via slug)
+- **`speakers.json`** -- speaker names the parser recognizes (optional, built-in defaults for THE 413)
 - **`cast_<slug>_<TAG>.json`** -- voice assignments, speaker settings
 - **`sfx_<slug>_<TAG>.json`** -- sound effect mappings and API parameters
 
-All scripts accept `--show` to override the show name. Resolution order: `--show` flag > `project.json` > default `"the413"`.
+All scripts accept `--show` to override the show name. Resolution order: `--show` flag > `project.json` > default `"sample"`.
 
 ## Environment
 
@@ -77,11 +86,11 @@ All scripts accept `--show` to override the show name. Resolution order: `--show
 
 ```bash
 git clone <repo-url>
-cd gemini-project
+cd xil-pipeline
 pip install -e ".[all,dev]"
 pytest tests/ -v
 ```
 
 ## License
 
-TBD
+AGPL-3.0 — see [LICENSE](LICENSE) for details.

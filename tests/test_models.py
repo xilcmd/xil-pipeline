@@ -974,7 +974,7 @@ class TestResolveSlug:
 
     def test_default_when_no_project_json(self, tmp_path):
         missing = tmp_path / "nonexistent.json"
-        assert models.resolve_slug(None, str(missing)) == "the413"
+        assert models.resolve_slug(None, str(missing)) == "sample"
 
     def test_explicit_arg_overrides_project_json(self, tmp_path):
         pj = tmp_path / "project.json"
@@ -984,4 +984,4 @@ class TestResolveSlug:
     def test_project_json_without_show_key(self, tmp_path):
         pj = tmp_path / "project.json"
         pj.write_text(json.dumps({"other": "value"}))
-        assert models.resolve_slug(None, str(pj)) == "the413"
+        assert models.resolve_slug(None, str(pj)) == "sample"

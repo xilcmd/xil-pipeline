@@ -790,6 +790,7 @@ class TestPreambleDryRun:
     def test_preamble_line_printed_before_main_dry_run(self, tmp_path, capsys):
         cast_file = self._make_cast_file(tmp_path)
         script_file = self._make_script_file(tmp_path)
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         try:
@@ -807,6 +808,7 @@ class TestPreambleDryRun:
     def test_preamble_shows_char_count(self, tmp_path, capsys):
         cast_file = self._make_cast_file(tmp_path)
         script_file = self._make_script_file(tmp_path)
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         try:
@@ -824,6 +826,7 @@ class TestPreambleDryRun:
     def test_no_preamble_no_preamble_line(self, tmp_path, capsys):
         cast_file = self._make_cast_file(tmp_path, with_preamble=False)
         script_file = self._make_script_file(tmp_path)
+        (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         try:

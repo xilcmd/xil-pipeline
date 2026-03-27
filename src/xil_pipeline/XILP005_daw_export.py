@@ -116,10 +116,10 @@ def generate_audacity_macro(
     output_dir: str,
     tag: str,
     layer_files: list[tuple[str, str]],
-    show: str = "THE 413",
+    show: str = "Sample Show",
     season_title: str | None = None,
     episode_title: str | None = None,
-    artist: str = "Tina Brissette for Berkshire Talking Chronicles",
+    artist: str = "XIL Pipeline",
 ) -> str | None:
     """Write an Audacity macro file that imports all layer WAVs and sets metadata.
 
@@ -131,7 +131,7 @@ def generate_audacity_macro(
         output_dir: Directory containing the exported layer files.
         tag: Episode tag used to name the macro (e.g. ``"S02E03"``).
         layer_files: List of ``(track_name, filename)`` pairs to import.
-        show: Show name for Album metadata (default ``"THE 413"``).
+        show: Show name for Album metadata (default ``"Sample Show"``).
         season_title: Season title for metadata title field.
         episode_title: Episode title for metadata title field.
         artist: Artist/creator credit for metadata.
@@ -351,10 +351,10 @@ def export_daw_layers(
     tag: str,
     save_aup3: bool = False,
     macro: bool = False,
-    show: str = "THE 413",
+    show: str = "Sample Show",
     season_title: str | None = None,
     episode_title: str | None = None,
-    artist: str = "Tina Brissette for Berkshire Talking Chronicles",
+    artist: str = "XIL Pipeline",
     timeline: bool = False,
     timeline_html: bool = False,
     sfx_config=None,
@@ -372,7 +372,7 @@ def export_daw_layers(
         macro: When True, write an Audacity macro file to the Audacity Macros dir.
         preamble_cfg: Optional :class:`~models.Preamble` instance; when set,
             preamble stems are prepended at seq -2 (voice) and -1 (music).
-        show: Show name for audio metadata (default ``"THE 413"``).
+        show: Show name for audio metadata (default ``"Sample Show"``).
         season_title: Season title for metadata artist field.
         episode_title: Episode title for metadata.
     """

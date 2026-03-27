@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "xil-pipeline"
 version = "0.1.0"
 description = "Show-agnostic audio production pipeline: markdown script to podcast-ready MP3 via ElevenLabs"
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
 dependencies = [
     "elevenlabs>=2.38,<3",
@@ -53,6 +54,7 @@ xil-csv-join   = "xil_pipeline.XILU003_csv_sfx_join:main"
 xil-sample     = "xil_pipeline.XILU004_sample_voices_T2S:main"
 xil-sfx-lib    = "xil_pipeline.XILU005_discover_SFX:main"
 xil-splice     = "xil_pipeline.XILU006_splice_parsed:main"
+xil-init       = "xil_pipeline.xil_init:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/xil_pipeline"]

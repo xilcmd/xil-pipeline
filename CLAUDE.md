@@ -11,18 +11,20 @@ Automated podcast/audio production pipeline using ElevenLabs TTS API. The projec
 The project is packaged as `xil-pipeline` (import name `xil_pipeline`) using hatchling. All pipeline and utility scripts live under `src/xil_pipeline/`:
 
 ```
-src/xil_pipeline/          # Python package (22 modules)
+src/xil_pipeline/          # Python package (23 modules)
   __init__.py              # version + key re-exports
   models.py                # Pydantic data models, slug/path resolution
   mix_common.py            # Shared mixing utilities
   sfx_common.py            # SFX library management, ID3 tagging
   timeline_viz.py          # Timeline visualization
+  xil_init.py              # Project scaffolding (xil-init command)
   XILP000_*.py … XILP011_*.py   # Pipeline stages
   XILU001_*.py … XILU006_*.py   # Utility scripts
 tests/                     # Pytest test suite
 docs/                      # MkDocs documentation
 pyproject.toml             # Packaging config (hatchling)
 project.json               # Show name config (runtime, read from CWD)
+speakers.json              # Speaker definitions (optional, overrides built-in defaults)
 cast_*.json, sfx_*.json    # Episode configs (workspace data, stays at root)
 ```
 
@@ -50,13 +52,36 @@ All internal imports use the package namespace: `from xil_pipeline.models import
 }
 ```
 
-All scripts accept a `--show` CLI flag to override the show name. Resolution order: `--show` arg > `project.json` > hardcoded fallback `"the413"`.
+All scripts accept a `--show` CLI flag to override the show name. Resolution order: `--show` arg > `project.json` > hardcoded fallback `"sample"`.
 
 File paths are derived dynamically: `cast_<slug>_<TAG>.json`, `sfx_<slug>_<TAG>.json`, `parsed/parsed_<slug>_<TAG>.json`, etc. The slug is the show name lowercased with all non-alphanumeric characters removed (e.g., `"THE 413"` → `"the413"`, `"Night Owls"` → `"nightowls"`).
 
+## Project Scaffolding
+
+`xil-init` scaffolds a new show workspace with sample content:
+
+```bash
+xil-init my-show --show "Night Owls"
+```
+
+Creates: `project.json`, `speakers.json`, `scripts/sample_S01E01.md`, and empty subdirectories (`parsed/`, `stems/`, `SFX/`, `daw/`, `masters/`, `cues/`). The sample script exercises all parser features (dialogue, directions, sections, scenes) so the user can immediately run `xil-scan` and `xil-parse --dry-run`.
+
+## Speaker Configuration
+
+`speakers.json` in the project root defines the speaker names the parser recognizes:
+```json
+[
+    {"display": "ADAM", "key": "adam"},
+    {"display": "MR. PATTERSON", "key": "mr_patterson"},
+    {"display": "FILM AUDIO (MARGARET'S VOICE)", "key": "film_audio"}
+]
+```
+
+Resolution order: `--speakers PATH` flag > `speakers.json` in CWD > built-in defaults (THE 413 cast). The list is auto-sorted longest-first for correct compound-name matching. Both `xil-scan` (XILP000) and `xil-parse` (XILP001) accept the `--speakers` flag.
+
 ## Pre-Flight Script Scanner
 
-`XILP000_script_scanner.py` — Scans a raw markdown script and reports recognized/unrecognized speakers and sections **before** running XILP001. Use this whenever onboarding a new script to catch missing `KNOWN_SPEAKERS` or `SECTION_MAP` entries early.
+`XILP000_script_scanner.py` — Scans a raw markdown script and reports recognized/unrecognized speakers and sections **before** running XILP001. Use this whenever onboarding a new script to catch missing speakers or `SECTION_MAP` entries early.
 
 ```bash
 python XILP000_script_scanner.py "scripts/<script>.md"
@@ -67,6 +92,7 @@ python XILP000_script_scanner.py "scripts/<script>.md" --json
 - Exit code 0 = all recognized (safe to run XILP001); exit code 1 = action needed
 - Imports XILP001's pure functions directly — no duplicated logic
 - `--json` outputs machine-readable scan results
+- `--speakers PATH` overrides the speaker list (see Speaker Configuration)
 
 ## Architecture: Nine-Stage Pipeline (+ Cues Ingester Pre-Processing)
 
@@ -91,7 +117,8 @@ python XILP001_script_parser.py "scripts/<script>.md" --episode S01E01 --preview
 - Supports `--quiet` (JSON only, skip summary) and `--debug` (write diagnostic CSV alongside JSON)
 - Auto-generates BEAT variants (`BEAT — 3 SECONDS` etc.) as `type: "silence"` with duration parsed from the text (e.g. 3.0s)
 - Auto-generates `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives as `type: "silence", duration_seconds: 0.0` stop markers — no audio asset needed
-- Known speakers defined in `KNOWN_SPEAKERS` list (must be longest-first for multi-word and compound names like "FILM AUDIO (MARGARET'S VOICE)")
+- Known speakers loaded from `speakers.json` (see Speaker Configuration); built-in defaults used as fallback
+- `--speakers PATH` overrides the speaker list (see Speaker Configuration)
 - Sections: COLD OPEN, OPENING CREDITS, ACT ONE, ACT TWO, MID-EPISODE BREAK, CLOSING
 
 ### Stage 1.5: Cues Sheet Ingestion (Pre-processing)
@@ -332,7 +359,8 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing
 - `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency
-- `models.py` — Pydantic data models plus `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "the413"` fallback
+- `models.py` — Pydantic data models plus `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "sample"` fallback
+- `xil_init.py` — project scaffolding; `scaffold()` creates workspace with `project.json`, `speakers.json`, sample script, and empty subdirectories
 
 ## Cast Configuration
 
