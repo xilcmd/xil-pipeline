@@ -1,6 +1,6 @@
-# Mix Common
+# Xilp004 Studio Onboard
 
-::: mix_common
+::: src.xil_pipeline.XILP004_studio_onboard
     options:
       show_root_heading: true
       show_source: true

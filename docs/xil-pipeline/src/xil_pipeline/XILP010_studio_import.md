@@ -1,6 +1,6 @@
-# XILP005 DAW Export
+# Xilp010 Studio Import
 
-::: xil_pipeline.XILP005_daw_export
+::: src.xil_pipeline.XILP010_studio_import
     options:
       show_root_heading: true
       show_source: true

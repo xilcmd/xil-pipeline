@@ -1,6 +1,6 @@
-# Xilp009 Script Regenerator
+# Xilp007 Stem Migrator
 
-::: XILP009_script_regenerator
+::: src.xil_pipeline.XILP007_stem_migrator
     options:
       show_root_heading: true
       show_source: true

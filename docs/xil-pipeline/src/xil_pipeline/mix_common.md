@@ -1,6 +1,6 @@
-# Xilp007 Stem Migrator
+# Mix Common
 
-::: XILP007_stem_migrator
+::: src.xil_pipeline.mix_common
     options:
       show_root_heading: true
       show_source: true

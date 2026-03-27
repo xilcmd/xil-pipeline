@@ -1,6 +1,6 @@
-# Xilp001 Script Parser
+# Sfx Common
 
-::: XILP001_script_parser
+::: src.xil_pipeline.sfx_common
     options:
       show_root_heading: true
       show_source: true

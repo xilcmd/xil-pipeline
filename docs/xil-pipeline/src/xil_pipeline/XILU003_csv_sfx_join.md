@@ -1,6 +1,6 @@
-# Xilp008 Stale Stem Cleanup
+# Xilu003 Csv Sfx Join
 
-::: XILP008_stale_stem_cleanup
+::: src.xil_pipeline.XILU003_csv_sfx_join
     options:
       show_root_heading: true
       show_source: true

@@ -1,6 +1,6 @@
-# Timeline Viz
+# Xilu001 Discover Voices T2S
 
-::: timeline_viz
+::: src.xil_pipeline.XILU001_discover_voices_T2S
     options:
       show_root_heading: true
       show_source: true

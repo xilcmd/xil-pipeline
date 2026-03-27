@@ -1,6 +1,6 @@
-# Xilp000 Script Scanner
+# Timeline Viz
 
-::: XILP000_script_scanner
+::: src.xil_pipeline.timeline_viz
     options:
       show_root_heading: true
       show_source: true

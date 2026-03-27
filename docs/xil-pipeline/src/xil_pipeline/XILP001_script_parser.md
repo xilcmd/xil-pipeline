@@ -1,6 +1,6 @@
-# Xilp010 Studio Import
+# Xilp001 Script Parser
 
-::: XILP010_studio_import
+::: src.xil_pipeline.XILP001_script_parser
     options:
       show_root_heading: true
       show_source: true

@@ -1,6 +1,6 @@
-# Xilu004 Sample Voices T2S
+# Xilp008 Stale Stem Cleanup
 
-::: XILU004_sample_voices_T2S
+::: src.xil_pipeline.XILP008_stale_stem_cleanup
     options:
       show_root_heading: true
       show_source: true

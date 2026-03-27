@@ -1,6 +1,6 @@
-# XILP004 Studio Onboard
+# Xilu002 Generate Sfx
 
-::: xil_pipeline.XILP004_studio_onboard
+::: src.xil_pipeline.XILU002_generate_SFX
     options:
       show_root_heading: true
       show_source: true

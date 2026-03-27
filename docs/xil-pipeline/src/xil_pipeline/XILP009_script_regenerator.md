@@ -1,6 +1,6 @@
-# Xilu002 Generate Sfx
+# Xilp009 Script Regenerator
 
-::: XILU002_generate_SFX
+::: src.xil_pipeline.XILP009_script_regenerator
     options:
       show_root_heading: true
       show_source: true

@@ -1,6 +1,6 @@
-# XILP006 Cues Ingester
+# Xilu004 Sample Voices T2S
 
-::: xil_pipeline.XILP006_cues_ingester
+::: src.xil_pipeline.XILU004_sample_voices_T2S
     options:
       show_root_heading: true
       show_source: true

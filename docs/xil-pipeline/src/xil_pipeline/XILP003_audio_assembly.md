@@ -1,6 +1,6 @@
-# Xilu003 Csv Sfx Join
+# Xilp003 Audio Assembly
 
-::: XILU003_csv_sfx_join
+::: src.xil_pipeline.XILP003_audio_assembly
     options:
       show_root_heading: true
       show_source: true

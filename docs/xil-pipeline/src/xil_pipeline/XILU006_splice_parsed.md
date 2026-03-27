@@ -1,6 +1,6 @@
-# XILP002 Producer
+# Xilu006 Splice Parsed
 
-::: xil_pipeline.XILP002_producer
+::: src.xil_pipeline.XILU006_splice_parsed
     options:
       show_root_heading: true
       show_source: true

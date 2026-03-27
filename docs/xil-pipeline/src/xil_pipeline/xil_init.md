@@ -1,6 +1,6 @@
-# Xilu005 Discover Sfx
+# Xil Init
 
-::: XILU005_discover_SFX
+::: src.xil_pipeline.xil_init
     options:
       show_root_heading: true
       show_source: true

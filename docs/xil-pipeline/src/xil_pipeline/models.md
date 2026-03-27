@@ -1,6 +1,6 @@
-# XILP003 Audio Assembly
+# Models
 
-::: xil_pipeline.XILP003_audio_assembly
+::: src.xil_pipeline.models
     options:
       show_root_heading: true
       show_source: true

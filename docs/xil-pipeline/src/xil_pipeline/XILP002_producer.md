@@ -1,6 +1,6 @@
-# Xilu001 Discover Voices T2S
+# Xilp002 Producer
 
-::: XILU001_discover_voices_T2S
+::: src.xil_pipeline.XILP002_producer
     options:
       show_root_heading: true
       show_source: true
