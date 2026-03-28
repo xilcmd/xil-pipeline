@@ -1,6 +1,6 @@
 # XILP Pipeline Diagrams
 
-Documentation of the nine-stage, automated podcast production pipeline, including the cues sheet ingester pre-processing step, stem migration punch-in workflow, and stale stem cleanup.
+Documentation of the nine-stage automated podcast production pipeline, including the cues sheet ingester pre-processing step, stem migration punch-in workflow, and stale stem cleanup.
 
 ---
 
