@@ -359,6 +359,20 @@ def generate_voices(
     """
     os.makedirs(stems_dir, exist_ok=True)
 
+    # Block if any cast member in the range has an unassigned voice_id
+    speakers_needed = {
+        e["speaker"] for e in dialogue_entries
+        if e["seq"] >= start_from and (stop_at is None or e["seq"] <= stop_at)
+    }
+    tbd_needed = [sp for sp in speakers_needed if config.get(sp, {}).get("id") == "TBD"]
+    if tbd_needed:
+        logger.error(
+            "Cannot generate: %d speaker(s) in range have no voice_id: %s\n"
+            "  Assign voice IDs in the cast config, then re-run.",
+            len(tbd_needed), ", ".join(sorted(tbd_needed)),
+        )
+        return
+
     # Filter to entries in the requested range
     entries_to_process = [
         e for e in dialogue_entries

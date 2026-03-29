@@ -1,0 +1,14 @@
+[
+  {"display": "HOST",   "key": "host"},
+  {"display": "ADAM",   "key": "adam"},
+  {"display": "KAREN",  "key": "karen"},
+  {"display": "MAYA",   "key": "maya"},
+  {"display": "AVA",    "key": "ava"},
+  {"display": "RÍAN",   "key": "rian"},
+  {"display": "DEZ",    "key": "dez"},
+  {"display": "ELENA",  "key": "elena"},
+  {"display": "VICTOR", "key": "victor"},
+  {"display": "TINA",   "key": "tina"},
+  {"display": "CALLER", "key": "caller"},
+  {"display": "GUEST",  "key": "guest"}
+]

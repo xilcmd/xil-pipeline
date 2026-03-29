@@ -29,7 +29,7 @@ def sample_cast(tmp_path):
         "cast": {
             "adam": {"full_name": "Adam Santos", "voice_id": "voice_adam_123", "pan": 0.0, "filter": False, "role": "Host"},
             "dez": {"full_name": "Dez Williams", "voice_id": "voice_dez_456", "pan": -0.15, "filter": False, "role": "Supporting"},
-            "frank": {"full_name": "Frank", "voice_id": "TBD", "pan": 0.0, "filter": True, "role": "Minor"},
+            "frank": {"full_name": "Frank", "voice_id": "voice_frank_789", "pan": 0.0, "filter": True, "role": "Minor"},
         }
     }
     cast_file = tmp_path / "cast.json"
@@ -78,7 +78,7 @@ class TestLoadProduction:
         config, _, _tag = producer.load_production(sample_script, sample_cast)
         assert config["adam"]["id"] == "voice_adam_123"
         assert config["dez"]["id"] == "voice_dez_456"
-        assert config["frank"]["id"] == "TBD"
+        assert config["frank"]["id"] == "voice_frank_789"
 
     def test_config_has_pan_and_filter(self, sample_script, sample_cast):
         config, _, _tag = producer.load_production(sample_script, sample_cast)
@@ -123,6 +123,8 @@ class TestDryRun:
 
     def test_shows_tbd_warning(self, sample_script, sample_cast, caplog):
         config, entries, _tag = producer.load_production(sample_script, sample_cast)
+        # Inject a TBD voice to verify the warning fires
+        config["frank"]["id"] = "TBD"
         producer.dry_run(config, entries)
         assert "TBD" in caplog.text
         assert "frank" in caplog.text
@@ -352,16 +354,18 @@ class TestGenerateVoices:
         stems_dir = str(tmp_path)
         producer.generate_voices(config, entries, stems_dir)
 
-        assert "No voice_id for dez" in caplog.text
-        # dez stem should NOT exist
+        # generate_voices now blocks and logs an error when any speaker in range has TBD
+        assert "Cannot generate" in caplog.text
+        assert "dez" in caplog.text
         assert not (tmp_path / "006_act1_dez.mp3").exists()
 
     def test_skips_existing_stem(self, config, entries, tmp_path, caplog):
         self._setup_api()
-        # Pre-create the adam stem
+        # Use only the adam entry (valid voice) to avoid the TBD block
+        adam_only = [e for e in entries if e["speaker"] == "adam"]
         (tmp_path / "003_cold-open_adam.mp3").write_bytes(b"existing")
         stems_dir = str(tmp_path)
-        producer.generate_voices(config, entries, stems_dir)
+        producer.generate_voices(config, adam_only, stems_dir)
 
         assert "skipping" in caplog.text
 
@@ -373,8 +377,10 @@ class TestGenerateVoices:
         user_info.subscription = sub
         producer.client.user.get.return_value = user_info
 
+        # Use only the adam entry (valid voice) to avoid the TBD block
+        adam_only = [e for e in entries if e["speaker"] == "adam"]
         stems_dir = str(tmp_path)
-        producer.generate_voices(config, entries, stems_dir)
+        producer.generate_voices(config, adam_only, stems_dir)
 
         assert "halted" in caplog.text
 
