@@ -32,6 +32,7 @@ import argparse
 import datetime
 import json as _json
 import os
+import shutil
 
 import httpx
 from mutagen.id3 import ID3
@@ -282,6 +283,46 @@ def print_compact_api(rec: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Export kit — markdown reference + JSON inventory for Claude projects
+# ---------------------------------------------------------------------------
+
+def export_kit(records: list[dict], output_dir: str = ".") -> tuple[str, str]:
+    """Generate an SFX inventory JSON and copy the scriptwriter reference doc.
+
+    Args:
+        records: Local SFX records from ``fetch_local_records()``.
+        output_dir: Directory to write output files into.
+
+    Returns:
+        Tuple of (json_path, markdown_path).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Write JSON inventory
+    json_path = os.path.join(output_dir, "sfx_inventory.json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        _json.dump(records, f, indent=2)
+        f.write("\n")
+
+    # Copy the scriptwriter reference doc
+    ref_src = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "claude-scriptwriter-reference.md")
+    ref_src = os.path.normpath(ref_src)
+    md_path = os.path.join(output_dir, "claude-scriptwriter-reference.md")
+    if os.path.exists(ref_src):
+        shutil.copy2(ref_src, md_path)
+    else:
+        # Fallback: check relative to CWD (for editable installs)
+        cwd_ref = os.path.join("docs", "claude-scriptwriter-reference.md")
+        if os.path.exists(cwd_ref):
+            shutil.copy2(cwd_ref, md_path)
+        else:
+            print(f"  [!] Reference doc not found at {ref_src} or {cwd_ref}")
+            md_path = ""
+
+    return json_path, md_path
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -328,6 +369,14 @@ def main() -> None:
             action="store_true",
             help="Output results as a JSON array",
         )
+        parser.add_argument(
+            "--export-kit",
+            metavar="DIR",
+            nargs="?",
+            const=".",
+            default=None,
+            help="Export SFX inventory JSON + scriptwriter reference doc to DIR (default: current directory)",
+        )
         args = parser.parse_args()
 
         api_key = os.environ.get("ELEVENLABS_API_KEY", "")
@@ -372,6 +421,17 @@ def main() -> None:
             records.sort(key=lambda r: r.get("date_unix", 0), reverse=True)
         else:
             records.sort(key=lambda r: r.get("filename", "").lower())
+
+        # --- Export kit ---
+        if args.export_kit is not None:
+            json_path, md_path = export_kit(records, args.export_kit)
+            print(f"\n--- Export kit ({len(records)} assets) ---\n")
+            print(f"  JSON inventory : {json_path}")
+            if md_path:
+                print(f"  Reference doc  : {md_path}")
+            print()
+            print("  Attach both files to your Claude project as knowledge files.")
+            return
 
         # --- Output ---
         if args.json:
