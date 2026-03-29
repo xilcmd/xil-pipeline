@@ -399,7 +399,7 @@ Optional `preamble` and `postamble` blocks (`intro_music_source` is **not** a fi
   }
 }
 ```
-Legacy single-string `"text"` field still works as a fallback for un-migrated episodes. `segments[].shared_key` caches stock parts to `SFX/{shared_key}.mp3` — generated once, reused across episodes. Supports SSML `<break time="1s"/>` pauses (requires `eleven_multilingual_v2`).
+Legacy single-string `"text"` field still works as a fallback for un-migrated episodes. `segments[].shared_key` caches stock parts to `SFX/{shared_key}.mp3` — generated once, reused across episodes. Supports SSML `<break time="1s"/>` pauses; segments containing SSML tags automatically use `eleven_multilingual_v2` via `_select_model()` — `eleven_v3` does not support SSML.
 
 ## SFX Configuration
 
@@ -508,6 +508,7 @@ python XILU005_discover_SFX.py --api --all        # paginate full API history (d
 - `--verbose` / `-v` prints all metadata fields per asset
 - `--api` attempts to query ElevenLabs sound generation history (endpoint is not publicly accessible as of March 2026 regardless of API key permissions)
 - `--all` (API mode only) paginates through the full account history; default retrieves only the most recent 100 results
+- `--export-kit [DIR]` generates an SFX inventory JSON (`sfx_inventory.json`) and copies the scriptwriter reference doc (`claude-scriptwriter-reference.md`) into DIR (default: current directory); attach both files to a Claude project as knowledge files to enable SFX-aware script writing
 
 ### Parsed JSON Splice Utility
 `XILU006_splice_parsed.py` — Inserts entries into or deletes entries from a parsed episode JSON with automatic seq renumbering.

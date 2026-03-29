@@ -90,8 +90,8 @@ def get_best_model_for_budget() -> str:
     """Select the best ElevenLabs TTS model based on remaining quota.
 
     Returns:
-        Model ID string: ``"eleven_multilingual_v2"`` for healthy balance,
-        ``"eleven_flash_v2_5"`` when low, or ``"eleven_multilingual_v2"``
+        Model ID string: ``"eleven_v3"`` for healthy balance,
+        ``"eleven_flash_v2_5"`` when low, or ``"eleven_v3"``
         as API-error fallback.
     """
     SAFE_THRESHOLD = 5000
@@ -101,15 +101,15 @@ def get_best_model_for_budget() -> str:
         remaining = user_info.subscription.character_limit - user_info.subscription.character_count
 
         if remaining > SAFE_THRESHOLD:
-            print(f" [Budget] Healthy Balance: {remaining:,} left. Using 'eleven_multilingual_v2'.")
-            return "eleven_multilingual_v2"
+            print(f" [Budget] Healthy Balance: {remaining:,} left. Using 'eleven_v3'.")
+            return "eleven_v3"
         else:
             print(f" [Budget] LOW BALANCE: {remaining:,} left. Switching to 'eleven_flash_v2_5' (50% cheaper).")
             return "eleven_flash_v2_5"
 
     except Exception:
-        print(" [Budget] API Check Failed. Defaulting to 'eleven_multilingual_v2'.")
-        return "eleven_multilingual_v2"
+        print(" [Budget] API Check Failed. Defaulting to 'eleven_v3'.")
+        return "eleven_v3"
 
 
 def main() -> None:

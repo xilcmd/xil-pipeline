@@ -279,10 +279,10 @@ class TestGetBestModelForBudget:
         user_info.subscription = sub
         producer.client.user.get.return_value = user_info
 
-    def test_returns_multilingual_v2_when_healthy(self):
+    def test_returns_v3_when_healthy(self):
         self._set_quota(50000)
         model = producer.get_best_model_for_budget()
-        assert model == "eleven_multilingual_v2"
+        assert model == "eleven_v3"
 
     def test_returns_flash_when_low(self):
         self._set_quota(100)
@@ -292,8 +292,35 @@ class TestGetBestModelForBudget:
     def test_returns_fallback_on_exception(self):
         producer.client.user.get.side_effect = Exception("fail")
         model = producer.get_best_model_for_budget()
-        assert model == "eleven_multilingual_v2"
+        assert model == "eleven_v3"
         producer.client.user.get.side_effect = None
+
+
+# ─── Tests: _select_model ───
+
+class TestSelectModel:
+    def _set_quota(self, remaining):
+        sub = unittest.mock.MagicMock()
+        sub.character_limit = 100000
+        sub.character_count = 100000 - remaining
+        user_info = unittest.mock.MagicMock()
+        user_info.subscription = sub
+        producer.client.user.get.return_value = user_info
+
+    def test_uses_v3_for_plain_text(self):
+        self._set_quota(50000)
+        model = producer._select_model("Hello there, this is plain text.")
+        assert model == "eleven_v3"
+
+    def test_uses_multilingual_v2_for_ssml_text(self):
+        self._set_quota(50000)
+        model = producer._select_model('Hello <break time="1s"/> world.')
+        assert model == "eleven_multilingual_v2"
+
+    def test_ssml_fallback_does_not_apply_on_low_budget(self):
+        self._set_quota(100)
+        model = producer._select_model('Hello <break time="1s"/> world.')
+        assert model == "eleven_flash_v2_5"
 
 
 # ─── Tests: generate_voices ───

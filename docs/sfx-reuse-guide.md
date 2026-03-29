@@ -171,3 +171,22 @@ When writing a new episode script, reuse the **exact same direction text** from 
 | Preview SFX credit cost | `xil-sfx --episode TAG --dry-run` |
 | Preview cues credit cost | `xil-cues --episode TAG --dry-run` |
 | Enrich sfx config from cues | `xil-cues --episode TAG --enrich-sfx-config` |
+
+## eleven_v3 Audio Events vs. SFX Stems
+
+Certain sounds that previously required a `[SFX: ...]` direction and a generated
+stem can now be handled inline by the TTS model using v3 audio tags embedded in
+dialogue text:
+
+| Old approach (SFX stem, costs credits) | v3 inline tag (free, in voice stem) |
+|---|---|
+| `[SFX: ADAM SIGHS HEAVILY]` | `[sighs]` embedded in Adam's dialogue text |
+| `[SFX: NERVOUS LAUGH]` | `[chuckles]` or `[laughs]` in dialogue |
+| `[SFX: SHARP INTAKE OF BREATH]` | `[gasps]` in dialogue |
+
+**When to still use SFX stems:** for sounds *between* speakers, overlapping with
+ambience, or effects that need precise mix placement (volume, timing relative to
+other tracks). Inline tags render inside the single voice stem and cannot be
+mixed independently in the DAW layers.
+
+See `claude-scriptwriter-reference.md` for the full v3 tag vocabulary.

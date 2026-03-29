@@ -101,8 +101,8 @@ def get_best_model_for_budget() -> str:
     """Select the best ElevenLabs TTS model based on remaining quota.
 
     Returns:
-        Model ID string: ``"eleven_multilingual_v2"`` for healthy balance,
-        ``"eleven_flash_v2_5"`` when low, or ``"eleven_multilingual_v2"``
+        Model ID string: ``"eleven_v3"`` for healthy balance,
+        ``"eleven_flash_v2_5"`` when low, or ``"eleven_v3"``
         as API-error fallback.
     """
     SAFE_THRESHOLD = 5000
@@ -112,15 +112,35 @@ def get_best_model_for_budget() -> str:
         remaining = user_info.subscription.character_limit - user_info.subscription.character_count
 
         if remaining > SAFE_THRESHOLD:
-            print(f" [Budget] Healthy Balance: {remaining:,} left. Using 'eleven_multilingual_v2'.")
-            return "eleven_multilingual_v2"
+            print(f" [Budget] Healthy Balance: {remaining:,} left. Using 'eleven_v3'.")
+            return "eleven_v3"
         else:
             print(f" [Budget] LOW BALANCE: {remaining:,} left. Switching to 'eleven_flash_v2_5' (50% cheaper).")
             return "eleven_flash_v2_5"
 
     except Exception:
-        print(" [Budget] API Check Failed. Defaulting to 'eleven_multilingual_v2'.")
+        print(" [Budget] API Check Failed. Defaulting to 'eleven_v3'.")
+        return "eleven_v3"
+
+
+def _select_model(text: str) -> str:
+    """Select a TTS model, falling back to ``eleven_multilingual_v2`` for SSML text.
+
+    ``eleven_v3`` does not support SSML tags such as ``<break time="1s"/>``.
+    When the text contains ``<``, this function overrides the budget-based
+    selection and returns ``"eleven_multilingual_v2"`` so that SSML-bearing
+    preamble/postamble segments continue to work without cast config changes.
+
+    Args:
+        text: The TTS input text, possibly containing SSML markup.
+
+    Returns:
+        A model ID string safe to pass to ``client.text_to_speech.convert()``.
+    """
+    model = get_best_model_for_budget()
+    if "<" in text and model == "eleven_v3":
         return "eleven_multilingual_v2"
+    return model
 
 
 def truncate_to_words(text: str, n: int = 3) -> str:
@@ -371,7 +391,7 @@ def generate_voices(
 
         # Collect optional top-level kwargs
         extra_kwargs = {}
-        if cfg.get("language_code"):
+        if cfg.get("language_code") and current_model != "eleven_v3":
             extra_kwargs["language_code"] = cfg["language_code"]
         if prev_text:
             extra_kwargs["previous_text"] = prev_text
@@ -544,7 +564,7 @@ def _tts_segment(text: str, out_path: str, voice_id: str, speed: float | None) -
     complete asset.
     """
     tmp = out_path + ".tmp"
-    current_model = get_best_model_for_budget()
+    current_model = _select_model(text)
     print(f"   > TTS ({len(text)} chars) → {os.path.basename(out_path)} [{current_model}]")
     voice_settings = VoiceSettings(speed=speed) if speed is not None else None
     audio_stream = client.text_to_speech.convert(
