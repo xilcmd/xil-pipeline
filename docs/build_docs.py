@@ -272,7 +272,7 @@ def create_module_doc(file: Path, docs_dir: Path, namespace: str) -> None:
 
 
 def main() -> None:
-    """Generate MkDocs documentation from gemini-project Python files."""
+    """Generate MkDocs documentation from xil-pipeline Python files."""
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description='Generate MkDocs documentation from Python source files',
@@ -334,7 +334,7 @@ Examples:
     logger.info(f"Creating documentation structure in {docs_base}...")
 
     # Create docs directory structure
-    # Generated docs go into docs/<code_root.name>/ (e.g. docs/gemini-project/)
+    # Generated docs go into docs/<code_root.name>/ (e.g. docs/xil-pipeline/)
     # so clean_generated_docs can remove them cleanly without touching hand-written docs.
     for directory in sorted(directories):
         relative_dir = Path(code_root.name) / directory.relative_to(code_root)
@@ -345,7 +345,7 @@ Examples:
 
         # Create .pages file
         if directory == code_root:
-            create_pages_file(docs_dir, title="gemini-project Code Reference")
+            create_pages_file(docs_dir, title="xil-pipeline Code Reference")
         else:
             create_pages_file(docs_dir)
 
