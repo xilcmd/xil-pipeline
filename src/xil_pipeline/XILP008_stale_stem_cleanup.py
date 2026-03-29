@@ -21,10 +21,10 @@ import argparse
 import glob
 import os
 
+from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.mix_common import extract_seq, load_entries_index
 from xil_pipeline.models import derive_paths, resolve_slug
 from xil_pipeline.sfx_common import run_banner
-from xil_pipeline.log_config import configure_logging, get_logger
 
 logger = get_logger(__name__)
 

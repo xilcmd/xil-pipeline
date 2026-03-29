@@ -13,9 +13,7 @@ from pydub import AudioSegment
 from pydub.generators import Sine
 
 # ─── Import XILP005 ───
-
 from xil_pipeline import XILP005_daw_export as daw
-
 
 # ─── Helpers ───
 
@@ -120,7 +118,7 @@ class TestModuleImport:
     def test_no_elevenlabs_import(self):
         import ast
         import inspect
-        with open(inspect.getfile(daw), "r", encoding="utf-8") as f:
+        with open(inspect.getfile(daw), encoding="utf-8") as f:
             tree = ast.parse(f.read())
         imports = []
         for node in ast.walk(tree):
@@ -161,7 +159,7 @@ class TestMakeAudacityScript:
 
 class TestDryRunDaw:
     def test_prints_summary(self, stems_dir, parsed_file, config, caplog):
-        from xil_pipeline.mix_common import load_entries_index, collect_stem_plans
+        from xil_pipeline.mix_common import collect_stem_plans, load_entries_index
         idx = load_entries_index(parsed_file)
         plans = collect_stem_plans(stems_dir, idx)
         daw.dry_run_daw("S01E01", plans, idx, "daw/S01E01")
@@ -223,7 +221,6 @@ class TestExportDawLayers:
 
 class TestDawExportMain:
     def test_main_dry_run(self, cast_file, parsed_file, stems_dir, tmp_path, caplog):
-        cast_path = cast_file
         parsed_path = parsed_file
         (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
@@ -386,7 +383,7 @@ class TestPreambleInDawExport:
     def _inject_preamble(self, parsed_file: str) -> None:
         """Prepend seq -2 and -1 preamble entries into the parsed JSON (as XILP002 would)."""
         import json as _json
-        with open(parsed_file, "r", encoding="utf-8") as f:
+        with open(parsed_file, encoding="utf-8") as f:
             data = _json.load(f)
         preamble_entries = [
             {"seq": -2, "type": "dialogue", "section": "preamble", "scene": None,

@@ -25,13 +25,13 @@ import tempfile
 import time
 
 import httpx
-from mutagen.id3 import ID3, ID3NoHeaderError, TALB, TCON, TDRC, TIT2, TPE1, USLT
-from mutagen.wave import WAVE
 from elevenlabs.core.api_error import ApiError
+from mutagen.id3 import ID3, TALB, TCON, TDRC, TIT2, TPE1, USLT, ID3NoHeaderError
+from mutagen.wave import WAVE
 from pydub import AudioSegment
 
-from xil_pipeline.models import SfxConfiguration, SfxEntry
 from xil_pipeline.log_config import get_logger
+from xil_pipeline.models import SfxConfiguration, SfxEntry
 
 logger = get_logger(__name__)
 

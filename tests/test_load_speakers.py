@@ -5,9 +5,6 @@
 """Tests for speaker loading and externalization."""
 
 import json
-import os
-
-import pytest
 
 from xil_pipeline.XILP001_script_parser import (
     _BUILTIN_KNOWN_SPEAKERS,

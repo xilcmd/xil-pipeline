@@ -4,14 +4,9 @@
 
 """Tests for XILP007_stem_migrator.py — stem migration tool."""
 
-import json
-import os
-import tempfile
 
-import pytest
 
 from xil_pipeline import XILP007_stem_migrator as m
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

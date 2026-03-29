@@ -20,6 +20,7 @@ Usage::
 
 import argparse
 import os
+import sys
 
 from elevenlabs.client import ElevenLabs
 from elevenlabs.core.api_error import ApiError

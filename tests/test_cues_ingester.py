@@ -11,9 +11,7 @@ import unittest.mock
 import pytest
 
 # ── Module import ────────────────────────────────────────────────────────────
-
 from xil_pipeline import XILP006_cues_ingester as cues_ingester
-
 
 # ── Sample markdown fixture ───────────────────────────────────────────────────
 

@@ -4,14 +4,9 @@
 
 """Tests for XILP008_stale_stem_cleanup.py — stale stem cleanup tool."""
 
-import json
 import os
-import tempfile
-
-import pytest
 
 from xil_pipeline import XILP008_stale_stem_cleanup as m
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -23,7 +18,7 @@ def _make_entries_index(entries):
 def _touch(directory, filename):
     """Create an empty file in directory."""
     path = os.path.join(directory, filename)
-    with open(path, "w") as f:
+    with open(path, "w"):
         pass
     return path
 

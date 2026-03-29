@@ -4,15 +4,15 @@
 
 """Tests for XILP001_script_parser.py — markdown production script parser."""
 
+import csv as csv_module
 import json
 import os
-import tempfile
 import unittest.mock
 
 import pytest
 
 from xil_pipeline import XILP001_script_parser as parser
-
+from xil_pipeline import models
 
 # ─── Unit Tests: strip_markdown_escapes ───
 
@@ -586,8 +586,6 @@ class TestMetadataSectionPath:
 
 # ─── Contract Tests: parse_script output validates against Pydantic models ───
 
-from xil_pipeline import models
-
 
 class TestParseScriptModelContract:
     """Verify parse_script output is valid against Pydantic models."""
@@ -610,8 +608,6 @@ class TestParseScriptModelContract:
 
 
 # ─── Tests: --debug CSV output ───
-
-import csv as csv_module
 
 
 class TestDebugCSV:
@@ -780,7 +776,7 @@ class TestGenerateCastConfig:
     def test_cast_has_correct_speakers(self, parsed, tmp_path):
         cast_path = str(tmp_path / "cast_the413_S01E01.json")
         parser.generate_cast_config(parsed, cast_path)
-        with open(cast_path, "r", encoding="utf-8") as f:
+        with open(cast_path, encoding="utf-8") as f:
             config = json.load(f)
         assert "adam" in config["cast"]
         assert "dez" in config["cast"]
@@ -789,7 +785,7 @@ class TestGenerateCastConfig:
     def test_cast_has_tbd_voice_ids(self, parsed, tmp_path):
         cast_path = str(tmp_path / "cast_the413_S01E01.json")
         parser.generate_cast_config(parsed, cast_path)
-        with open(cast_path, "r", encoding="utf-8") as f:
+        with open(cast_path, encoding="utf-8") as f:
             config = json.load(f)
         for member in config["cast"].values():
             assert member["voice_id"] == "TBD"
@@ -797,7 +793,7 @@ class TestGenerateCastConfig:
     def test_cast_metadata_from_script(self, parsed, tmp_path):
         cast_path = str(tmp_path / "cast_the413_S01E01.json")
         parser.generate_cast_config(parsed, cast_path)
-        with open(cast_path, "r", encoding="utf-8") as f:
+        with open(cast_path, encoding="utf-8") as f:
             config = json.load(f)
         assert config["show"] == "THE 413"
         assert config["season"] == 1
@@ -806,7 +802,7 @@ class TestGenerateCastConfig:
     def test_cast_member_defaults(self, parsed, tmp_path):
         cast_path = str(tmp_path / "cast.json")
         parser.generate_cast_config(parsed, cast_path)
-        with open(cast_path, "r", encoding="utf-8") as f:
+        with open(cast_path, encoding="utf-8") as f:
             config = json.load(f)
         member = config["cast"]["adam"]
         assert member["pan"] == 0.0
@@ -830,7 +826,7 @@ class TestGenerateCastConfig:
                 parser.main()
         finally:
             os.chdir(original_cwd)
-        with open(str(cast_path), "r", encoding="utf-8") as f:
+        with open(str(cast_path), encoding="utf-8") as f:
             data = json.load(f)
         assert data == {"existing": True}
 
@@ -852,7 +848,7 @@ class TestGenerateSfxConfig:
     def test_beat_is_silence_type(self, parsed, tmp_path):
         sfx_path = str(tmp_path / "sfx.json")
         parser.generate_sfx_config(parsed, sfx_path)
-        with open(sfx_path, "r", encoding="utf-8") as f:
+        with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         assert config["effects"]["BEAT"]["type"] == "silence"
         assert config["effects"]["BEAT"]["duration_seconds"] == 1.0
@@ -860,14 +856,14 @@ class TestGenerateSfxConfig:
     def test_sfx_has_prompt(self, parsed, tmp_path):
         sfx_path = str(tmp_path / "sfx.json")
         parser.generate_sfx_config(parsed, sfx_path)
-        with open(sfx_path, "r", encoding="utf-8") as f:
+        with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         assert "prompt" in config["effects"]["SFX: DOOR OPENS"]
 
     def test_ambience_has_loop_true(self, parsed, tmp_path):
         sfx_path = str(tmp_path / "sfx.json")
         parser.generate_sfx_config(parsed, sfx_path)
-        with open(sfx_path, "r", encoding="utf-8") as f:
+        with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         ambience = config["effects"]["AMBIENCE: RADIO STATION"]
         assert ambience["loop"] is True
@@ -876,14 +872,14 @@ class TestGenerateSfxConfig:
     def test_music_duration(self, parsed, tmp_path):
         sfx_path = str(tmp_path / "sfx.json")
         parser.generate_sfx_config(parsed, sfx_path)
-        with open(sfx_path, "r", encoding="utf-8") as f:
+        with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         assert config["effects"]["MUSIC: THEME"]["duration_seconds"] == 15.0
 
     def test_sfx_metadata_from_script(self, parsed, tmp_path):
         sfx_path = str(tmp_path / "sfx.json")
         parser.generate_sfx_config(parsed, sfx_path)
-        with open(sfx_path, "r", encoding="utf-8") as f:
+        with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         assert config["show"] == "THE 413"
         assert config["season"] == 1
@@ -910,7 +906,7 @@ class TestGenerateSfxConfig:
                 parser.main()
         finally:
             os.chdir(original_cwd)
-        with open(str(sfx_path), "r", encoding="utf-8") as f:
+        with open(str(sfx_path), encoding="utf-8") as f:
             data = json.load(f)
         assert data == {"existing": True}
 
@@ -918,7 +914,7 @@ class TestGenerateSfxConfig:
         """Duplicate direction entries should produce one effect."""
         sfx_path = str(tmp_path / "sfx.json")
         parser.generate_sfx_config(parsed, sfx_path)
-        with open(sfx_path, "r", encoding="utf-8") as f:
+        with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         # AMBIENCE: DINER appears via scene header split
         effect_keys = list(config["effects"].keys())

@@ -28,9 +28,9 @@ import os
 
 from pydub import AudioSegment
 
+from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import CastConfiguration, derive_paths, resolve_slug
 from xil_pipeline.sfx_common import run_banner, tag_mp3
-from xil_pipeline.log_config import configure_logging, get_logger
 
 logger = get_logger(__name__)
 

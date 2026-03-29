@@ -5,14 +5,10 @@
 """Tests for XILP010_studio_import.py."""
 
 import io
-import json
 import os
 import zipfile
 
-import pytest
-
 from xil_pipeline.XILP010_studio_import import _parse_zip_seq, extract_stems
-
 
 # --- Helpers ---
 

@@ -13,10 +13,8 @@ from pydub import AudioSegment
 from pydub.generators import Sine
 
 # ─── Import modules ───
-
 from xil_pipeline import XILP003_audio_assembly as assembly
 from xil_pipeline import mix_common
-
 
 # ─── Helpers ───
 
@@ -120,7 +118,7 @@ class TestModuleImport:
         """XILP003 must not import elevenlabs — assembly is API-free."""
         import ast
         import inspect
-        with open(inspect.getfile(assembly), "r", encoding="utf-8") as f:
+        with open(inspect.getfile(assembly), encoding="utf-8") as f:
             tree = ast.parse(f.read())
         imports = []
         for node in ast.walk(tree):

@@ -39,9 +39,6 @@ import subprocess
 import textwrap
 
 from xil_pipeline.log_config import configure_logging, get_logger
-
-logger = get_logger(__name__)
-
 from xil_pipeline.mix_common import (
     apply_phone_filter,
     build_ambience_layer,
@@ -60,6 +57,8 @@ from xil_pipeline.mix_common import (
 from xil_pipeline.models import CastConfiguration, SfxConfiguration, VoiceConfig, derive_paths, resolve_slug
 from xil_pipeline.sfx_common import run_banner, tag_wav
 from xil_pipeline.timeline_viz import build_timeline_data, render_html_timeline, render_terminal_timeline
+
+logger = get_logger(__name__)
 
 STEMS_DIR = "stems"
 DAW_DIR = "daw"

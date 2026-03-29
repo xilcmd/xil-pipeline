@@ -4,10 +4,12 @@
 
 """Tests for Pydantic data models (TDD — tests written before models)."""
 
+import json
+
 import pytest
+from pydantic import ValidationError
 
 from xil_pipeline import models
-
 
 # ---------------------------------------------------------------------------
 # Phase 0 — Foundation
@@ -87,8 +89,6 @@ class TestCastConfigurationTag:
 # ---------------------------------------------------------------------------
 # Phase 1 — Script Models
 # ---------------------------------------------------------------------------
-
-from pydantic import ValidationError
 
 
 class TestScriptEntry:
@@ -906,9 +906,6 @@ class TestSfxConfiguration:
 # ---------------------------------------------------------------------------
 # Phase 4 — Show slug, derive_paths, resolve_slug
 # ---------------------------------------------------------------------------
-
-import json
-import tempfile
 
 
 class TestShowSlug:

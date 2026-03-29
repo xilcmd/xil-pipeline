@@ -8,10 +8,16 @@ import csv
 import io
 import json
 import os
-import textwrap
 from pathlib import Path
 
 import pytest
+
+from xil_pipeline.XILU003_csv_sfx_join import (
+    annotate_csv,
+    derive_paths,
+    join_cast,
+    join_sfx,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers — build in-memory CSV / JSON fixtures
@@ -123,16 +129,8 @@ def read_annotated(out_path: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Import the module under test
+# Tests
 # ---------------------------------------------------------------------------
-
-from xil_pipeline.XILU003_csv_sfx_join import (
-    annotate_csv,
-    derive_paths,
-    join_cast,
-    join_sfx,
-)
-
 
 # ---------------------------------------------------------------------------
 # Unit tests: join_sfx

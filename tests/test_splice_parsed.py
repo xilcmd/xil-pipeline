@@ -7,12 +7,10 @@
 import copy
 import json
 import os
-import tempfile
 
 import pytest
 
 from xil_pipeline import XILU006_splice_parsed as splice
-
 
 # ─── Helpers ───
 

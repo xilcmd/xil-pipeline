@@ -9,8 +9,7 @@ import os
 import pytest
 
 # ─── Import timeline_viz ───
-
-from xil_pipeline import timeline_viz
+from xil_pipeline import mix_common, timeline_viz
 
 build_timeline_data = timeline_viz.build_timeline_data
 render_terminal_timeline = timeline_viz.render_terminal_timeline
@@ -153,7 +152,7 @@ class TestRenderHtmlTimeline:
     def test_valid_html_structure(self, sample_data, tmp_path):
         out_path = str(tmp_path / "timeline.html")
         render_html_timeline(sample_data, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         assert "<!DOCTYPE html>" in content
         assert "</html>" in content
@@ -163,7 +162,7 @@ class TestRenderHtmlTimeline:
     def test_contains_layer_json(self, sample_data, tmp_path):
         out_path = str(tmp_path / "timeline.html")
         render_html_timeline(sample_data, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         assert '"dialogue"' in content
         assert '"ambience"' in content
@@ -173,14 +172,14 @@ class TestRenderHtmlTimeline:
     def test_contains_tag(self, sample_data, tmp_path):
         out_path = str(tmp_path / "timeline.html")
         render_html_timeline(sample_data, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         assert "S02E03" in content
 
     def test_contains_all_layer_names(self, sample_data, tmp_path):
         out_path = str(tmp_path / "timeline.html")
         render_html_timeline(sample_data, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         for name in ("Dialogue", "Ambience", "Music", "SFX"):
             assert name in content
@@ -188,7 +187,7 @@ class TestRenderHtmlTimeline:
     def test_contains_span_labels(self, sample_data, tmp_path):
         out_path = str(tmp_path / "timeline.html")
         render_html_timeline(sample_data, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         assert "tina" in content
         assert "INTRO MUSIC" in content
@@ -201,7 +200,7 @@ class TestRenderHtmlTimeline:
     def test_self_contained_no_cdn(self, sample_data, tmp_path):
         out_path = str(tmp_path / "timeline.html")
         render_html_timeline(sample_data, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         # No external CDN references
         assert "cdn" not in content.lower()
@@ -209,8 +208,6 @@ class TestRenderHtmlTimeline:
 
 
 # ─── Tests: mix_common label helpers ───
-
-from xil_pipeline import mix_common
 
 StemPlan = mix_common.StemPlan
 build_foreground_timeline_only = mix_common.build_foreground_timeline_only
@@ -414,7 +411,7 @@ class TestHtmlTimelineRampIndicators:
         )
         out_path = str(tmp_path / "tl.html")
         render_html_timeline(td, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         assert "ramp_in_s" in content
         assert "ramp_out_s" in content
@@ -431,7 +428,7 @@ class TestHtmlTimelineRampIndicators:
         )
         out_path = str(tmp_path / "tl.html")
         render_html_timeline(td, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         assert '"ramp_in_s": 0.5' in content
         assert '"ramp_out_s": 1.5' in content
@@ -447,7 +444,7 @@ class TestHtmlTimelineRampIndicators:
         )
         out_path = str(tmp_path / "tl.html")
         render_html_timeline(td, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         assert '"play_duration": 60.0' in content
         assert 'ramp-badge pd' in content
@@ -463,7 +460,7 @@ class TestHtmlTimelineRampIndicators:
         )
         out_path = str(tmp_path / "tl.html")
         render_html_timeline(td, out_path)
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             content = f.read()
         assert '"play_duration": null' in content
 

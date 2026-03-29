@@ -4,10 +4,9 @@
 
 """Tests for docs/build_docs_xil_pipeline.py — MkDocs documentation generator."""
 
-import os
 import importlib.util
+import os
 from pathlib import Path
-import pytest
 
 # Load the module
 spec = importlib.util.spec_from_file_location(

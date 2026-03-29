@@ -36,6 +36,7 @@ import subprocess
 
 from pydub import AudioSegment
 
+from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.mix_common import (
     apply_phone_filter,
     build_ambience_layer,
@@ -46,7 +47,6 @@ from xil_pipeline.mix_common import (
 )
 from xil_pipeline.models import CastConfiguration, SfxConfiguration, VoiceConfig, derive_paths, resolve_slug
 from xil_pipeline.sfx_common import run_banner
-from xil_pipeline.log_config import configure_logging, get_logger
 
 logger = get_logger(__name__)
 

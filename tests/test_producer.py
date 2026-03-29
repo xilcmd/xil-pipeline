@@ -6,7 +6,6 @@
 
 import json
 import os
-import tempfile
 import unittest.mock
 
 import pytest
@@ -17,6 +16,7 @@ with unittest.mock.patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test_key"}):
     with unittest.mock.patch("elevenlabs.client.ElevenLabs"):
         from xil_pipeline import XILP002_producer as producer
 
+from xil_pipeline import models
 
 # ─── Fixtures ───
 
@@ -428,8 +428,6 @@ class TestGenerateVoices:
 
 # ─── Contract Tests: load_production output validates against Pydantic models ───
 
-from xil_pipeline import models
-
 
 class TestLoadProductionModelContract:
     """Verify load_production output is valid against Pydantic models."""
@@ -807,7 +805,7 @@ class TestPreambleDryRun:
         return str(f)
 
     def test_preamble_line_printed_before_main_dry_run(self, tmp_path, caplog):
-        cast_file = self._make_cast_file(tmp_path)
+        self._make_cast_file(tmp_path)
         script_file = self._make_script_file(tmp_path)
         (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
@@ -824,7 +822,7 @@ class TestPreambleDryRun:
         assert "tina" in caplog.text
 
     def test_preamble_shows_char_count(self, tmp_path, caplog):
-        cast_file = self._make_cast_file(tmp_path)
+        self._make_cast_file(tmp_path)
         script_file = self._make_script_file(tmp_path)
         (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
@@ -841,7 +839,7 @@ class TestPreambleDryRun:
         assert "chars" in caplog.text
 
     def test_no_preamble_no_preamble_line(self, tmp_path, caplog):
-        cast_file = self._make_cast_file(tmp_path, with_preamble=False)
+        self._make_cast_file(tmp_path, with_preamble=False)
         script_file = self._make_script_file(tmp_path)
         (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
         original_cwd = os.getcwd()
@@ -861,7 +859,6 @@ class TestPreambleSegments:
     """Unit tests for the multi-segment preamble helpers."""
 
     def _make_cast_cfg(self, preamble_dict: dict):
-        import json
         from xil_pipeline.models import CastConfiguration
         data = {
             "show": "TEST", "season": 2, "episode": 3,

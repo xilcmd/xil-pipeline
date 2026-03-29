@@ -34,8 +34,8 @@ import os
 
 from elevenlabs.client import ElevenLabs
 
-from xil_pipeline.sfx_common import run_banner
 from xil_pipeline.log_config import configure_logging, get_logger
+from xil_pipeline.sfx_common import run_banner
 
 logger = get_logger(__name__)
 

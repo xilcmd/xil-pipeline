@@ -6,16 +6,12 @@
 
 import json
 import os
-import shutil
 import unittest.mock
 
 import pytest
 
-
 # ─── Module import ───
-
 from xil_pipeline import sfx_common
-
 
 # ─── Fixtures ───
 
@@ -176,7 +172,6 @@ class TestSharedSfxPath:
 
 class TestTagMp3:
     def test_tags_silence_mp3(self, tmp_path):
-        from xil_pipeline.models import SfxEntry
         from pydub import AudioSegment
         # Create a real silence MP3
         mp3_path = tmp_path / "test.mp3"
@@ -297,8 +292,9 @@ class TestEnsureSharedSfx:
             )
 
     def test_generated_file_has_id3_tags(self, tmp_path):
-        from xil_pipeline.models import SfxEntry
         from mutagen.id3 import ID3
+
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(type="silence", duration_seconds=1.0)
         sfx_dir = str(tmp_path / "SFX")
 
@@ -331,8 +327,9 @@ class TestEnsureSharedSfx:
 
     def test_retries_on_rate_limit_then_succeeds(self, tmp_path):
         """429 causes retry; second attempt succeeds."""
-        from xil_pipeline.models import SfxEntry
         from elevenlabs.core.api_error import ApiError
+
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(prompt="Phone buzz", duration_seconds=2.0)
         sfx_dir = str(tmp_path / "SFX")
         mock_client = unittest.mock.MagicMock()
@@ -352,8 +349,9 @@ class TestEnsureSharedSfx:
 
     def test_retries_on_server_error_then_succeeds(self, tmp_path):
         """5xx error causes retry; second attempt succeeds."""
-        from xil_pipeline.models import SfxEntry
         from elevenlabs.core.api_error import ApiError
+
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(prompt="Phone buzz", duration_seconds=2.0)
         sfx_dir = str(tmp_path / "SFX")
         mock_client = unittest.mock.MagicMock()
@@ -374,6 +372,7 @@ class TestEnsureSharedSfx:
     def test_retries_on_network_error_then_succeeds(self, tmp_path):
         """httpx.TransportError causes retry; second attempt succeeds."""
         import httpx
+
         from xil_pipeline.models import SfxEntry
         effect = SfxEntry(prompt="Phone buzz", duration_seconds=2.0)
         sfx_dir = str(tmp_path / "SFX")
@@ -394,8 +393,9 @@ class TestEnsureSharedSfx:
 
     def test_raises_after_max_retries_on_server_error(self, tmp_path):
         """5xx error exhausting all retries should propagate."""
-        from xil_pipeline.models import SfxEntry
         from elevenlabs.core.api_error import ApiError
+
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(prompt="Phone buzz", duration_seconds=2.0)
         sfx_dir = str(tmp_path / "SFX")
         mock_client = unittest.mock.MagicMock()
@@ -413,6 +413,7 @@ class TestEnsureSharedSfx:
     def test_raises_after_max_retries_on_network_error(self, tmp_path):
         """Network error exhausting all retries should propagate."""
         import httpx
+
         from xil_pipeline.models import SfxEntry
         effect = SfxEntry(prompt="Phone buzz", duration_seconds=2.0)
         sfx_dir = str(tmp_path / "SFX")
@@ -430,8 +431,9 @@ class TestEnsureSharedSfx:
 
     def test_non_retryable_4xx_raises_immediately(self, tmp_path):
         """4xx errors other than 429 should not be retried."""
-        from xil_pipeline.models import SfxEntry
         from elevenlabs.core.api_error import ApiError
+
+        from xil_pipeline.models import SfxEntry
         effect = SfxEntry(prompt="Phone buzz", duration_seconds=2.0)
         sfx_dir = str(tmp_path / "SFX")
         mock_client = unittest.mock.MagicMock()

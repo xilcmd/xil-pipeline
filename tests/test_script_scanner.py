@@ -5,14 +5,11 @@
 """Tests for XILP000_script_scanner.py — pre-flight script analysis tool."""
 
 import json
-import os
-import sys
 import unittest.mock
 
 import pytest
 
 from xil_pipeline import XILP000_script_scanner as scanner
-
 
 # ─── Fixtures ───
 

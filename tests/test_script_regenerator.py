@@ -4,7 +4,6 @@
 
 """Tests for XILP009_script_regenerator.py."""
 
-import json
 import pytest
 
 from xil_pipeline.XILP009_script_regenerator import (
@@ -12,7 +11,6 @@ from xil_pipeline.XILP009_script_regenerator import (
     section_display_name,
     speaker_display_name,
 )
-
 
 # --- Helper fixtures ---
 

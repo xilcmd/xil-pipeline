@@ -5,15 +5,13 @@
 """Tests for mix_common.py — stem plans, clip effects, and layer builders."""
 
 import math
-import os
 
 import pytest
 from pydub import AudioSegment
 from pydub.generators import Sine
 
 # ─── Import mix_common ───
-
-from xil_pipeline import mix_common
+from xil_pipeline import mix_common, models
 
 collect_stem_plans = mix_common.collect_stem_plans
 extract_seq = mix_common.extract_seq
@@ -25,9 +23,6 @@ build_sfx_layer = mix_common.build_sfx_layer
 compute_dialogue_labels = mix_common.compute_dialogue_labels
 StemPlan = mix_common.StemPlan
 
-# ─── Import models for SfxConfiguration ───
-
-from xil_pipeline import models
 SfxConfiguration = models.SfxConfiguration
 
 
@@ -177,7 +172,6 @@ class TestExtractSeq:
         assert extract_seq('stems/S02E03/n010_something_sfx.mp3') == -10
 
     def test_invalid_prefix_raises_value_error(self):
-        import pytest
         with pytest.raises((ValueError, IndexError)):
             extract_seq('stems/S01E01/preamble_tina.mp3')
 
