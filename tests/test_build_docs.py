@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Tests for docs/build_docs_xil_pipeline.py — MkDocs documentation generator."""
+"""Tests for docs/build_docs.py — MkDocs documentation generator."""
 
 import importlib.util
 import os
@@ -11,7 +11,7 @@ from pathlib import Path
 # Load the module
 spec = importlib.util.spec_from_file_location(
     "build_docs",
-    os.path.join(os.path.dirname(__file__), "..", "docs", "build_docs_xil_pipeline.py")
+    os.path.join(os.path.dirname(__file__), "..", "docs", "build_docs.py")
 )
 build_docs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build_docs)
