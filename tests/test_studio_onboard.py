@@ -264,14 +264,15 @@ class TestMainCLI:
         try:
             mock_response = unittest.mock.MagicMock()
             mock_response.project.project_id = "proj_test_123"
-            with unittest.mock.patch("sys.argv", [
-                "XILP004", "--episode", "S01E02",
-            ]):
-                with unittest.mock.patch.object(
-                    onboard, "create_project", return_value=mock_response
-                ) as mock_create:
-                    with unittest.mock.patch.object(onboard, "check_elevenlabs_quota", return_value=50000):
-                        onboard.main()
-                        mock_create.assert_called_once()
+            with unittest.mock.patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test_key"}):
+                with unittest.mock.patch("sys.argv", [
+                    "XILP004", "--episode", "S01E02",
+                ]):
+                    with unittest.mock.patch.object(
+                        onboard, "create_project", return_value=mock_response
+                    ) as mock_create:
+                        with unittest.mock.patch.object(onboard, "check_elevenlabs_quota", return_value=50000):
+                            onboard.main()
+                            mock_create.assert_called_once()
         finally:
             os.chdir(original_cwd)

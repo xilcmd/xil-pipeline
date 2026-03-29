@@ -352,7 +352,7 @@ class TestBuildMusicLayer:
 class TestAssembleAudio:
     def test_assembles_to_mp3(self, config, stems_with_audio, tmp_path):
         output_path = str(tmp_path / "master.mp3")
-        with unittest.mock.patch("os.system"):
+        with unittest.mock.patch("subprocess.run"):
             assembly.assemble_audio(config, str(stems_with_audio), output_path)
         assert os.path.exists(output_path)
 
@@ -364,7 +364,7 @@ class TestAssembleAudio:
 
     def test_applies_phone_filter_for_frank(self, config, stems_with_audio, tmp_path):
         output_path = str(tmp_path / "master.mp3")
-        with unittest.mock.patch("os.system"):
+        with unittest.mock.patch("subprocess.run"):
             with unittest.mock.patch.object(
                 assembly, "apply_phone_filter",
                 wraps=assembly.apply_phone_filter
@@ -378,7 +378,7 @@ class TestAssembleAudio:
 class TestAssembleMultitrack:
     def test_produces_mp3(self, config, stems_with_bg, parsed_json, tmp_path):
         output = str(tmp_path / "master.mp3")
-        with unittest.mock.patch("os.system"):
+        with unittest.mock.patch("subprocess.run"):
             assembly.assemble_multitrack(config, str(stems_with_bg), parsed_json, output)
         assert os.path.exists(output)
 
@@ -390,7 +390,7 @@ class TestAssembleMultitrack:
 
     def test_output_is_stereo(self, config, stems_with_bg, parsed_json, tmp_path):
         output = str(tmp_path / "master.mp3")
-        with unittest.mock.patch("os.system"):
+        with unittest.mock.patch("subprocess.run"):
             assembly.assemble_multitrack(config, str(stems_with_bg), parsed_json, output)
         result = AudioSegment.from_file(output)
         assert result.channels == 2

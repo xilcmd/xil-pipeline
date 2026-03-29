@@ -192,11 +192,12 @@ class TestMainCli:
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         try:
-            with unittest.mock.patch("sys.argv", [
-                "XILU002", "--episode", "S01E01",
-                "--script", sample_script, "--max-duration", "1.0",
-            ]):
-                generate_sfx.main()
+            with unittest.mock.patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test_key"}):
+                with unittest.mock.patch("sys.argv", [
+                    "XILU002", "--episode", "S01E01",
+                    "--script", sample_script, "--max-duration", "1.0",
+                ]):
+                    generate_sfx.main()
         finally:
             generate_sfx.STEMS_DIR = original
             os.chdir(original_cwd)
