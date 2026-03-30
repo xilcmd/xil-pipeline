@@ -292,6 +292,25 @@ def is_stage_direction(line: str) -> bool:
     return line.startswith("[") and "]" in line
 
 
+def _parse_direction_hint(raw: str) -> tuple[str, str | None]:
+    """Strip a scriptwriter SFX-source hint from a direction text.
+
+    Scriptwriters may annotate directions with a filename hint separated
+    by a pipe, e.g.::
+
+        SFX: RADIO STATIC — BRIEF TUNING | sfx_radio-static-tuning-transition.mp3
+
+    Returns the clean direction text and the SFX source path (``"SFX/<filename>"``),
+    or ``None`` if no hint is present.
+    """
+    if " | " in raw:
+        clean, hint = raw.split(" | ", 1)
+        hint = hint.strip()
+        if hint.endswith(".mp3") or hint.endswith(".wav"):
+            return clean.strip(), f"SFX/{hint}"
+    return raw.strip(), None
+
+
 def is_section_header(line: str) -> bool:
     """Check if a line matches a known section header.
 
@@ -620,17 +639,21 @@ def parse_script(
             # Extract embedded bracketed directions (e.g. [AMBIENCE: ...])
             brackets = re.findall(r"\[([^\]]+)\]", line)
             for bracket_text in brackets:
+                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip())
                 seq += 1
-                entries.append({
+                entry = {
                     "seq": seq,
                     "type": "direction",
                     "section": current_section,
                     "scene": current_scene,
                     "speaker": None,
                     "direction": None,
-                    "text": bracket_text.strip(),
-                    "direction_type": classify_direction(bracket_text),
-                })
+                    "text": clean_text,
+                    "direction_type": classify_direction(clean_text),
+                }
+                if sfx_source:
+                    entry["sfx_source"] = sfx_source
+                entries.append(entry)
                 debug_line_map.append((i + 1, lines[i], len(entries) - 1))
 
             last_dialogue_idx = None
@@ -642,17 +665,21 @@ def parse_script(
             # Extract all bracketed sections
             brackets = re.findall(r"\[([^\]]+)\]", line)
             for bracket_text in brackets:
+                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip())
                 seq += 1
-                entries.append({
+                entry = {
                     "seq": seq,
                     "type": "direction",
                     "section": current_section,
                     "scene": current_scene,
                     "speaker": None,
                     "direction": None,
-                    "text": bracket_text.strip(),
-                    "direction_type": classify_direction(bracket_text),
-                })
+                    "text": clean_text,
+                    "direction_type": classify_direction(clean_text),
+                }
+                if sfx_source:
+                    entry["sfx_source"] = sfx_source
+                entries.append(entry)
                 debug_line_map.append((i + 1, lines[i], len(entries) - 1))
             last_dialogue_idx = None
             continue
@@ -916,6 +943,8 @@ def generate_sfx_config(parsed: dict, sfx_path: str) -> None:
         if text in effects:
             continue
 
+        sfx_source = entry.get("sfx_source")
+
         if text == "BEAT":
             effects[text] = {"type": "silence", "duration_seconds": 1.0}
             silence_count += 1
@@ -931,6 +960,14 @@ def generate_sfx_config(parsed: dict, sfx_path: str) -> None:
         elif text == "AMBIENCE: STOP" or text.endswith("FADES OUT"):
             effects[text] = {"type": "silence", "duration_seconds": 0.0}
             silence_count += 1
+        elif sfx_source:
+            # Scriptwriter provided a source file hint — use it instead of a stub prompt.
+            dur = 30.0 if text.startswith("AMBIENCE:") else (15.0 if text.startswith("MUSIC:") else 5.0)
+            effect: dict = {"source": sfx_source, "duration_seconds": dur}
+            if text.startswith("AMBIENCE:"):
+                effect["loop"] = True
+            effects[text] = effect
+            sfx_count += 1
         elif text.startswith("AMBIENCE:"):
             effects[text] = {
                 "prompt": text,
@@ -960,6 +997,82 @@ def generate_sfx_config(parsed: dict, sfx_path: str) -> None:
     logger.info(f"Created {sfx_path} with {total} effects "
           f"({silence_count} silence, {sfx_count} sfx "
           f"— review prompts before generation)")
+
+
+def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
+    """Add missing ``source`` fields to an existing SFX config from parsed hints.
+
+    When a script is re-parsed and the SFX config already exists, any direction
+    entries that carry an ``sfx_source`` hint are used to update the sfx config
+    in three ways:
+
+    1. **Clean key already exists, no source** — adds ``source`` field, removes
+       stub ``prompt`` if it matched the key text.
+    2. **Stale piped key exists** (``"KEY | file.mp3"`` from a pre-fix parse) —
+       renames it to the clean key and adds ``source``.
+    3. **Key absent entirely** — adds a new entry with ``source`` and sensible
+       defaults (``loop: True`` for AMBIENCE, appropriate ``duration_seconds``).
+
+    Entries that already have a ``source`` field are never touched.
+
+    Args:
+        parsed: Parsed script dict (after hint stripping).
+        sfx_path: Path to the existing SFX config JSON to update in-place.
+    """
+    with open(sfx_path, encoding="utf-8") as f:
+        sfx_data = json.load(f)
+
+    effects = sfx_data.setdefault("effects", {})
+
+    # Build a lookup from piped-key → clean-key for stale entries already in config
+    stale_key_map: dict[str, str] = {}
+    for existing_key in list(effects.keys()):
+        clean, hint = _parse_direction_hint(existing_key)
+        if hint and clean != existing_key:
+            stale_key_map[existing_key] = clean
+
+    updated = 0
+    seen_clean: set[str] = set()
+    for entry in parsed["entries"]:
+        if entry["type"] != "direction":
+            continue
+        sfx_source = entry.get("sfx_source")
+        if not sfx_source:
+            continue
+        text = entry["text"]  # clean key
+        if text in seen_clean:
+            continue
+        seen_clean.add(text)
+
+        if text in effects:
+            # Case 1: clean key present — add source if missing
+            if "source" not in effects[text]:
+                effects[text]["source"] = sfx_source
+                if effects[text].get("prompt") == text:
+                    del effects[text]["prompt"]
+                updated += 1
+        else:
+            # Case 2: stale piped key exists — rename + add source
+            stale_key = next((k for k, v in stale_key_map.items() if v == text), None)
+            if stale_key and stale_key in effects:
+                old_entry = effects.pop(stale_key)
+                old_entry["source"] = sfx_source
+                old_entry.pop("prompt", None)
+                effects[text] = old_entry
+                updated += 1
+            else:
+                # Case 3: key absent entirely — create it
+                dur = 30.0 if text.startswith("AMBIENCE:") else (15.0 if text.startswith("MUSIC:") else 5.0)
+                new_entry: dict = {"source": sfx_source, "duration_seconds": dur}
+                if text.startswith("AMBIENCE:"):
+                    new_entry["loop"] = True
+                effects[text] = new_entry
+                updated += 1
+
+    if updated:
+        with open(sfx_path, "w", encoding="utf-8") as f:
+            json.dump(sfx_data, f, indent=2, ensure_ascii=False)
+        logger.info("Backfilled %d source hint(s) in %s", updated, sfx_path)
 
 
 def main() -> None:
@@ -1040,6 +1153,8 @@ def main() -> None:
                 generate_cast_config(parsed, cast_path)
             if not os.path.exists(sfx_path):
                 generate_sfx_config(parsed, sfx_path)
+            else:
+                backfill_sfx_sources(parsed, sfx_path)
 
 
 if __name__ == "__main__":

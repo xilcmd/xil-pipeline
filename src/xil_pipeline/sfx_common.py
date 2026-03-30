@@ -320,6 +320,7 @@ def load_sfx_entries(
     sfx_json_path: str,
     max_duration: float | None = None,
     direction_types: set[str] | None = None,
+    local_only: bool = False,
 ) -> list[dict]:
     """Load direction entries matched against an SFX configuration.
 
@@ -335,6 +336,10 @@ def load_sfx_entries(
         direction_types: If set, only include entries whose
             ``direction_type`` is in this set (e.g. ``{"SFX", "BEAT"}``).
             ``None`` includes all categories.
+        local_only: If ``True``, skip effects that would require an API
+            call — i.e. ``type == "sfx"``, no ``source`` file, and not
+            already present in the shared ``SFX/`` directory.  Silence
+            entries and source-backed entries are always included.
 
     Returns:
         A list of SFX entry dicts with ``seq``, ``text``, ``direction_type``,
@@ -360,6 +365,10 @@ def load_sfx_entries(
             continue  # stop markers (FADES OUT / AMBIENCE: STOP) — no stem needed
         if max_duration is not None and effect.duration_seconds > max_duration:
             continue
+        if local_only and effect.type == "sfx" and effect.source is None:
+            if not file_nonempty(shared_sfx_path(SFX_DIR, entry["text"])):
+                logger.debug("--local-only: skipping %r (not in SFX/)", entry["text"])
+                continue
 
         seq = entry["seq"]
         if seq < 0:

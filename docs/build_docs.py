@@ -1,7 +1,7 @@
 """
 Generate MkDocs documentation from Python source files using mkdocstrings.
 
-This script scans the gemini-project directory and creates markdown files for
+This script scans the xil-pipeline directory and creates markdown files for
 automatic API documentation generation.
 
 By default, clears existing generated documentation before building to prevent
@@ -19,14 +19,14 @@ logger = logging.getLogger(__name__)
 
 def convert_path_to_namespace(path: Path, root: Path) -> str:
     """
-    Convert a file path to a Python namespace (e.g., gemini-project.eth.loader).
+    Convert a file path to a Python namespace (e.g., xil-pipeline.eth.loader).
 
     Args:
         path: Absolute path to Python file or directory
         root: Project root directory
 
     Returns:
-        Dotted namespace string (e.g., "gemini-project.eth.loader")
+        Dotted namespace string (e.g., "xil-pipeline.eth.loader")
     """
     # Get relative path from root
     relative = path.relative_to(root)
@@ -135,7 +135,7 @@ def clean_generated_docs(docs_base: Path, code_root: Path) -> None:
     Clean generated documentation files, preserving hand-written docs.
 
     Removes:
-    - Generated gemini-project/ subdirectories and .md files
+    - Generated xil-pipeline/ subdirectories and .md files
     - .pages files (auto-generated)
 
     Preserves:
@@ -145,12 +145,12 @@ def clean_generated_docs(docs_base: Path, code_root: Path) -> None:
 
     Args:
         docs_base: Base docs directory (e.g., docs/)
-        code_root: Source code root (e.g., gemini-project/)
+        code_root: Source code root (e.g., xil-pipeline/)
     """
     logger.info("Cleaning generated documentation...")
 
     # Calculate the docs subdirectory that mirrors the code structure
-    code_name = code_root.name  # 'gemini-project'
+    code_name = code_root.name  # 'xil-pipeline'
     generated_dir = docs_base / code_name
 
     if generated_dir.exists():
@@ -202,7 +202,7 @@ def link_markdown_files(code_root: Path, docs_base: Path, project_root: Path) ->
     without needing to re-run the build script.
 
     Args:
-        code_root: Source code root directory (e.g., gemini-project/)
+        code_root: Source code root directory (e.g., xil-pipeline/)
         docs_base: Base docs directory (e.g., docs/)
         project_root: Project root directory
 
@@ -249,7 +249,7 @@ def create_module_doc(file: Path, docs_dir: Path, namespace: str) -> None:
     Args:
         file: Path to Python source file
         docs_dir: Directory to create markdown file in
-        namespace: Python namespace (e.g., "gemini-project.eth.loader")
+        namespace: Python namespace (e.g., "xil-pipeline.eth.loader")
     """
     md_file = docs_dir / f"{file.stem}.md"
 

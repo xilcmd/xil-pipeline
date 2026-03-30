@@ -411,6 +411,34 @@ class TestGenerateVoices:
 
         assert "Generating 0 voice stems" in caplog.text
 
+    def test_skips_tag_only_text(self, tmp_path, caplog):
+        """Entries whose text is only a speaker tag (e.g. '[sighs]') are skipped with a warning."""
+        self._setup_api()
+        config = {"dez": {"id": "voice_dez_456", "pan": 0.0, "filter": False}}
+        entries = [
+            {"seq": 117, "speaker": "dez", "text": "[sighs]", "stem_name": "117_act2-scene-2_dez"},
+        ]
+        stems_dir = str(tmp_path)
+        producer.generate_voices(config, entries, stems_dir)
+
+        assert not (tmp_path / "117_act2-scene-2_dez.mp3").exists()
+        assert "SKIP" in caplog.text
+        assert "117" in caplog.text
+        assert "empty after stripping" in caplog.text
+
+    def test_skips_emoji_only_text(self, tmp_path, caplog):
+        """Entries whose text is only an emoji are skipped with a warning."""
+        self._setup_api()
+        config = {"adam": {"id": "voice_adam_123", "pan": 0.0, "filter": False}}
+        entries = [
+            {"seq": 50, "speaker": "adam", "text": "\U0001f600", "stem_name": "050_cold-open_adam"},
+        ]
+        stems_dir = str(tmp_path)
+        producer.generate_voices(config, entries, stems_dir)
+
+        assert not (tmp_path / "050_cold-open_adam.mp3").exists()
+        assert "SKIP" in caplog.text
+
     def test_tags_dialogue_stem(self, sample_script, sample_cast, tmp_path):
         """Generated stems carry ID3 tags: title (song), artist, and lyrics."""
         self._setup_api()

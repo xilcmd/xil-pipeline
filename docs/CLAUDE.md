@@ -1,1 +1,1 @@
-../CLAUDE.md
+/mnt/c/Users/shaba/src/python/xil-pipeline/CLAUDE.md

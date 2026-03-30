@@ -134,6 +134,11 @@ class ScriptEntry(BaseModel):
     direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT"] | None = Field(
         default=None, description="Sound category for direction entries"
     )
+    sfx_source: str | None = Field(
+        default=None,
+        description="Scriptwriter SFX source hint (e.g. 'SFX/filename.mp3'), "
+                    "stripped from '| filename' annotation in the script",
+    )
 
 
 class ScriptStats(BaseModel):

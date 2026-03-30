@@ -414,6 +414,18 @@ def generate_voices(
             logger.info(" !!! Production halted at seq %d to save credits.", entry['seq'])
             break
 
+        # Guard: skip entries whose text would be empty after ElevenLabs strips speaker
+        # tags (e.g. [sighs]) and emojis — the API returns 400 "input_text_empty".
+        stripped = re.sub(r'\[[^\]]*\]', '', text)   # remove [tag] patterns
+        stripped = re.sub(r'[^\w\s]', '', stripped)   # remove punctuation / emojis
+        if not stripped.strip():
+            logger.warning(
+                "   SKIP seq %d (%s): text %r is empty after stripping speaker tags/emojis — "
+                "convert this entry to a direction or replace the text in the script.",
+                entry['seq'], speaker, text,
+            )
+            continue
+
         # Build VoiceSettings from per-speaker cast config (None fields are omitted)
         cfg = config.get(speaker, {})
         vs_fields = {
@@ -784,6 +796,8 @@ def main() -> None:
                             help="Generate ambience stems")
         parser.add_argument("--sfx-music", action="store_true",
                             help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
+        parser.add_argument("--local-only", action="store_true",
+                            help="Only place stems for effects already present in SFX/; skip API generation")
         args = parser.parse_args()
 
         if not args.dry_run and not os.environ.get("ELEVENLABS_API_KEY"):
@@ -836,7 +850,8 @@ def main() -> None:
             if gen_ambience:
                 direction_types.add("AMBIENCE")
             sfx_entries = load_sfx_entries(args.script, sfx_path,
-                                           direction_types=direction_types)
+                                           direction_types=direction_types,
+                                           local_only=args.local_only)
             # Pre-filter SFX entries to the requested range
             if args.stop_at is not None:
                 sfx_entries = [e for e in sfx_entries if e["seq"] <= args.stop_at]
@@ -845,6 +860,18 @@ def main() -> None:
         speaker = cast_cfg.preamble.speaker if cast_cfg.preamble else "tina"
         preamble_voice_stem = os.path.join(stems_dir, f"n002_preamble_{speaker}.mp3")
         preamble_music_stem = os.path.join(stems_dir, "n001_preamble_sfx.mp3")
+
+        # Warn if preamble stems exist on disk but the cast config has no preamble block —
+        # the stems will never be injected into the parsed JSON and will be invisible to xil-daw.
+        if not cast_cfg.preamble:
+            orphaned = [s for s in (preamble_voice_stem, preamble_music_stem) if os.path.exists(s)]
+            if orphaned:
+                for s in orphaned:
+                    logger.warning(
+                        "Preamble stem exists but cast config has no preamble block — "
+                        "add a preamble block to your cast config so this stem is injected "
+                        "into the parsed JSON: %s", s,
+                    )
 
         # Resolve the full preamble text (used for dry-run char count + legacy path)
         preamble_text = None

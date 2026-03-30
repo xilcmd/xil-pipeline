@@ -50,6 +50,7 @@ def load_sfx_plan(
     script_json_path: str, sfx_json_path: str, cast_json_path: str,
     max_duration: float | None = None,
     direction_types: set[str] | None = None,
+    local_only: bool = False,
 ) -> tuple[list[dict], str]:
     """Load SFX entries and derive the stems directory path.
 
@@ -64,6 +65,8 @@ def load_sfx_plan(
             exceeding this value. Useful for limiting API credit spend.
         direction_types: If set, only include entries whose
             ``direction_type`` is in this set. ``None`` includes all.
+        local_only: If ``True``, skip effects not already present in
+            ``SFX/``; no API generation.
 
     Returns:
         A tuple of ``(sfx_entries, stems_dir)`` where ``sfx_entries`` is
@@ -84,6 +87,7 @@ def load_sfx_plan(
         script_json_path, sfx_json_path,
         max_duration=max_duration,
         direction_types=direction_types,
+        local_only=local_only,
     )
     return sfx_entries, stems_dir
 
@@ -113,6 +117,8 @@ def main() -> None:
                             help="Limit to AMBIENCE entries only")
         parser.add_argument("--sfx-music", action="store_true",
                             help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
+        parser.add_argument("--local-only", action="store_true",
+                            help="Only place stems for effects already present in SFX/; skip API generation")
         args = parser.parse_args()
 
         if not args.dry_run and not os.environ.get("ELEVENLABS_API_KEY"):
@@ -147,6 +153,7 @@ def main() -> None:
             args.script, sfx_path, cast_path,
             max_duration=args.max_duration,
             direction_types=direction_types,
+            local_only=args.local_only,
         )
 
         if not os.path.exists(sfx_path):

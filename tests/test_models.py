@@ -168,6 +168,7 @@ class TestScriptEntry:
             "direction": "on-air voice, warm",
             "text": "It's 2:47 AM on a Wednesday...",
             "direction_type": None,
+            "sfx_source": None,
         }
         assert models.ScriptEntry(**raw).model_dump() == raw
 
@@ -215,7 +216,7 @@ class TestParsedScript:
         defaults = {
             "seq": 1, "type": "dialogue", "section": "cold-open",
             "scene": None, "speaker": "adam", "direction": None,
-            "text": "Hello.", "direction_type": None,
+            "text": "Hello.", "direction_type": None, "sfx_source": None,
         }
         defaults.update(overrides)
         return defaults

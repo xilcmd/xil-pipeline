@@ -44,7 +44,7 @@ class TestConvertPathToNamespace:
 
 class TestShouldDocumentFile:
     def test_accepts_normal_module(self, tmp_path):
-        root = tmp_path / "gemini-project"
+        root = tmp_path / "xil-pipeline"
         root.mkdir()
         f = root / "XILP001_script_parser.py"
         f.touch()
@@ -95,7 +95,7 @@ class TestShouldDocumentFile:
 
     def test_accepts_file_in_root_with_hyphen_in_root_name(self, tmp_path):
         # Bug fix: root dir name having a hyphen should NOT filter out files in root
-        root = tmp_path / "gemini-project"
+        root = tmp_path / "xil-pipeline"
         root.mkdir()
         f = root / "XILP001_script_parser.py"
         f.touch()
@@ -135,7 +135,7 @@ class TestShouldCopyMarkdownFile:
 class TestLinkMarkdownFiles:
     def test_creates_symlink(self, tmp_path):
         """link_markdown_files should create a symlink, not a copy."""
-        project_root = tmp_path / "gemini-project"
+        project_root = tmp_path / "xil-pipeline"
         project_root.mkdir()
         docs_base = project_root / "docs"
         docs_base.mkdir()
@@ -151,7 +151,7 @@ class TestLinkMarkdownFiles:
 
     def test_replaces_stale_copy_with_symlink(self, tmp_path):
         """link_markdown_files should replace an existing regular file with a symlink."""
-        project_root = tmp_path / "gemini-project"
+        project_root = tmp_path / "xil-pipeline"
         project_root.mkdir()
         docs_base = project_root / "docs"
         docs_base.mkdir()
@@ -169,7 +169,7 @@ class TestLinkMarkdownFiles:
         assert dest.resolve() == src.resolve()
 
     def test_returns_count(self, tmp_path):
-        project_root = tmp_path / "gemini-project"
+        project_root = tmp_path / "xil-pipeline"
         project_root.mkdir()
         docs_base = project_root / "docs"
         docs_base.mkdir()
@@ -191,7 +191,7 @@ class TestCodeRootPath:
     def test_expected_code_root_exists(self):
         # The script's project_root (parent.parent of the script) should be the project dir
         script = Path(__file__).parent.parent / "docs" / "build_docs.py"
-        expected_code_root = script.parent.parent  # gemini-project/
+        expected_code_root = script.parent.parent  # xil-pipeline/
         assert expected_code_root.exists()
         # And it should contain our known source files (now in src/xil_pipeline/)
         assert (expected_code_root / "src" / "xil_pipeline" / "XILP001_script_parser.py").exists()
@@ -211,12 +211,12 @@ class TestCodeRootPath:
         assert build_docs.should_copy_markdown_file(f) is False
 
 
-# ─── Tests: generated docs go into docs/gemini-project/, not docs/ ───
+# ─── Tests: generated docs go into docs/xil-pipeline/, not docs/ ───
 
 class TestGeneratedDocsSubdir:
     def test_module_docs_land_in_named_subdir(self, tmp_path):
         """Generated .md files should go to docs/<code_root_name>/, not docs/ root."""
-        project_root = tmp_path / "gemini-project"
+        project_root = tmp_path / "xil-pipeline"
         project_root.mkdir()
         docs_base = project_root / "docs"
         docs_base.mkdir()
@@ -226,10 +226,10 @@ class TestGeneratedDocsSubdir:
         src.write_text('"""Parser module."""\n')
 
         # The expected output path under the named subdir
-        expected = docs_base / "gemini-project" / "XILP001_script_parser.md"
+        expected = docs_base / "xil-pipeline" / "XILP001_script_parser.md"
 
         # Simulate what main() should do: place docs in docs/<code_root.name>/
-        docs_dir = docs_base / project_root.name  # docs/gemini-project/
+        docs_dir = docs_base / project_root.name  # docs/xil-pipeline/
         docs_dir.mkdir(parents=True, exist_ok=True)
 
         namespace = build_docs.convert_path_to_namespace(src, project_root)
@@ -239,11 +239,11 @@ class TestGeneratedDocsSubdir:
 
     def test_clean_removes_named_subdir(self, tmp_path):
         """clean_generated_docs must remove docs/<code_root_name>/."""
-        project_root = tmp_path / "gemini-project"
+        project_root = tmp_path / "xil-pipeline"
         project_root.mkdir()
         docs_base = project_root / "docs"
         docs_base.mkdir()
-        generated = docs_base / "gemini-project"
+        generated = docs_base / "xil-pipeline"
         generated.mkdir()
         (generated / "XILP001_script_parser.md").write_text("# test\n")
 

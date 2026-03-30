@@ -527,6 +527,95 @@ class TestLoadSfxEntries:
         assert beat_entries[0]["seq"] != beat_entries[1]["seq"]
 
 
+
+# ─── Tests: load_sfx_entries (local_only) ───
+
+class TestLoadSfxEntriesLocalOnly:
+    """local_only=True skips effects that would require API generation."""
+
+    def test_excludes_new_api_effects(self, sample_script, sample_sfx_file, tmp_path):
+        """API effects not in SFX/ are excluded when local_only=True."""
+        # Patch SFX_DIR to tmp_path so no shared assets exist
+        with unittest.mock.patch.object(sfx_common, "SFX_DIR", str(tmp_path / "SFX")):
+            entries = sfx_common.load_sfx_entries(
+                sample_script, sample_sfx_file, local_only=True,
+            )
+        texts = [e["text"] for e in entries]
+        assert "SFX: PHONE BUZZING" not in texts
+        assert "AMBIENCE: RADIO STATION" not in texts
+        assert "MUSIC: SHOW THEME" not in texts
+
+    def test_keeps_silence_entries(self, sample_script, sample_sfx_file, tmp_path):
+        """Silence entries (BEAT) are always included even when local_only=True."""
+        with unittest.mock.patch.object(sfx_common, "SFX_DIR", str(tmp_path / "SFX")):
+            entries = sfx_common.load_sfx_entries(
+                sample_script, sample_sfx_file, local_only=True,
+            )
+        texts = [e["text"] for e in entries]
+        assert "BEAT" in texts
+        assert texts.count("BEAT") == 2  # duplicate preserved
+
+    def test_keeps_cached_effects(self, sample_script, sample_sfx_file, tmp_path):
+        """Effects already in SFX/ are included even when local_only=True."""
+        sfx_dir = tmp_path / "SFX"
+        sfx_dir.mkdir()
+        # Pre-create the shared asset for SFX: PHONE BUZZING
+        shared = sfx_dir / "sfx_phone-buzzing.mp3"
+        # Use the real slugify to get the correct filename
+        slug = sfx_common.slugify_effect_key("SFX: PHONE BUZZING")
+        (sfx_dir / f"{slug}.mp3").write_bytes(b"\xff\xfb" + b"\x00" * 100)
+
+        with unittest.mock.patch.object(sfx_common, "SFX_DIR", str(sfx_dir)):
+            entries = sfx_common.load_sfx_entries(
+                sample_script, sample_sfx_file, local_only=True,
+            )
+        texts = [e["text"] for e in entries]
+        assert "SFX: PHONE BUZZING" in texts
+
+    def test_keeps_sourced_entries(self, sample_script, tmp_path):
+        """Effects with a source file are always included (no API needed)."""
+        sfx_data = {
+            "show": "TEST SHOW", "season": 1, "episode": 1,
+            "defaults": {},
+            "effects": {
+                "INTRO MUSIC": {
+                    "source": str(tmp_path / "theme.mp3"),
+                    "duration_seconds": 10.0,
+                },
+            },
+        }
+        # Add a matching direction entry to the script
+        import json
+        script = {
+            "show": "TEST SHOW", "episode": 1, "title": "Test",
+            "entries": [
+                {"seq": 1, "type": "direction", "section": "cold-open",
+                 "scene": None, "speaker": None, "direction": None,
+                 "text": "INTRO MUSIC", "direction_type": "MUSIC"},
+            ],
+            "stats": {},
+        }
+        sfx_file = tmp_path / "sfx.json"
+        sfx_file.write_text(json.dumps(sfx_data), encoding="utf-8")
+        script_file = tmp_path / "script.json"
+        script_file.write_text(json.dumps(script), encoding="utf-8")
+
+        with unittest.mock.patch.object(sfx_common, "SFX_DIR", str(tmp_path / "SFX")):
+            entries = sfx_common.load_sfx_entries(
+                str(script_file), str(sfx_file), local_only=True,
+            )
+        assert len(entries) == 1
+        assert entries[0]["text"] == "INTRO MUSIC"
+
+    def test_false_default_unchanged(self, sample_script, sample_sfx_file):
+        """local_only=False (default) returns the same entries as before."""
+        default_entries = sfx_common.load_sfx_entries(sample_script, sample_sfx_file)
+        explicit_false = sfx_common.load_sfx_entries(
+            sample_script, sample_sfx_file, local_only=False,
+        )
+        assert [e["seq"] for e in default_entries] == [e["seq"] for e in explicit_false]
+
+
 # ─── Tests: generate_sfx ───
 
 class TestGenerateSfx:

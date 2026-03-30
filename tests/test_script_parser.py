@@ -921,6 +921,171 @@ class TestGenerateSfxConfig:
         assert len(effect_keys) == len(set(effect_keys))
 
 
+# ─── Tests: _parse_direction_hint ───
+
+class TestParseDirectionHint:
+    def test_strips_mp3_hint(self):
+        clean, src = parser._parse_direction_hint(
+            "SFX: RADIO STATIC — BRIEF TUNING | sfx_radio-static.mp3"
+        )
+        assert clean == "SFX: RADIO STATIC — BRIEF TUNING"
+        assert src == "SFX/sfx_radio-static.mp3"
+
+    def test_strips_wav_hint(self):
+        clean, src = parser._parse_direction_hint("SFX: DOOR OPENS | door-opens.wav")
+        assert clean == "SFX: DOOR OPENS"
+        assert src == "SFX/door-opens.wav"
+
+    def test_no_hint_returns_none(self):
+        clean, src = parser._parse_direction_hint("SFX: DOOR OPENS")
+        assert clean == "SFX: DOOR OPENS"
+        assert src is None
+
+    def test_pipe_without_audio_extension_ignored(self):
+        clean, src = parser._parse_direction_hint("SFX: DOOR OPENS | some notes")
+        assert clean == "SFX: DOOR OPENS | some notes"
+        assert src is None
+
+
+# ─── Tests: generate_sfx_config with source hints ───
+
+class TestGenerateSfxConfigWithHints:
+    def test_source_hint_writes_source_field(self, tmp_path):
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[SFX: STATIC | sfx_static.mp3]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        effect = config["effects"]["SFX: STATIC"]
+        assert effect["source"] == "SFX/sfx_static.mp3"
+        assert "prompt" not in effect
+
+    def test_source_hint_ambience_keeps_loop(self, tmp_path):
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[AMBIENCE: DINER | ambience_diner.mp3]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        effect = config["effects"]["AMBIENCE: DINER"]
+        assert effect["source"] == "SFX/ambience_diner.mp3"
+        assert effect.get("loop") is True
+
+    def test_parsed_entry_text_stripped_of_hint(self, tmp_path):
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[SFX: PHONE BUZZ | sfx_buzz.mp3]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        direction = next(e for e in parsed["entries"] if e["type"] == "direction")
+        assert direction["text"] == "SFX: PHONE BUZZ"
+        assert direction.get("sfx_source") == "SFX/sfx_buzz.mp3"
+
+
+# ─── Tests: backfill_sfx_sources ───
+
+class TestBackfillSfxSources:
+    def test_adds_source_to_matching_entry(self, tmp_path):
+        parsed = {
+            "entries": [
+                {"type": "direction", "text": "SFX: STATIC",
+                 "sfx_source": "SFX/sfx_static.mp3"},
+            ]
+        }
+        sfx_data = {
+            "effects": {"SFX: STATIC": {"prompt": "SFX: STATIC", "duration_seconds": 5.0}}
+        }
+        sfx_path = tmp_path / "sfx.json"
+        sfx_path.write_text(json.dumps(sfx_data), encoding="utf-8")
+        parser.backfill_sfx_sources(parsed, str(sfx_path))
+        with open(str(sfx_path), encoding="utf-8") as f:
+            result = json.load(f)
+        assert result["effects"]["SFX: STATIC"]["source"] == "SFX/sfx_static.mp3"
+        assert "prompt" not in result["effects"]["SFX: STATIC"]
+
+    def test_skips_entry_already_has_source(self, tmp_path):
+        parsed = {
+            "entries": [
+                {"type": "direction", "text": "SFX: STATIC",
+                 "sfx_source": "SFX/new.mp3"},
+            ]
+        }
+        sfx_data = {
+            "effects": {"SFX: STATIC": {"source": "SFX/existing.mp3", "duration_seconds": 5.0}}
+        }
+        sfx_path = tmp_path / "sfx.json"
+        sfx_path.write_text(json.dumps(sfx_data), encoding="utf-8")
+        parser.backfill_sfx_sources(parsed, str(sfx_path))
+        with open(str(sfx_path), encoding="utf-8") as f:
+            result = json.load(f)
+        assert result["effects"]["SFX: STATIC"]["source"] == "SFX/existing.mp3"
+
+    def test_no_change_when_no_hints(self, tmp_path):
+        parsed = {
+            "entries": [
+                {"type": "direction", "text": "SFX: STATIC"},
+            ]
+        }
+        original = {"effects": {"SFX: STATIC": {"prompt": "SFX: STATIC", "duration_seconds": 5.0}}}
+        sfx_path = tmp_path / "sfx.json"
+        sfx_path.write_text(json.dumps(original), encoding="utf-8")
+        parser.backfill_sfx_sources(parsed, str(sfx_path))
+        with open(str(sfx_path), encoding="utf-8") as f:
+            result = json.load(f)
+        assert result == original
+
+    def test_renames_stale_piped_key(self, tmp_path):
+        """A stale key with pipe suffix is renamed to clean key and gets source."""
+        parsed = {
+            "entries": [
+                {"type": "direction", "text": "SFX: STATIC",
+                 "sfx_source": "SFX/sfx_static.mp3"},
+            ]
+        }
+        sfx_data = {
+            "effects": {
+                "SFX: STATIC | sfx_static.mp3": {"prompt": "old", "duration_seconds": 5.0}
+            }
+        }
+        sfx_path = tmp_path / "sfx.json"
+        sfx_path.write_text(json.dumps(sfx_data), encoding="utf-8")
+        parser.backfill_sfx_sources(parsed, str(sfx_path))
+        with open(str(sfx_path), encoding="utf-8") as f:
+            result = json.load(f)
+        assert "SFX: STATIC" in result["effects"]
+        assert "SFX: STATIC | sfx_static.mp3" not in result["effects"]
+        assert result["effects"]["SFX: STATIC"]["source"] == "SFX/sfx_static.mp3"
+
+    def test_adds_missing_entry(self, tmp_path):
+        """Keys absent from sfx config entirely are added with source."""
+        parsed = {
+            "entries": [
+                {"type": "direction", "text": "SFX: NEW EFFECT",
+                 "sfx_source": "SFX/sfx_new.mp3"},
+            ]
+        }
+        sfx_data = {"effects": {}}
+        sfx_path = tmp_path / "sfx.json"
+        sfx_path.write_text(json.dumps(sfx_data), encoding="utf-8")
+        parser.backfill_sfx_sources(parsed, str(sfx_path))
+        with open(str(sfx_path), encoding="utf-8") as f:
+            result = json.load(f)
+        assert result["effects"]["SFX: NEW EFFECT"]["source"] == "SFX/sfx_new.mp3"
+
+
 # ─── Tests: strip_markdown_formatting ───
 
 class TestStripMarkdownFormatting:

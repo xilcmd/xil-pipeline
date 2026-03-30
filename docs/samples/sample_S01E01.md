@@ -1,1 +1,1 @@
-../../samples/sample_S01E01.md
+/mnt/c/Users/shaba/src/python/xil-pipeline/samples/sample_S01E01.md

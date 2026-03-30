@@ -162,6 +162,7 @@ python XILP002_producer.py --episode S01E01 --dry-run
 - Supports `--dry-run` to preview lines and TTS character cost without API calls
 - Supports `--terse` to truncate each line to 3 words (minimizes TTS character cost)
 - Supports `--gen-sfx`, `--gen-music`, `--gen-ambience` to generate only the specified categories of stems (replaces deprecated `--sfx-music` which is kept as a shorthand for all three)
+- Supports `--local-only` (used with `--gen-sfx`/`--gen-music`/`--gen-ambience`) to skip any effect that would require an API call — only assets already in `SFX/` (CACHED) or silence entries are placed; no credits spent
 - Intro music (`INTRO MUSIC` source entry): trimmed at copy time using `play_duration` percentage from sfx config, so the stem file reflects the actual playback length
 - Skips stems that already exist on disk
 
@@ -443,6 +444,7 @@ python XILU002_generate_SFX.py --episode S01E01 --gen-sfx
 python XILU002_generate_SFX.py --episode S01E01 --gen-music
 python XILU002_generate_SFX.py --episode S01E01 --gen-ambience
 python XILU002_generate_SFX.py --episode S01E01 --max-duration 5.0
+python XILU002_generate_SFX.py --episode S01E01 --local-only
 python XILU002_generate_SFX.py --episode S01E01
 ```
 
@@ -454,6 +456,7 @@ python XILU002_generate_SFX.py --episode S01E01
 - `--gen-sfx`, `--gen-music`, `--gen-ambience` filter generation to the specified categories; omitting all three processes all categories
 - `--dry-run` SUMMARY now shows per-category credit subtotals (MUSIC / AMBIENCE / SFX / silence)
 - `--max-duration N` filters to effects ≤ N seconds (controls API credit spend)
+- `--local-only` skips any effect not already present in `SFX/`; only CACHED assets and silence entries are placed, no API calls made
 - 429 rate-limit errors are retried automatically up to 5 times with linear backoff (10s, 20s, 30s, 40s, 50s)
 - Skips stems that already exist on disk
 

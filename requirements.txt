@@ -1,4 +1,4 @@
-# Runtime dependencies for gemini-project scripts
+# Runtime dependencies for xil-pipeline scripts
 # Install: pip install -r requirements.txt
 
 # ElevenLabs TTS API
