@@ -32,6 +32,8 @@ Call ``configure_logging(logging.DEBUG)`` to enable verbose output.
 
 import logging
 import sys
+from datetime import date
+from pathlib import Path
 
 
 class _CliFormatter(logging.Formatter):
@@ -56,6 +58,10 @@ def configure_logging(level: int = logging.INFO) -> None:
     Safe to call multiple times — only the first call installs the
     stdout handler.  Subsequent calls may still update the log level.
 
+    Automatically tees output to ``logs/xil_YYYY-MM-DD.log`` in the
+    current working directory.  The ``logs/`` directory is created if it
+    does not exist.
+
     Args:
         level: Logging level threshold (default: ``logging.INFO``).
             Pass ``logging.DEBUG`` to enable verbose output.
@@ -65,6 +71,14 @@ def configure_logging(level: int = logging.INFO) -> None:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(_CliFormatter())
         root.addHandler(handler)
+
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        log_path = log_dir / f"xil_{date.today().isoformat()}.log"
+        fh = logging.FileHandler(log_path, encoding="utf-8")
+        fh.setFormatter(_CliFormatter())
+        root.addHandler(fh)
+
     root.setLevel(level)
 
 
