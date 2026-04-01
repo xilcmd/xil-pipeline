@@ -16,6 +16,7 @@ from xil_pipeline import mix_common, models
 collect_stem_plans = mix_common.collect_stem_plans
 extract_seq = mix_common.extract_seq
 _apply_clip_effects = mix_common._apply_clip_effects
+_resolve_audio_params = mix_common._resolve_audio_params
 _volume_pct_to_db = mix_common._volume_pct_to_db
 build_ambience_layer = mix_common.build_ambience_layer
 build_music_layer = mix_common.build_music_layer
@@ -693,3 +694,136 @@ class TestSfxVolumePercentage:
         plans = collect_stem_plans(str(tmp_path), index, sfx_config=sfx_config)
 
         assert plans[0].volume_percentage == 50.0
+
+
+# ─── _resolve_audio_params: global ramp fallback ───
+
+
+class TestResolveAudioParamsGlobalFallback:
+    """_resolve_audio_params() falls back to global ramp keys when category-specific keys absent."""
+
+    def _music_plan(self, text="MUSIC: THEME"):
+        return StemPlan(seq=1, filepath="", direction_type="MUSIC",
+                        entry_type="direction", text=text)
+
+    def test_music_uses_global_ramp_when_no_music_prefix_key(self):
+        config = SfxConfiguration(
+            show="THE 413", episode=1,
+            defaults={"ramp_in_seconds": 1.5, "ramp_out_seconds": 2.0},
+            effects={},
+        )
+        plan = self._music_plan()
+        _, ri, ro, _ = _resolve_audio_params(plan, config)
+        assert ri == 1.5
+        assert ro == 2.0
+
+    def test_music_category_prefix_wins_over_global(self):
+        config = SfxConfiguration(
+            show="THE 413", episode=1,
+            defaults={
+                "music_ramp_in_seconds": 0.5,
+                "music_ramp_out_seconds": 0.5,
+                "ramp_in_seconds": 9.0,
+                "ramp_out_seconds": 9.0,
+            },
+            effects={},
+        )
+        plan = self._music_plan()
+        _, ri, ro, _ = _resolve_audio_params(plan, config)
+        assert ri == 0.5
+        assert ro == 0.5
+
+    def test_per_effect_wins_over_global_ramp(self):
+        config = SfxConfiguration(
+            show="THE 413", episode=1,
+            defaults={"ramp_in_seconds": 9.0, "ramp_out_seconds": 9.0},
+            effects={
+                "MUSIC: THEME": {
+                    "prompt": "theme",
+                    "duration_seconds": 10.0,
+                    "ramp_in_seconds": 0.25,
+                    "ramp_out_seconds": 0.25,
+                },
+            },
+        )
+        plan = self._music_plan()
+        _, ri, ro, _ = _resolve_audio_params(plan, config)
+        assert ri == 0.25
+        assert ro == 0.25
+
+    def test_ambience_still_uses_category_key(self):
+        config = SfxConfiguration(
+            show="THE 413", episode=1,
+            defaults={
+                "ambience_ramp_in_seconds": 3.0,
+                "ambience_ramp_out_seconds": 3.0,
+                "ramp_in_seconds": 9.0,
+                "ramp_out_seconds": 9.0,
+            },
+            effects={},
+        )
+        plan = StemPlan(seq=2, filepath="", direction_type="AMBIENCE",
+                        entry_type="direction", text="AMBIENCE: RAIN")
+        _, ri, ro, _ = _resolve_audio_params(plan, config)
+        assert ri == 3.0
+        assert ro == 3.0
+
+    def test_sfx_global_ramp_resolves_but_has_no_audio_effect(self):
+        """SFX picks up global ramp value (build_sfx_layer ignores it, so harmless)."""
+        config = SfxConfiguration(
+            show="THE 413", episode=1,
+            defaults={"ramp_in_seconds": 1.0, "ramp_out_seconds": 1.0},
+            effects={},
+        )
+        plan = StemPlan(seq=3, filepath="", direction_type="SFX",
+                        entry_type="direction", text="SFX: BANG")
+        _, ri, ro, _ = _resolve_audio_params(plan, config)
+        assert ri == 1.0
+        assert ro == 1.0
+
+    def test_music_no_ramp_anywhere_gives_none(self):
+        config = SfxConfiguration(
+            show="THE 413", episode=1,
+            defaults={"music_volume_percentage": 80},
+            effects={},
+        )
+        plan = self._music_plan()
+        _, ri, ro, _ = _resolve_audio_params(plan, config)
+        assert ri is None
+        assert ro is None
+
+    def test_sfx_uses_global_volume_when_no_sfx_prefix_key(self):
+        """SFX plan gets global volume_percentage when sfx_volume_percentage is absent."""
+        config = SfxConfiguration(
+            show="THE 413", episode=1,
+            defaults={"volume_percentage": 20},
+            effects={},
+        )
+        plan = StemPlan(seq=3, filepath="", direction_type="SFX",
+                        entry_type="direction", text="SFX: BANG")
+        vol, _, _, _ = _resolve_audio_params(plan, config)
+        assert vol == 20
+
+    def test_music_uses_global_volume_when_no_music_prefix_key(self):
+        """MUSIC plan gets global volume_percentage when music_volume_percentage is absent."""
+        config = SfxConfiguration(
+            show="THE 413", episode=1,
+            defaults={"volume_percentage": 20},
+            effects={},
+        )
+        plan = StemPlan(seq=1, filepath="", direction_type="MUSIC",
+                        entry_type="direction", text="MUSIC: THEME")
+        vol, _, _, _ = _resolve_audio_params(plan, config)
+        assert vol == 20
+
+    def test_category_volume_wins_over_global(self):
+        """sfx_volume_percentage takes priority over global volume_percentage."""
+        config = SfxConfiguration(
+            show="THE 413", episode=1,
+            defaults={"sfx_volume_percentage": 50, "volume_percentage": 20},
+            effects={},
+        )
+        plan = StemPlan(seq=3, filepath="", direction_type="SFX",
+                        entry_type="direction", text="SFX: BANG")
+        vol, _, _, _ = _resolve_audio_params(plan, config)
+        assert vol == 50

@@ -124,8 +124,6 @@ def assemble_multitrack(
         stems_dir: Directory containing episode stem MP3 files.
         parsed_path: Path to the parsed script JSON (XILP001 output).
         final_output: Output path for the master MP3.
-        preamble_cfg: Optional :class:`~models.Preamble` instance; when set,
-            preamble stems are prepended at seq -2 (voice) and -1 (music).
     """
     entries_index = load_entries_index(parsed_path)
     stem_plans = collect_stem_plans(stems_dir, entries_index, sfx_config=sfx_config)

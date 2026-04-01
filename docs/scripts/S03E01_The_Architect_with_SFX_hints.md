@@ -1,1 +1,0 @@
-/mnt/c/Users/shaba/src/python/xil-pipeline/scripts/S03E01_The_Architect_with_SFX_hints.md

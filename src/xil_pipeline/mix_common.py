@@ -202,8 +202,12 @@ def _resolve_audio_params(
 
     Returns:
         Tuple of ``(volume_percentage, ramp_in_seconds, ramp_out_seconds, play_duration)``,
-        each ``None`` if no value is configured. ``play_duration`` is only resolved
-        for MUSIC entries (not AMBIENCE).
+        each ``None`` if no value is configured. ``volume_percentage``,
+        ``ramp_in_seconds``, and ``ramp_out_seconds`` each fall back to the
+        global ``volume_percentage`` / ``ramp_in_seconds`` / ``ramp_out_seconds``
+        defaults when no category-specific key exists (e.g. SFX when
+        ``sfx_volume_percentage`` is absent from the config).
+        ``play_duration`` is only resolved for MUSIC entries (not AMBIENCE).
     """
     if sfx_config is None:
         return None, None, None, None
@@ -224,17 +228,17 @@ def _resolve_audio_params(
     vol = (
         entry.volume_percentage
         if entry and entry.volume_percentage is not None
-        else defaults.get(f"{prefix}_volume_percentage")
+        else defaults.get(f"{prefix}_volume_percentage", defaults.get("volume_percentage"))
     )
     ri = (
         entry.ramp_in_seconds
         if entry and entry.ramp_in_seconds is not None
-        else defaults.get(f"{prefix}_ramp_in_seconds")
+        else defaults.get(f"{prefix}_ramp_in_seconds", defaults.get("ramp_in_seconds"))
     )
     ro = (
         entry.ramp_out_seconds
         if entry and entry.ramp_out_seconds is not None
-        else defaults.get(f"{prefix}_ramp_out_seconds")
+        else defaults.get(f"{prefix}_ramp_out_seconds", defaults.get("ramp_out_seconds"))
     )
     # play_duration applies to MUSIC only (looped ambience has no meaningful truncation)
     pd = None

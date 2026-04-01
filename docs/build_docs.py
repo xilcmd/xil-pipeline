@@ -118,7 +118,7 @@ def should_copy_markdown_file(file: Path) -> bool:
     # 'docs' is excluded to prevent re-copying generated output back into docs/docs/
     # '.pytest_cache' excluded to prevent copying pytest internals
     skip_dirs = {'data', 'output', '.ruff_cache', '.venv', 'venv', '.git', 'site',
-                 'docs', '.pytest_cache'}
+                 'docs', '.pytest_cache', 'scripts'}
     parent_parts = file.parent.parts
     if any(part in skip_dirs or part.endswith('_files') for part in parent_parts):
         return False

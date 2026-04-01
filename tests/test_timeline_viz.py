@@ -574,3 +574,86 @@ class TestVolumePercentageInTimeline:
         html = open(out).read()
         assert "volume_pct" in html
         assert "vol:" in html
+
+
+# ─── Volume badge in HTML timeline ───
+
+
+class TestVolumeBadgeInHtml:
+    """Volume badge (ramp-badge vb) is wired into CSS and JS; volume_pct flows through data JSON."""
+
+    def _render(self, tmp_path, **kwargs):
+        data = build_timeline_data(total_s=10.0, **kwargs)
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(data, out)
+        return open(out, encoding="utf-8").read()
+
+    def test_vb_css_rule_present(self, tmp_path):
+        """The .ramp-badge.vb CSS rule is always present in the template."""
+        html = self._render(tmp_path, tag="TEST", dlg_labels=[], amb_labels=[],
+                            mus_labels=[], sfx_labels=[])
+        assert '.ramp-badge.vb' in html
+
+    def test_js_condition_skips_unity_volume(self, tmp_path):
+        """JS source contains the !== 100 guard that suppresses badge for unity volume."""
+        html = self._render(tmp_path, tag="TEST", dlg_labels=[], amb_labels=[],
+                            mus_labels=[], sfx_labels=[])
+        assert 'volume_pct !== 100' in html
+
+    def test_volume_pct_serialized_for_music(self, tmp_path):
+        """A music span with volume_pct=75 serializes 75.0 into the DATA JSON."""
+        html = self._render(
+            tmp_path, tag="TEST", dlg_labels=[], amb_labels=[],
+            mus_labels=[(0.0, 5.0, "THEME", None, None, None, None, 75.0)],
+            sfx_labels=[],
+        )
+        assert '"volume_pct": 75.0' in html
+
+    def test_volume_pct_serialized_for_sfx(self, tmp_path):
+        """An SFX span with volume_pct=20 serializes 20.0 into the DATA JSON."""
+        html = self._render(
+            tmp_path, tag="TEST", dlg_labels=[], amb_labels=[], mus_labels=[],
+            sfx_labels=[(0.0, 1.0, "SFX: BANG", None, None, None, None, 20.0)],
+        )
+        assert '"volume_pct": 20.0' in html
+
+    def test_volume_pct_serialized_for_ambience(self, tmp_path):
+        """An ambience span with volume_pct=30 serializes 30.0 into the DATA JSON."""
+        html = self._render(
+            tmp_path, tag="TEST", dlg_labels=[], mus_labels=[], sfx_labels=[],
+            amb_labels=[(0.0, 8.0, "RAIN", None, None, None, None, 30.0)],
+        )
+        assert '"volume_pct": 30.0' in html
+
+    def test_volume_pct_null_for_dialogue(self, tmp_path):
+        """Dialogue span (no volume_pct) serializes null into the DATA JSON."""
+        html = self._render(
+            tmp_path, tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")],
+            amb_labels=[], mus_labels=[], sfx_labels=[],
+        )
+        assert '"volume_pct": null' in html
+
+    def test_volume_pct_100_serialized_when_unity(self, tmp_path):
+        """volume_pct=100 serializes into DATA JSON; JS badge logic excludes it at render time."""
+        html = self._render(
+            tmp_path, tag="TEST", dlg_labels=[], amb_labels=[],
+            mus_labels=[(0.0, 5.0, "THEME", None, None, None, None, 100.0)],
+            sfx_labels=[],
+        )
+        assert '"volume_pct": 100.0' in html
+
+    def test_volume_badge_coexists_with_ro_badge(self, tmp_path):
+        """A span with both ramp_out and volume_pct serializes both into DATA JSON."""
+        data = build_timeline_data(
+            tag="TEST", total_s=10.0,
+            dlg_labels=[], amb_labels=[],
+            mus_labels=[(0.0, 5.0, "THEME", 1.0, 2.0, None, None, 80.0)],
+            sfx_labels=[],
+        )
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(data, out)
+        html = open(out, encoding="utf-8").read()
+        # Both ramp_out_s and volume_pct should be serialized into the DATA JSON
+        assert '"ramp_out_s": 2.0' in html
+        assert '"volume_pct": 80.0' in html

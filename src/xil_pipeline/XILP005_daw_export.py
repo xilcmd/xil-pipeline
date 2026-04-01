@@ -385,8 +385,6 @@ def export_daw_layers(
         tag: Episode tag used to name output files.
         save_aup3: When True, include a SaveProject2 step in the helper script.
         macro: When True, write an Audacity macro file to the Audacity Macros dir.
-        preamble_cfg: Optional :class:`~models.Preamble` instance; when set,
-            preamble stems are prepended at seq -2 (voice) and -1 (music).
         show: Show name for audio metadata (default ``"Sample Show"``).
         season_title: Season title for metadata artist field.
         episode_title: Episode title for metadata.

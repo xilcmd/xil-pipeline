@@ -287,6 +287,7 @@ _HTML_TEMPLATE = """\
   .ramp-badge.ri {{ left: 2px; }}
   .ramp-badge.ro {{ right: 2px; }}
   .ramp-badge.pd {{ left: 50%; transform: translateX(-50%); }}
+  .ramp-badge.vb {{ right: 2px; bottom: 1px; }}
   .controls {{ margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }}
   .controls button {{ background: #333; color: #ccc; border: 1px solid #555; padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }}
   .controls button:hover {{ background: #444; }}
@@ -350,7 +351,8 @@ function render() {{
       if (sp.ramp_in_s) {{ rampBadges += '<span class="ramp-badge ri">\u2191</span>'; rampTip += '\u2191 ramp in: '+sp.ramp_in_s+'s  '; }}
       if (sp.ramp_out_s) {{ rampBadges += '<span class="ramp-badge ro">\u2193</span>'; rampTip += '\u2193 ramp out: '+sp.ramp_out_s+'s  '; }}
       if (sp.play_duration != null) {{ rampBadges += '<span class="ramp-badge pd">%</span>'; rampTip += '% play: '+sp.play_duration+'%  '; }}
-      if (sp.volume_pct != null) {{ rampTip += '\U0001f50a vol: '+sp.volume_pct+'%  '; }}
+      if (sp.volume_pct != null && sp.volume_pct !== 100) {{ rampBadges += '<span class="ramp-badge vb">\U0001f50a'+sp.volume_pct+'%</span>'; rampTip += '\U0001f50a vol: '+sp.volume_pct+'%  '; }}
+      else if (sp.volume_pct != null) {{ rampTip += '\U0001f50a vol: '+sp.volume_pct+'%  '; }}
       const tipExtra = rampTip ? '<br><span style="opacity:0.8">'+rampTip.trim()+'</span>' : '';
       const snippetLine = sp.snippet ? '<br><em style="opacity:0.75">'+sp.snippet.replace(/</g,'&lt;')+'\u2026</em>' : '';
       const seqPrefix = sp.seq != null ? '<span style="opacity:0.6">#'+String(sp.seq).padStart(3,'0')+'</span> ' : '';
