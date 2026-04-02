@@ -10,6 +10,7 @@ stale references. Use --no-clear to preserve existing files.
 from pathlib import Path
 import logging
 import argparse
+import os
 import shutil
 
 # Configure logging
@@ -229,8 +230,9 @@ def link_markdown_files(code_root: Path, docs_base: Path, project_root: Path) ->
             if dest_file.exists() or dest_file.is_symlink():
                 dest_file.unlink()
 
-            # Symlink to absolute source path so the link works regardless of cwd
-            dest_file.symlink_to(md_file.resolve())
+            # Symlink using a relative path so the link works on any machine
+            # (absolute paths break on ReadTheDocs and other CI environments)
+            dest_file.symlink_to(os.path.relpath(md_file.resolve(), dest_file.parent))
 
             logger.info(f"  Linked: {md_file.relative_to(code_root)}")
             linked_count += 1

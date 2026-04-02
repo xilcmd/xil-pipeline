@@ -1,1 +1,1 @@
-/mnt/c/Users/shaba/src/python/xil-pipeline/README.md
+../README.md

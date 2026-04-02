@@ -1,1 +1,1 @@
-/mnt/c/Users/shaba/src/python/xil-pipeline/claude-scriptwriter-reference.md
+../claude-scriptwriter-reference.md
