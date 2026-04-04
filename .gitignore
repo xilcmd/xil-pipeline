@@ -22,6 +22,7 @@ daw/
 
 # Sample audio — checked in intentionally for repo users
 !samples/*.mp3
+!docs/samples/*.mp3
 
 # IDE / tool artifacts
 .qodo/
