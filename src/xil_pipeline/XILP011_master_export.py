@@ -109,34 +109,39 @@ def export_master(
     )
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-master",
+        description="Final Master MP3 Export — mix DAW layers into a single podcast-ready MP3",
+    )
+    parser.add_argument(
+        "--episode", required=True,
+        help="Episode tag (e.g. S02E03) — derives DAW layer paths",
+    )
+    parser.add_argument(
+        "--show", default=None,
+        help="Show name override (default: from project.json)",
+    )
+    parser.add_argument(
+        "--daw-dir", default=None,
+        help="DAW layer directory (default: daw/<TAG>/)",
+    )
+    parser.add_argument(
+        "--output", default=None,
+        help="Output MP3 path (default: masters/<TAG>_<slug>_<date>.mp3)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would be exported without writing files",
+    )
+    return parser
+
+
 def main() -> None:
     """CLI entry point for final master MP3 export."""
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Final Master MP3 Export — mix DAW layers into a single podcast-ready MP3"
-        )
-        parser.add_argument(
-            "--episode", required=True,
-            help="Episode tag (e.g. S02E03) — derives DAW layer paths",
-        )
-        parser.add_argument(
-            "--show", default=None,
-            help="Show name override (default: from project.json)",
-        )
-        parser.add_argument(
-            "--daw-dir", default=None,
-            help="DAW layer directory (default: daw/<TAG>/)",
-        )
-        parser.add_argument(
-            "--output", default=None,
-            help="Output MP3 path (default: masters/<TAG>_<slug>_<date>.mp3)",
-        )
-        parser.add_argument(
-            "--dry-run", action="store_true",
-            help="Show what would be exported without writing files",
-        )
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         slug = resolve_slug(args.show)
         tag = args.episode

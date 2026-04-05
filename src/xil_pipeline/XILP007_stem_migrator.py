@@ -316,47 +316,51 @@ def print_summary(counts: dict[str, int], dry_run: bool) -> None:
     logger.info("  XILP002 skips stems already on disk — only gaps get generated.")
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-migrate",
+        description=(
+            "Migrate episode stems from an old parsed JSON to a revised one. "
+            "Copies unchanged stems to their new seq-numbered filenames; "
+            "reports what still needs TTS/SFX generation. "
+            "Run XILP002 afterwards to fill the gaps."
+        ),
+    )
+    parser.add_argument(
+        "--episode", metavar="TAG",
+        help="Episode tag (e.g. S02E03); derives --old, --new, and --stems paths automatically",
+    )
+    parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
+    parser.add_argument("--old", metavar="PATH", help="Old parsed JSON (overrides --episode)")
+    parser.add_argument("--new", metavar="PATH", help="New parsed JSON (overrides --episode)")
+    parser.add_argument("--stems", metavar="DIR", help="Stems directory (overrides --episode)")
+    parser.add_argument(
+        "--orig-prefix", default="orig_",
+        help="Filename prefix for the old parsed JSON (default: orig_)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show plan without copying any files",
+    )
+    parser.add_argument(
+        "--strict", action="store_true",
+        help=(
+            "Exact text match only. Default is fuzzy: ignores em-dash/ellipsis "
+            "variants so punctuation-only edits don't force unnecessary regen."
+        ),
+    )
+    parser.add_argument(
+        "--quiet", action="store_true",
+        help="Print only the summary, not per-stem details",
+    )
+    return parser
+
+
 def main() -> None:
     """CLI entry point for stem migration."""
     configure_logging()
     with run_banner("XILP007 stem migrator"):
-        parser = argparse.ArgumentParser(
-            description=(
-                "Migrate episode stems from an old parsed JSON to a revised one. "
-                "Copies unchanged stems to their new seq-numbered filenames; "
-                "reports what still needs TTS/SFX generation. "
-                "Run XILP002 afterwards to fill the gaps."
-            )
-        )
-        parser.add_argument(
-            "--episode", metavar="TAG",
-            help="Episode tag (e.g. S02E03); derives --old, --new, and --stems paths automatically",
-        )
-        parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
-        parser.add_argument("--old", metavar="PATH", help="Old parsed JSON (overrides --episode)")
-        parser.add_argument("--new", metavar="PATH", help="New parsed JSON (overrides --episode)")
-        parser.add_argument("--stems", metavar="DIR", help="Stems directory (overrides --episode)")
-        parser.add_argument(
-            "--orig-prefix", default="orig_",
-            help="Filename prefix for the old parsed JSON (default: orig_)",
-        )
-        parser.add_argument(
-            "--dry-run", action="store_true",
-            help="Show plan without copying any files",
-        )
-        parser.add_argument(
-            "--strict", action="store_true",
-            help=(
-                "Exact text match only. Default is fuzzy: ignores em-dash/ellipsis "
-                "variants so punctuation-only edits don't force unnecessary regen."
-            ),
-        )
-        parser.add_argument(
-            "--quiet", action="store_true",
-            help="Print only the summary, not per-stem details",
-        )
-
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         # Resolve paths
         if args.episode:

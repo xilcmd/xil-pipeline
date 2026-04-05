@@ -155,10 +155,10 @@ def regenerate_script(parsed: dict, cast: dict | None = None) -> str:
     return "\n".join(lines)
 
 
-def main():
-    configure_logging()
+def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Regenerate a production script markdown from parsed JSON."
+        prog="xil-regen",
+        description="Regenerate a production script markdown from parsed JSON.",
     )
     parser.add_argument("--episode", required=True,
                         help="Episode tag (e.g. S02E03)")
@@ -172,8 +172,12 @@ def main():
                         help="Output markdown path (default: scripts/revised_<slug>_{TAG}.md)")
     parser.add_argument("--speakers", default=None,
                         help="Path to speakers.json (default: auto-detect from CWD, then built-in)")
+    return parser
 
-    args = parser.parse_args()
+
+def main():
+    configure_logging()
+    args = get_parser().parse_args()
     tag = args.episode
 
     with run_banner(SCRIPT_NAME):

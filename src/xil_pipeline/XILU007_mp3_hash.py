@@ -121,10 +121,10 @@ def _run(args: "argparse.Namespace") -> None:
         logger.info("Hashed %d MP3 file(s) under %s", len(records), root)
 
 
-def main() -> None:
-    """CLI entry point for recursive MP3 SHA-256 hashing."""
+def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Recursively hash MP3 files and log <path> : <sha256>"
+        prog="xil-mp3-hash",
+        description="Recursively hash MP3 files and log <path> : <sha256>",
     )
     parser.add_argument(
         "path",
@@ -148,7 +148,12 @@ def main() -> None:
         action="store_true",
         help='Output a JSON array of {"path": ..., "sha256": ...} to stdout (no banner)',
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    """CLI entry point for recursive MP3 SHA-256 hashing."""
+    args = get_parser().parse_args()
 
     # In --json mode skip configure_logging and run_banner so stdout
     # contains only valid JSON (safe to pipe directly to jq / python -m json.tool).

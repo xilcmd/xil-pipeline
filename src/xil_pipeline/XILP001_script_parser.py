@@ -27,6 +27,7 @@ from xil_pipeline.models import (
     ScriptStats,
     derive_paths,
     episode_tag,
+    resolve_season_title,
     resolve_slug,
     show_slug,
 )
@@ -426,26 +427,27 @@ def write_debug_csv(
             ])
 
 
-def parse_script_header(line: str) -> tuple[str, int | None, int, str] | None:
-    """Extract show, season, episode, and title from the script header line.
+def parse_script_header(line: str) -> tuple[str, int | None, int, str, str | None] | None:
+    """Extract show, season, episode, title, and season_title from the script header line.
 
     Parses the first line of a production script, which follows the format::
 
-        SHOW [Season N:] Episode N: ["Arc Title" Arc:] "Episode Title" ...
+        SHOW [Season N:] Episode N: "Episode Title" [Arc: "Arc Title"] ...
 
-    Season is optional — scripts without a season declaration return ``None``.
-    Title is the first double-quoted string after ``Episode N:``, which is the
-    episode title (not the arc title that may follow).  Falls back to bare text
-    after ``Episode N:`` when no quoted strings are present.
+    Season is optional — scripts without a season declaration return ``None`` for
+    the season element.  Title is the first double-quoted string after
+    ``Episode N:``.  Arc title (season title) is the quoted string after ``Arc:``;
+    it is ``None`` when no ``Arc:`` declaration is present.  Falls back to bare
+    text after ``Episode N:`` when no quoted strings are present.
 
     Args:
         line: The first non-empty line of the production script, after
             markdown escapes have been removed.
 
     Returns:
-        A tuple of ``(show, season, episode, title)`` where ``season``
-        is ``None`` if not declared in the header, or ``None`` if the
-        line does not match the expected header format.
+        A tuple of ``(show, season, episode, title, season_title)`` where
+        ``season`` and ``season_title`` are ``None`` when not declared, or
+        ``None`` if the line does not match the expected header format.
     """
     # Must contain "Episode N" to be a valid header
     ep_match = re.search(r"Episode\s+(\d+)", line)
@@ -474,7 +476,11 @@ def parse_script_header(line: str) -> tuple[str, int | None, int, str] | None:
     else:
         title = ""
 
-    return show, season, episode, title
+    # Season/arc title: quoted string after "Arc:" (e.g. Arc: "The Holiday Shift")
+    arc_match = re.search(r'\bArc:\s*"([^"]+)"', line)
+    season_title = arc_match.group(1) if arc_match else None
+
+    return show, season, episode, title, season_title
 
 
 def parse_script(
@@ -530,10 +536,13 @@ def parse_script(
     first_line = lines[0].strip() if lines else ""
     header = parse_script_header(first_line) if first_line else None
     if header and header[2] is not None:
-        show, season, episode, title = header
+        show, season, episode, title, season_title = header
         start = 1
     else:
-        show, season, episode, title = "Unknown Show", None, 1, ""
+        show, season, episode, title, season_title = "Unknown Show", None, 1, "", None
+
+    # Apply project.json fallback when the script header has no Arc: declaration
+    season_title = resolve_season_title(season_title)
 
     # Skip CAST section
     in_cast = False
@@ -751,6 +760,7 @@ def parse_script(
         season=season,
         episode=episode,
         title=title,
+        season_title=season_title,
         source_file=os.path.basename(filepath),
         entries=entries,
         stats=stats,
@@ -914,6 +924,7 @@ def generate_cast_config(parsed: dict, cast_path: str) -> None:
         "season": parsed.get("season"),
         "episode": parsed.get("episode", 1),
         "title": parsed.get("title", ""),
+        "season_title": parsed.get("season_title"),
         "cast": cast,
     }
 
@@ -1085,29 +1096,36 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
         logger.info("Backfilled %d source hint(s) in %s", updated, sfx_path)
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-parse",
+        description="Parse production script markdown into structured JSON",
+    )
+    parser.add_argument("script", help="Path to the production script markdown file")
+    parser.add_argument("--episode", default=None,
+                        help="Episode tag (e.g. S01E01) — validates header and auto-generates absent cast/sfx configs")
+    parser.add_argument("--show", default=None,
+                        help="Show name override (default: from project.json)")
+    parser.add_argument("--output", "-o", default=None,
+                        help="Output JSON path (default: parsed/parsed_<slug>_<TAG>.json)")
+    parser.add_argument("--preview", type=int, default=None,
+                        help="Show first N dialogue lines (default: show all)")
+    parser.add_argument("--quiet", action="store_true",
+                        help="Only output JSON, skip summary/preview")
+    parser.add_argument("--debug", action="store_true",
+                        help="Write diagnostic CSV alongside JSON output")
+    parser.add_argument("--stats", action="store_true",
+                        help="Print per-speaker dialogue distribution (lines, words, chars, %%)")
+    parser.add_argument("--speakers", default=None,
+                        help="Path to speakers.json (default: auto-detect from CWD, then built-in)")
+    return parser
+
+
 def main() -> None:
     """CLI entry point for script parsing."""
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(description="Parse production script markdown into structured JSON")
-        parser.add_argument("script", help="Path to the production script markdown file")
-        parser.add_argument("--episode", default=None,
-                            help="Episode tag (e.g. S01E01) — validates header and auto-generates absent cast/sfx configs")
-        parser.add_argument("--show", default=None,
-                            help="Show name override (default: from project.json)")
-        parser.add_argument("--output", "-o", default=None,
-                            help="Output JSON path (default: parsed/parsed_<slug>_<TAG>.json)")
-        parser.add_argument("--preview", type=int, default=None,
-                            help="Show first N dialogue lines (default: show all)")
-        parser.add_argument("--quiet", action="store_true",
-                            help="Only output JSON, skip summary/preview")
-        parser.add_argument("--debug", action="store_true",
-                            help="Write diagnostic CSV alongside JSON output")
-        parser.add_argument("--stats", action="store_true",
-                            help="Print per-speaker dialogue distribution (lines, words, chars, %%)")
-        parser.add_argument("--speakers", default=None,
-                            help="Path to speakers.json (default: auto-detect from CWD, then built-in)")
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         # Load speakers (updates module-level KNOWN_SPEAKERS/SPEAKER_KEYS for downstream use)
         loaded_speakers, loaded_keys = load_speakers(args.speakers)

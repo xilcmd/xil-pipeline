@@ -130,7 +130,7 @@ def scaffold(directory: str, show_name: str) -> None:
     project_path = os.path.join(directory, "project.json")
     if not os.path.exists(project_path):
         with open(project_path, "w", encoding="utf-8") as f:
-            json.dump({"show": show_name}, f, indent=2)
+            json.dump({"show": show_name, "season_title": None}, f, indent=2)
             f.write("\n")
         logger.info(f"  Created {project_path}")
     else:
@@ -188,11 +188,10 @@ Getting Started
 """)
 
 
-def main() -> None:
-    """CLI entry point for project scaffolding."""
-    configure_logging()
+def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Scaffold a new xil-pipeline project workspace"
+        prog="xil-init",
+        description="Scaffold a new xil-pipeline project workspace",
     )
     parser.add_argument(
         "directory", nargs="?", default=".",
@@ -202,7 +201,13 @@ def main() -> None:
         "--show", default="Sample Show",
         help='Show name for project.json (default: "Sample Show")',
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    """CLI entry point for project scaffolding."""
+    configure_logging()
+    args = get_parser().parse_args()
 
     directory = os.path.abspath(args.directory)
     show_name = args.show

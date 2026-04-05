@@ -1181,3 +1181,37 @@ flowchart TD
 > **No API key required** — local audio processing only.
 > Mix balance is handled by XILP005; XILP011 overlays all four layers at unity gain.
 > Output filename includes the run date: `{TAG}_{slug}_{YYYY-MM-DD}.mp3`.
+
+
+## Man Pages
+
+All 19 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
+
+### Accessing man pages
+
+After `pip install --user xil-pipeline`, pages land in `~/.local/share/man/man1/`. Add to `~/.bashrc`:
+
+```bash
+export MANPATH="$HOME/.local/share/man:$(manpath 2>/dev/null)"
+```
+
+Then use:
+
+```bash
+man xil-parse
+man xil-produce
+man xil           # dispatcher overview (lists all commands)
+```
+
+For system-wide installs (`sudo pip install`), pages land in `/usr/local/share/man/man1/` and are indexed by default.
+
+### Regenerating man pages
+
+Man pages are pre-generated from each command's `get_parser()` function and committed to `man/man1/`. Regenerate after any CLI flag changes:
+
+```bash
+pip install -e ".[dev]"      # includes argparse-manpage
+python scripts/build_man.py  # regenerate all 18 argparse-based pages
+```
+
+The `xil.1` dispatcher page (`man/man1/xil.1`) is hand-crafted and must be updated manually when the dispatcher's command list changes.

@@ -177,9 +177,9 @@ def print_summary(stats: dict, dry_run: bool = False) -> None:
     logger.info("")
 
 
-def main():
-    configure_logging()
+def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="xil-import",
         description="Import ElevenLabs Studio export ZIP into pipeline stems.",
     )
     parser.add_argument(
@@ -233,7 +233,12 @@ def main():
         dest="all_types",
         help="Include all direction types (SFX, MUSIC, BEAT, AMBIENCE)",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    configure_logging()
+    args = get_parser().parse_args()
 
     # Build set of included direction types
     include_dtypes: set[str] = set()

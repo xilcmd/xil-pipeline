@@ -841,6 +841,38 @@ def _generate_postamble_voice(cast_cfg, config: dict, postamble_voice_stem: str,
                           postamble_voice_stem, "POSTAMBLE", sfx_dir)
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-produce",
+        description="Voice Generation — generate voice stems via ElevenLabs",
+    )
+    parser.add_argument("--episode", required=True,
+                        help="Episode tag (e.g. S01E01) — derives cast and SFX config paths")
+    parser.add_argument("--show", default=None,
+                        help="Show name override (default: from project.json)")
+    parser.add_argument("--script", default=None,
+                        help="Path to parsed script JSON (default: derived from cast config)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview all lines and TTS cost without API calls")
+    parser.add_argument("--start-from", type=int, default=1,
+                        help="Start generation from sequence number N (for resuming)")
+    parser.add_argument("--stop-at", type=int, default=None,
+                        help="Stop generation at sequence number N, inclusive (for previewing a section)")
+    parser.add_argument("--terse", action="store_true",
+                        help="Truncate each line to 3 words to minimize TTS character cost")
+    parser.add_argument("--gen-sfx", action="store_true",
+                        help="Generate SFX and BEAT stems")
+    parser.add_argument("--gen-music", action="store_true",
+                        help="Generate music stems")
+    parser.add_argument("--gen-ambience", action="store_true",
+                        help="Generate ambience stems")
+    parser.add_argument("--sfx-music", action="store_true",
+                        help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
+    parser.add_argument("--local-only", action="store_true",
+                        help="Only place stems for effects already present in SFX/; skip API generation")
+    return parser
+
+
 def main() -> None:
     """CLI entry point for voice stem generation.
 
@@ -851,34 +883,7 @@ def main() -> None:
     """
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Voice Generation — generate voice stems via ElevenLabs"
-        )
-        parser.add_argument("--episode", required=True,
-                            help="Episode tag (e.g. S01E01) — derives cast and SFX config paths")
-        parser.add_argument("--show", default=None,
-                            help="Show name override (default: from project.json)")
-        parser.add_argument("--script", default=None,
-                            help="Path to parsed script JSON (default: derived from cast config)")
-        parser.add_argument("--dry-run", action="store_true",
-                            help="Preview all lines and TTS cost without API calls")
-        parser.add_argument("--start-from", type=int, default=1,
-                            help="Start generation from sequence number N (for resuming)")
-        parser.add_argument("--stop-at", type=int, default=None,
-                            help="Stop generation at sequence number N, inclusive (for previewing a section)")
-        parser.add_argument("--terse", action="store_true",
-                            help="Truncate each line to 3 words to minimize TTS character cost")
-        parser.add_argument("--gen-sfx", action="store_true",
-                            help="Generate SFX and BEAT stems")
-        parser.add_argument("--gen-music", action="store_true",
-                            help="Generate music stems")
-        parser.add_argument("--gen-ambience", action="store_true",
-                            help="Generate ambience stems")
-        parser.add_argument("--sfx-music", action="store_true",
-                            help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
-        parser.add_argument("--local-only", action="store_true",
-                            help="Only place stems for effects already present in SFX/; skip API generation")
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         if not args.dry_run and not os.environ.get("ELEVENLABS_API_KEY"):
             sys.exit("Error: ELEVENLABS_API_KEY environment variable is not set.")

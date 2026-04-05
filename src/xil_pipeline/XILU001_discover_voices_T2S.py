@@ -218,46 +218,51 @@ def update_cast(cast_path: str, records_by_id: dict, dry_run: bool = False) -> N
         logger.info(f"  Written: {cast_path}")
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-voices",
+        description="List ElevenLabs voices with enriched metadata",
+    )
+    parser.add_argument(
+        "--category", nargs="+",
+        metavar="CAT",
+        help="Filter by category: premade cloned generated professional",
+    )
+    parser.add_argument(
+        "--search",
+        metavar="TEXT",
+        help="Case-insensitive substring filter on name or description",
+    )
+    parser.add_argument(
+        "--id",
+        metavar="VOICE_ID",
+        help="Show full detail for a single voice ID",
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Print all fields for each voice",
+    )
+    parser.add_argument(
+        "--json", action="store_true",
+        help="Output results as JSON array",
+    )
+    parser.add_argument(
+        "--update-cast",
+        metavar="CAST_JSON",
+        help="Back-fill role and language_code in a cast JSON from API voice metadata",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="With --update-cast: show changes without writing the file",
+    )
+    return parser
+
+
 def main() -> None:
     """CLI entry point for voice discovery."""
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="List ElevenLabs voices with enriched metadata"
-        )
-        parser.add_argument(
-            "--category", nargs="+",
-            metavar="CAT",
-            help="Filter by category: premade cloned generated professional",
-        )
-        parser.add_argument(
-            "--search",
-            metavar="TEXT",
-            help="Case-insensitive substring filter on name or description",
-        )
-        parser.add_argument(
-            "--id",
-            metavar="VOICE_ID",
-            help="Show full detail for a single voice ID",
-        )
-        parser.add_argument(
-            "--verbose", "-v", action="store_true",
-            help="Print all fields for each voice",
-        )
-        parser.add_argument(
-            "--json", action="store_true",
-            help="Output results as JSON array",
-        )
-        parser.add_argument(
-            "--update-cast",
-            metavar="CAST_JSON",
-            help="Back-fill role and language_code in a cast JSON from API voice metadata",
-        )
-        parser.add_argument(
-            "--dry-run", action="store_true",
-            help="With --update-cast: show changes without writing the file",
-        )
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
         response = client.voices.get_all()

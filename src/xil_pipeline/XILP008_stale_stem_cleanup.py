@@ -127,35 +127,39 @@ def find_stale_stems(
     return stale
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-cleanup",
+        description=(
+            "Remove stale stems that no longer match the current parsed "
+            "script.  Use --dry-run first to review what would be deleted."
+        ),
+    )
+    parser.add_argument(
+        "--episode", metavar="TAG",
+        help="Episode tag (e.g. S02E03); derives --parsed and --stems",
+    )
+    parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
+    parser.add_argument(
+        "--parsed", metavar="PATH",
+        help="Parsed script JSON (overrides --episode)",
+    )
+    parser.add_argument(
+        "--stems", metavar="DIR",
+        help="Stems directory (overrides --episode)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="List stale stems without deleting them",
+    )
+    return parser
+
+
 def main() -> None:
     """CLI entry point for stale stem cleanup."""
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description=(
-                "Remove stale stems that no longer match the current parsed "
-                "script.  Use --dry-run first to review what would be deleted."
-            )
-        )
-        parser.add_argument(
-            "--episode", metavar="TAG",
-            help="Episode tag (e.g. S02E03); derives --parsed and --stems",
-        )
-        parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
-        parser.add_argument(
-            "--parsed", metavar="PATH",
-            help="Parsed script JSON (overrides --episode)",
-        )
-        parser.add_argument(
-            "--stems", metavar="DIR",
-            help="Stems directory (overrides --episode)",
-        )
-        parser.add_argument(
-            "--dry-run", action="store_true",
-            help="List stale stems without deleting them",
-        )
-
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         # Resolve paths
         if args.episode:

@@ -59,6 +59,14 @@ def derive_paths(slug: str, tag: str) -> dict[str, str]:
     }
 
 
+def _read_project(project_path: str = "project.json") -> dict:
+    """Return the parsed contents of *project_path*, or ``{}`` if absent."""
+    if os.path.exists(project_path):
+        with open(project_path, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
 def resolve_slug(show_arg: str | None = None, project_path: str = "project.json") -> str:
     """Resolve the show slug from CLI arg, project.json, or the default.
 
@@ -76,12 +84,34 @@ def resolve_slug(show_arg: str | None = None, project_path: str = "project.json"
     """
     if show_arg:
         return show_slug(show_arg)
-    if os.path.exists(project_path):
-        with open(project_path, encoding="utf-8") as f:
-            data = json.load(f)
-        if "show" in data:
-            return show_slug(data["show"])
+    data = _read_project(project_path)
+    if "show" in data:
+        return show_slug(data["show"])
     return DEFAULT_SLUG
+
+
+def resolve_season_title(
+    season_title_arg: str | None = None,
+    project_path: str = "project.json",
+) -> str | None:
+    """Resolve the season/arc title from an explicit value or project.json.
+
+    Resolution order:
+    1. Explicit *season_title_arg* (e.g. extracted from the script header ``Arc:`` token).
+    2. ``project.json`` ``"season_title"`` field (if the file exists and the key is present).
+    3. ``None`` — no season title is available.
+
+    Args:
+        season_title_arg: Season title already known (e.g. from the script header), or ``None``.
+        project_path: Path to the project config file.
+
+    Returns:
+        Season title string, or ``None`` when not available from any source.
+    """
+    if season_title_arg is not None:
+        return season_title_arg
+    data = _read_project(project_path)
+    return data.get("season_title") or None
 
 
 def episode_tag(season: int | None, episode: int) -> str:
@@ -172,6 +202,9 @@ class ParsedScript(BaseModel):
         season: Season number, or ``None`` if not declared in the script header.
         episode: Episode number.
         title: Episode title.
+        season_title: Season arc title extracted from ``Arc: "…"`` in the script
+            header (e.g. ``"The Holiday Shift"``).  ``None`` when the header
+            contains no arc declaration.
         source_file: Basename of the source markdown file.
         entries: Ordered list of parsed script entries.
         stats: Aggregate statistics for the parsed script.
@@ -181,6 +214,10 @@ class ParsedScript(BaseModel):
     season: int | None = Field(default=None, description="Season number")
     episode: int = Field(..., description="Episode number")
     title: str = Field(..., description="Episode title")
+    season_title: str | None = Field(
+        default=None,
+        description="Season arc title from 'Arc: \"…\"' in the script header",
+    )
     source_file: str = Field(..., description="Source markdown filename")
     entries: list[ScriptEntry] = Field(..., description="Parsed script entries")
     stats: ScriptStats = Field(..., description="Aggregate statistics")

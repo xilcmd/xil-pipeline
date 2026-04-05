@@ -1,0 +1,71 @@
+.TH XIL\-MIGRATE "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.SH NAME
+xil\-migrate
+.SH SYNOPSIS
+.B xil\-migrate
+[-h] [--episode TAG] [--show SHOW] [--old PATH] [--new PATH] [--stems DIR] [--orig-prefix ORIG_PREFIX] [--dry-run] [--strict] [--quiet]
+.SH DESCRIPTION
+Migrate episode stems from an old parsed JSON to a revised one. Copies unchanged stems to their new seq\-numbered filenames; reports what still needs TTS/SFX generation. Run XILP002 afterwards to fill the gaps.
+
+.SH OPTIONS
+.TP
+\fB\-\-episode\fR \fI\,TAG\/\fR
+Episode tag (e.g. S02E03); derives \-\-old, \-\-new, and \-\-stems paths
+automatically
+
+.TP
+\fB\-\-show\fR \fI\,SHOW\/\fR
+Show name override (default: from project.json)
+
+.TP
+\fB\-\-old\fR \fI\,PATH\/\fR
+Old parsed JSON (overrides \-\-episode)
+
+.TP
+\fB\-\-new\fR \fI\,PATH\/\fR
+New parsed JSON (overrides \-\-episode)
+
+.TP
+\fB\-\-stems\fR \fI\,DIR\/\fR
+Stems directory (overrides \-\-episode)
+
+.TP
+\fB\-\-orig\-prefix\fR \fI\,ORIG_PREFIX\/\fR
+Filename prefix for the old parsed JSON (default: orig_)
+
+.TP
+\fB\-\-dry\-run\fR
+Show plan without copying any files
+
+.TP
+\fB\-\-strict\fR
+Exact text match only. Default is fuzzy: ignores em\-dash/ellipsis variants so
+punctuation\-only edits don't force unnecessary regen.
+
+.TP
+\fB\-\-quiet\fR
+Print only the summary, not per\-stem details
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

@@ -1,0 +1,57 @@
+.TH XIL\-REGEN "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.SH NAME
+xil\-regen
+.SH SYNOPSIS
+.B xil\-regen
+[-h] --episode EPISODE [--parsed PARSED] [--cast CAST] [--show SHOW] [--output OUTPUT] [--speakers SPEAKERS]
+.SH DESCRIPTION
+Regenerate a production script markdown from parsed JSON.
+
+.SH OPTIONS
+.TP
+\fB\-\-episode\fR \fI\,EPISODE\/\fR
+Episode tag (e.g. S02E03)
+
+.TP
+\fB\-\-parsed\fR \fI\,PARSED\/\fR
+Override parsed JSON path
+
+.TP
+\fB\-\-cast\fR \fI\,CAST\/\fR
+Override cast config path
+
+.TP
+\fB\-\-show\fR \fI\,SHOW\/\fR
+Show name override (default: from project.json)
+
+.TP
+\fB\-\-output\fR \fI\,OUTPUT\/\fR
+Output markdown path (default: scripts/revised_<slug>_{TAG}.md)
+
+.TP
+\fB\-\-speakers\fR \fI\,SPEAKERS\/\fR
+Path to speakers.json (default: auto\-detect from CWD, then built\-in)
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

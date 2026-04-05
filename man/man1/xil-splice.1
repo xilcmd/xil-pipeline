@@ -1,0 +1,85 @@
+.TH XIL\-SPLICE "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.SH NAME
+xil\-splice
+.SH SYNOPSIS
+.B xil\-splice
+[-h] --episode EPISODE [--show SHOW] [--parsed PARSED] [--insert-after INSERT_AFTER] [--from-parsed FROM_PARSED] [--from-seq-range FROM_SEQ_RANGE] [--from-json FROM_JSON] [--section SECTION] [--scene SCENE] [--delete-seq-range DELETE_SEQ_RANGE] [--dry-run] [--no-backup] [--quiet]
+.SH DESCRIPTION
+Splice Parsed JSON — insert/delete entries with automatic renumbering
+
+.SH OPTIONS
+.TP
+\fB\-\-episode\fR \fI\,EPISODE\/\fR
+Episode tag (e.g. S02E03) — derives target parsed JSON path
+
+.TP
+\fB\-\-show\fR \fI\,SHOW\/\fR
+Show name override (default: from project.json)
+
+.TP
+\fB\-\-parsed\fR \fI\,PARSED\/\fR
+Override target parsed JSON path
+
+.TP
+\fB\-\-insert\-after\fR \fI\,INSERT_AFTER\/\fR
+Seq number to insert after
+
+.TP
+\fB\-\-from\-parsed\fR \fI\,FROM_PARSED\/\fR
+Source parsed JSON to extract entries from
+
+.TP
+\fB\-\-from\-seq\-range\fR \fI\,FROM_SEQ_RANGE\/\fR
+Seq range to extract from source (e.g. 232\-233)
+
+.TP
+\fB\-\-from\-json\fR \fI\,FROM_JSON\/\fR
+Path to a JSON array of entries to insert
+
+.TP
+\fB\-\-section\fR \fI\,SECTION\/\fR
+Override section on inserted entries
+
+.TP
+\fB\-\-scene\fR \fI\,SCENE\/\fR
+Override scene on inserted entries
+
+.TP
+\fB\-\-delete\-seq\-range\fR \fI\,DELETE_SEQ_RANGE\/\fR
+Seq range to delete (e.g. 100\-105)
+
+.TP
+\fB\-\-dry\-run\fR
+Show plan without writing files
+
+.TP
+\fB\-\-no\-backup\fR
+Skip backup file
+
+.TP
+\fB\-\-quiet\fR
+Summary only, no per\-entry detail
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

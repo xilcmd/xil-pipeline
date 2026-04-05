@@ -92,34 +92,39 @@ def load_sfx_plan(
     return sfx_entries, stems_dir
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-sfx",
+        description="Generate SFX stems from an SFX config (standalone utility)",
+    )
+    parser.add_argument("--episode", required=True,
+                        help="Episode tag (e.g. S01E01) — derives cast and SFX config paths")
+    parser.add_argument("--show", default=None,
+                        help="Show name override (default: from project.json)")
+    parser.add_argument("--script", default=None,
+                        help="Path to parsed script JSON (default: derived from cast config)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview existing vs. new stems and estimated credit cost")
+    parser.add_argument("--max-duration", type=float, default=None,
+                        help="Only process effects with duration_seconds <= this value")
+    parser.add_argument("--gen-sfx", action="store_true",
+                        help="Limit to SFX and BEAT entries only")
+    parser.add_argument("--gen-music", action="store_true",
+                        help="Limit to MUSIC entries only")
+    parser.add_argument("--gen-ambience", action="store_true",
+                        help="Limit to AMBIENCE entries only")
+    parser.add_argument("--sfx-music", action="store_true",
+                        help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
+    parser.add_argument("--local-only", action="store_true",
+                        help="Only place stems for effects already present in SFX/; skip API generation")
+    return parser
+
+
 def main() -> None:
     """CLI entry point for standalone SFX stem generation."""
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Generate SFX stems from an SFX config (standalone utility)"
-        )
-        parser.add_argument("--episode", required=True,
-                            help="Episode tag (e.g. S01E01) — derives cast and SFX config paths")
-        parser.add_argument("--show", default=None,
-                            help="Show name override (default: from project.json)")
-        parser.add_argument("--script", default=None,
-                            help="Path to parsed script JSON (default: derived from cast config)")
-        parser.add_argument("--dry-run", action="store_true",
-                            help="Preview existing vs. new stems and estimated credit cost")
-        parser.add_argument("--max-duration", type=float, default=None,
-                            help="Only process effects with duration_seconds <= this value")
-        parser.add_argument("--gen-sfx", action="store_true",
-                            help="Limit to SFX and BEAT entries only")
-        parser.add_argument("--gen-music", action="store_true",
-                            help="Limit to MUSIC entries only")
-        parser.add_argument("--gen-ambience", action="store_true",
-                            help="Limit to AMBIENCE entries only")
-        parser.add_argument("--sfx-music", action="store_true",
-                            help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
-        parser.add_argument("--local-only", action="store_true",
-                            help="Only place stems for effects already present in SFX/; skip API generation")
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         if not args.dry_run and not os.environ.get("ELEVENLABS_API_KEY"):
             sys.exit("Error: ELEVENLABS_API_KEY environment variable is not set.")

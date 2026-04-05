@@ -46,14 +46,17 @@ All internal imports use the package namespace: `from xil_pipeline.models import
 
 ## Project Configuration
 
-`project.json` at the repo root declares the show name used to derive all pipeline file paths:
+`project.json` at the repo root declares the show name and optional season title used across the pipeline:
 ```json
 {
-    "show": "THE 413"
+    "show": "THE 413",
+    "season_title": "The Holiday Shift"
 }
 ```
 
 All scripts accept a `--show` CLI flag to override the show name. Resolution order: `--show` arg > `project.json` > hardcoded fallback `"sample"`.
+
+The `season_title` key in `project.json` is the workspace-level default for the season/arc title. When a script header contains `Arc: "…"`, that value takes precedence; when absent, `project.json` `season_title` fills in. Resolution order: script header `Arc:` > `project.json` `season_title` > `None`. The `{season_title}` placeholder in preamble/postamble segment text resolves from this value.
 
 File paths are derived dynamically: `cast_<slug>_<TAG>.json`, `sfx_<slug>_<TAG>.json`, `parsed/parsed_<slug>_<TAG>.json`, etc. The slug is the show name lowercased with all non-alphanumeric characters removed (e.g., `"THE 413"` → `"the413"`, `"Night Owls"` → `"nightowls"`).
 
@@ -115,7 +118,8 @@ python XILP001_script_parser.py "scripts/<script>.md" --episode S01E01 --preview
 - Output path derived from script header metadata (season/episode); override with `--output`
 - `--episode S01E01` (optional) validates that the script header matches the intended episode tag
 - `--show` overrides the show name used for slug derivation (see Project Configuration)
-- When `--episode` is provided and `cast_<slug>_S01E01.json` / `sfx_<slug>_S01E01.json` don't exist, auto-generates skeleton configs with `voice_id=TBD` and default SFX prompts
+- When `--episode` is provided and `cast_<slug>_S01E01.json` / `sfx_<slug>_S01E01.json` don't exist, auto-generates skeleton configs with `voice_id=TBD` and default SFX prompts; the cast skeleton includes `season_title` populated from the script header's `Arc: "…"` declaration (or `null` when absent)
+- `season_title` is extracted from the `Arc: "…"` token in the script header (e.g. `THE 413 Season 1: Episode 1: "The Empty Booth" Arc: "The Holiday Shift"`) and stored in the parsed JSON; it is available as `{season_title}` in preamble/postamble segment text
 - Supports `--quiet` (JSON only, skip summary) and `--debug` (write diagnostic CSV alongside JSON)
 - Auto-generates BEAT variants (`BEAT — 3 SECONDS` etc.) as `type: "silence"` with duration parsed from the text (e.g. 3.0s)
 - Auto-generates `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives as `type: "silence", duration_seconds: 0.0` stop markers — no audio asset needed
@@ -584,6 +588,37 @@ This keeps the `__main__` block to a single line, makes the entry point testable
 pip install -e ".[all,dev]"
 pytest tests/ -v
 ```
+
+## Man Pages
+
+Unix man pages for all 19 CLI commands are pre-generated and committed to `man/man1/`. They are installed automatically when the package is built into a wheel and installed via pip.
+
+**Regenerating after CLI changes** (run whenever flags or descriptions change):
+
+```bash
+pip install -e ".[dev]"      # includes argparse-manpage
+python scripts/build_man.py  # regenerate all 18 argparse-based pages
+# xil.1 is hand-crafted — edit man/man1/xil.1 directly when the dispatcher changes
+```
+
+Regenerate a single page: `python scripts/build_man.py xil-parse`
+
+Always commit the regenerated `.1` files alongside any CLI flag change. The `get_parser()` function in each module (extracted from `main()`) is what `build_man.py` calls to obtain the parser — keep it in sync with any `add_argument` changes.
+
+**Post-install access on Debian** (for `pip install --user`):
+
+```bash
+# Pages land in ~/.local/share/man/man1/ — add to ~/.bashrc:
+export MANPATH="$HOME/.local/share/man:$(manpath 2>/dev/null)"
+
+# Then:
+man xil-parse
+
+# For apropos/whatis support:
+mandb --user-db ~/.local/share/man
+```
+
+System-wide installs (`sudo pip install`) land in `/usr/local/share/man/man1/` and are indexed by default (`sudo mandb` to refresh).
 
 ## Key Directories
 

@@ -1,0 +1,70 @@
+.TH XIL\-PARSE "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.SH NAME
+xil\-parse
+.SH SYNOPSIS
+.B xil\-parse
+[-h] [--episode EPISODE] [--show SHOW] [--output OUTPUT] [--preview PREVIEW] [--quiet] [--debug] [--stats] [--speakers SPEAKERS] script
+.SH DESCRIPTION
+Parse production script markdown into structured JSON
+
+.TP
+\fBscript\fR
+Path to the production script markdown file
+
+.SH OPTIONS
+.TP
+\fB\-\-episode\fR \fI\,EPISODE\/\fR
+Episode tag (e.g. S01E01) — validates header and auto\-generates absent
+cast/sfx configs
+
+.TP
+\fB\-\-show\fR \fI\,SHOW\/\fR
+Show name override (default: from project.json)
+
+.TP
+\fB\-\-output\fR \fI\,OUTPUT\/\fR, \fB\-o\fR \fI\,OUTPUT\/\fR
+Output JSON path (default: parsed/parsed_<slug>_<TAG>.json)
+
+.TP
+\fB\-\-preview\fR \fI\,PREVIEW\/\fR
+Show first N dialogue lines (default: show all)
+
+.TP
+\fB\-\-quiet\fR
+Only output JSON, skip summary/preview
+
+.TP
+\fB\-\-debug\fR
+Write diagnostic CSV alongside JSON output
+
+.TP
+\fB\-\-stats\fR
+Print per\-speaker dialogue distribution (lines, words, chars, %)
+
+.TP
+\fB\-\-speakers\fR \fI\,SPEAKERS\/\fR
+Path to speakers.json (default: auto\-detect from CWD, then built\-in)
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

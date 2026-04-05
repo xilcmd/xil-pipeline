@@ -42,6 +42,7 @@ dev = [
     "pytest>=9.0,<10",
     "pytest-cov>=7.0,<8",
     "ruff>=0.15",
+    "argparse-manpage>=4.6,<5",
 ]
 docs = [
     "mkdocs>=1.6",
@@ -76,6 +77,9 @@ xil-init       = "xil_pipeline.xil_init:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/xil_pipeline"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"man/man1" = "share/man/man1"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

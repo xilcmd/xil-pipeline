@@ -231,20 +231,25 @@ def format_report(scan: dict, header: dict) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-scan",
+        description="Pre-flight scanner: check a production script for unknown speakers/sections."
+    )
+    parser.add_argument("path", help="Path to the markdown production script")
+    parser.add_argument(
+        "--json", action="store_true",
+        help="Output machine-readable JSON instead of the human report"
+    )
+    parser.add_argument("--speakers", default=None,
+                        help="Path to speakers.json (default: auto-detect from CWD, then built-in)")
+    return parser
+
+
 def main():
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Pre-flight scanner: check a production script for unknown speakers/sections."
-        )
-        parser.add_argument("path", help="Path to the markdown production script")
-        parser.add_argument(
-            "--json", action="store_true",
-            help="Output machine-readable JSON instead of the human report"
-        )
-        parser.add_argument("--speakers", default=None,
-                            help="Path to speakers.json (default: auto-detect from CWD, then built-in)")
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         if not os.path.exists(args.path):
             logger.error("File not found: %s", args.path)
@@ -261,7 +266,7 @@ def main():
             if line.strip():
                 result = parse_script_header(line)
                 if result:
-                    show, season, episode, title = result
+                    show, season, episode, title, _season_title = result
                     header = {"show": show, "season": season, "episode": episode, "title": title}
                 break
 

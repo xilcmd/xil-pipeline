@@ -1,0 +1,178 @@
+.TH XIL "1" "April 2026" "xil\-pipeline 0.1.3" "User Commands"
+.SH NAME
+xil \- unified dispatcher for xil\-pipeline podcast production commands
+.SH SYNOPSIS
+.B xil
+\fI<command>\fR [\fIargs...\fR]
+.br
+.B xil
+{\fB\-h\fR|\fB\-\-help\fR}
+.br
+.B xil
+{\fB\-V\fR|\fB\-\-version\fR}
+.SH DESCRIPTION
+.PP
+\fBxil\fR is the unified entry point for the xil\-pipeline audio production
+pipeline.  It dispatches to one of the subcommands listed below, passing all
+remaining arguments through to the subcommand unchanged.
+.PP
+All subcommands are also available as standalone \fBxil\-*\fR commands
+(e.g. \fBxil\-parse\fR, \fBxil\-produce\fR), which are installed alongside
+\fBxil\fR.  The two interfaces are equivalent; use whichever you prefer.
+.SH PIPELINE STAGES
+Run these in order for a typical episode:
+.TP
+.B init
+Workspace scaffolding \(em create project.json, speakers.json, sample script,
+and empty subdirectories.  See
+.BR xil\-init (1).
+.TP
+.B scan
+Pre\-flight script scanner \(em check a production script for unknown speakers
+and sections before parsing.  See
+.BR xil\-scan (1).
+.TP
+.B parse
+Script parser \(em convert a markdown production script into structured JSON.
+See
+.BR xil\-parse (1).
+.TP
+.B cues
+Cues sheet ingestion \(em parse a sound cues markdown file into an asset
+manifest, audit the SFX library, and optionally generate assets.  See
+.BR xil\-cues (1).
+.TP
+.B produce
+Voice stem generation \(em call the ElevenLabs TTS API to generate one MP3
+stem per dialogue line.  See
+.BR xil\-produce (1).
+.TP
+.B assemble
+Master audio assembly \(em two\-pass multi\-track mix of voice and SFX stems
+into a master MP3.  See
+.BR xil\-assemble (1).
+.TP
+.B daw
+DAW layer export \(em export four isolated WAV layers for Audacity mixing.
+See
+.BR xil\-daw (1).
+.TP
+.B migrate
+Stem migration \(em diff old and new parsed JSON, copy unchanged stems,
+report what needs regeneration.  See
+.BR xil\-migrate (1).
+.TP
+.B cleanup
+Stale stem cleanup \(em remove stems whose sequence number no longer matches
+the current parsed JSON.  See
+.BR xil\-cleanup (1).
+.TP
+.B import
+Studio export import \(em extract dialogue stems from an ElevenLabs Studio
+export ZIP and rename them to pipeline convention.  See
+.BR xil\-import (1).
+.TP
+.B regen
+Script regeneration \(em reconstruct a production script markdown from a
+parsed JSON.  See
+.BR xil\-regen (1).
+.TP
+.B master
+Final master MP3 export \(em overlay the four DAW layer WAVs into a single
+podcast\-ready MP3.  See
+.BR xil\-master (1).
+.SH UTILITIES
+Run these as needed at any stage:
+.TP
+.B voices
+Voice discovery \(em list ElevenLabs voices with enriched metadata; optionally
+back\-fill cast JSON.  Best run before parse/produce.  See
+.BR xil\-voices (1).
+.TP
+.B csv\-join
+CSV + SFX/cast annotation join \(em annotate a parsed episode CSV with SFX
+prompts and cast metadata.  Best run after parse.  See
+.BR xil\-csv\-join (1).
+.TP
+.B sfx
+Standalone SFX generation \(em generate sound\-effect stems independently of
+voice generation.  Best run after cues/parse.  See
+.BR xil\-sfx (1).
+.TP
+.B sample
+Voice sample generation \(em generate a short TTS sample for each cast member
+to audition voice assignments.  Best run after voices/cast config.  See
+.BR xil\-sample (1).
+.TP
+.B sfx\-lib
+SFX library discovery \(em list and search the local shared SFX asset library.
+See
+.BR xil\-sfx\-lib (1).
+.TP
+.B splice
+Parsed JSON splice utility \(em insert or delete entries with automatic seq
+renumbering.  Advanced use.  See
+.BR xil\-splice (1).
+.TP
+.B mp3\-hash
+Recursive MP3 SHA\-256 hash log \(em hash MP3 files for integrity auditing.
+See
+.BR xil\-mp3\-hash (1).
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Print help listing all subcommands and exit.
+.TP
+.BR \-V ", " \-\-version
+Print the installed version and exit.
+.SH EXAMPLES
+Scaffold a new workspace, then run the pipeline:
+.PP
+.RS
+.nf
+xil init my\-show \-\-show "Night Owls"
+cd my\-show
+xil scan scripts/sample_S01E01.md
+xil parse scripts/sample_S01E01.md \-\-episode S01E01
+xil produce \-\-episode S01E01 \-\-dry\-run
+xil produce \-\-episode S01E01
+xil assemble \-\-episode S01E01
+.fi
+.RE
+.SH FILES
+.TP
+.I project.json
+Show name declaration in the current working directory.  Overridable with
+\fB\-\-show\fR on most subcommands.
+.TP
+.I speakers.json
+Speaker definitions.  Auto\-detected in the current directory; override with
+\fB\-\-speakers\fR on \fBxil\-scan\fR and \fBxil\-parse\fR.
+.SH ENVIRONMENT
+.TP
+.B ELEVENLABS_API_KEY
+API key for ElevenLabs TTS and sound\-effect generation.  Required by
+\fBxil\-produce\fR, \fBxil\-sfx\fR, \fBxil\-cues\fR, \fBxil\-sample\fR, and
+\fBxil\-voices\fR when not using \fB\-\-dry\-run\fR.
+.SH SEE ALSO
+.BR xil\-init (1),
+.BR xil\-scan (1),
+.BR xil\-parse (1),
+.BR xil\-cues (1),
+.BR xil\-produce (1),
+.BR xil\-assemble (1),
+.BR xil\-daw (1),
+.BR xil\-migrate (1),
+.BR xil\-cleanup (1),
+.BR xil\-import (1),
+.BR xil\-regen (1),
+.BR xil\-master (1),
+.BR xil\-voices (1),
+.BR xil\-csv\-join (1),
+.BR xil\-sfx (1),
+.BR xil\-sample (1),
+.BR xil\-sfx\-lib (1),
+.BR xil\-splice (1),
+.BR xil\-mp3\-hash (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

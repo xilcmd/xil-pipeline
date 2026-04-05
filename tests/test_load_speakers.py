@@ -124,7 +124,7 @@ class TestParseScriptHeader:
     def test_standard_header(self):
         result = parse_script_header("THE 413 Season 2: Episode 3: \"The Bridge\"")
         assert result is not None
-        show, season, episode, title = result
+        show, season, episode, title, season_title = result
         assert show == "THE 413"
         assert season == 2
         assert episode == 3
@@ -133,7 +133,7 @@ class TestParseScriptHeader:
     def test_generic_show_header(self):
         result = parse_script_header("Night Owls Season 1: Episode 1: \"Pilot\"")
         assert result is not None
-        show, season, episode, title = result
+        show, season, episode, title, season_title = result
         assert show == "Night Owls"
         assert season == 1
         assert episode == 1
@@ -147,7 +147,7 @@ class TestParseScriptHeader:
     def test_no_season(self):
         result = parse_script_header("My Show Episode 5: \"Title\"")
         assert result is not None
-        show, season, episode, title = result
+        show, season, episode, title, season_title = result
         assert show == "My Show"
         assert season is None
         assert episode == 5

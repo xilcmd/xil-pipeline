@@ -251,47 +251,51 @@ def _parse_range(s: str) -> tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-splice",
+        description="Splice Parsed JSON — insert/delete entries with automatic renumbering",
+    )
+    parser.add_argument("--episode", required=True,
+                        help="Episode tag (e.g. S02E03) — derives target parsed JSON path")
+    parser.add_argument("--show", default=None,
+                        help="Show name override (default: from project.json)")
+    parser.add_argument("--parsed", default=None,
+                        help="Override target parsed JSON path")
+
+    # Insert options
+    parser.add_argument("--insert-after", type=int, default=None,
+                        help="Seq number to insert after")
+    parser.add_argument("--from-parsed", default=None, dest="from_parsed",
+                        help="Source parsed JSON to extract entries from")
+    parser.add_argument("--from-seq-range", default=None, dest="from_seq_range",
+                        help="Seq range to extract from source (e.g. 232-233)")
+    parser.add_argument("--from-json", default=None, dest="from_json",
+                        help="Path to a JSON array of entries to insert")
+    parser.add_argument("--section", default=None,
+                        help="Override section on inserted entries")
+    parser.add_argument("--scene", default=None,
+                        help="Override scene on inserted entries")
+
+    # Delete options
+    parser.add_argument("--delete-seq-range", default=None, dest="delete_seq_range",
+                        help="Seq range to delete (e.g. 100-105)")
+
+    # Output options
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show plan without writing files")
+    parser.add_argument("--no-backup", action="store_true",
+                        help="Skip backup file")
+    parser.add_argument("--quiet", action="store_true",
+                        help="Summary only, no per-entry detail")
+    return parser
+
+
 def main() -> None:
     """Splice entries into or delete entries from a parsed episode JSON."""
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Splice Parsed JSON — insert/delete entries with automatic renumbering",
-        )
-        parser.add_argument("--episode", required=True,
-                            help="Episode tag (e.g. S02E03) — derives target parsed JSON path")
-        parser.add_argument("--show", default=None,
-                            help="Show name override (default: from project.json)")
-        parser.add_argument("--parsed", default=None,
-                            help="Override target parsed JSON path")
-
-        # Insert options
-        parser.add_argument("--insert-after", type=int, default=None,
-                            help="Seq number to insert after")
-        parser.add_argument("--from-parsed", default=None, dest="from_parsed",
-                            help="Source parsed JSON to extract entries from")
-        parser.add_argument("--from-seq-range", default=None, dest="from_seq_range",
-                            help="Seq range to extract from source (e.g. 232-233)")
-        parser.add_argument("--from-json", default=None, dest="from_json",
-                            help="Path to a JSON array of entries to insert")
-        parser.add_argument("--section", default=None,
-                            help="Override section on inserted entries")
-        parser.add_argument("--scene", default=None,
-                            help="Override scene on inserted entries")
-
-        # Delete options
-        parser.add_argument("--delete-seq-range", default=None, dest="delete_seq_range",
-                            help="Seq range to delete (e.g. 100-105)")
-
-        # Output options
-        parser.add_argument("--dry-run", action="store_true",
-                            help="Show plan without writing files")
-        parser.add_argument("--no-backup", action="store_true",
-                            help="Skip backup file")
-        parser.add_argument("--quiet", action="store_true",
-                            help="Summary only, no per-entry detail")
-
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         # Resolve paths
         slug = resolve_slug(args.show)

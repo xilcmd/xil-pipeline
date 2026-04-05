@@ -117,35 +117,40 @@ def get_best_model_for_budget() -> str:
         return "eleven_v3"
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-sample",
+        description="Generate a voice sample MP3 for each assigned cast member.",
+    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--episode",
+        metavar="TAG",
+        help="Episode tag (e.g. S02E03); derives cast config path",
+    )
+    group.add_argument(
+        "--cast",
+        metavar="PATH",
+        help="Explicit path to cast JSON file",
+    )
+    parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be generated without calling the API",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate samples even if files already exist on disk",
+    )
+    return parser
+
+
 def main() -> None:
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Generate a voice sample MP3 for each assigned cast member."
-        )
-        group = parser.add_mutually_exclusive_group(required=True)
-        group.add_argument(
-            "--episode",
-            metavar="TAG",
-            help="Episode tag (e.g. S02E03); derives cast config path",
-        )
-        group.add_argument(
-            "--cast",
-            metavar="PATH",
-            help="Explicit path to cast JSON file",
-        )
-        parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
-        parser.add_argument(
-            "--dry-run",
-            action="store_true",
-            help="Print what would be generated without calling the API",
-        )
-        parser.add_argument(
-            "--force",
-            action="store_true",
-            help="Regenerate samples even if files already exist on disk",
-        )
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         if not args.dry_run and not os.environ.get("ELEVENLABS_API_KEY"):
             sys.exit("Error: ELEVENLABS_API_KEY environment variable is not set.")

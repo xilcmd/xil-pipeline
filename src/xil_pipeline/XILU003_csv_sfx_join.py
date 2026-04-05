@@ -197,22 +197,27 @@ def annotate_csv(
 # Entry point
 # ---------------------------------------------------------------------------
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-csv-join",
+        description="Annotate a parsed episode CSV with SFX and cast config data.",
+    )
+    parser.add_argument(
+        "--episode", required=True,
+        help="Episode tag (e.g. S02E03) — derives default input/output paths",
+    )
+    parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
+    parser.add_argument("--csv", dest="csv_path", help="Override input CSV path")
+    parser.add_argument("--sfx", dest="sfx_path", help="Override SFX JSON path")
+    parser.add_argument("--cast", dest="cast_path", help="Override cast JSON path")
+    parser.add_argument("--output", dest="out_path", help="Override output CSV path")
+    return parser
+
+
 def main() -> None:
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Annotate a parsed episode CSV with SFX and cast config data."
-        )
-        parser.add_argument(
-            "--episode", required=True,
-            help="Episode tag (e.g. S02E03) — derives default input/output paths",
-        )
-        parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
-        parser.add_argument("--csv", dest="csv_path", help="Override input CSV path")
-        parser.add_argument("--sfx", dest="sfx_path", help="Override SFX JSON path")
-        parser.add_argument("--cast", dest="cast_path", help="Override cast JSON path")
-        parser.add_argument("--output", dest="out_path", help="Override output CSV path")
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         csv_def, sfx_def, cast_def, out_def = derive_paths(args.episode, show=args.show)
         csv_path = args.csv_path or csv_def

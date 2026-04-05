@@ -116,6 +116,37 @@ echo $ELEVENLABS_API_KEY
 
 Always use `--dry-run` first to preview character cost before making API calls.
 
+## Man Pages
+
+Man pages for all 19 commands are included in the package and installed automatically with `pip install`.
+
+### Enable man pages after `pip install --user`
+
+Pages land in `~/.local/share/man/man1/`. Add this line to `~/.bashrc` (or `~/.profile` on Debian):
+
+```bash
+export MANPATH="$HOME/.local/share/man:$(manpath 2>/dev/null)"
+```
+
+Then reload your shell and use `man` normally:
+
+```bash
+source ~/.bashrc
+man xil-parse
+man xil-produce
+man xil           # overview of all commands
+```
+
+For `apropos` / `whatis` support, update the man database once:
+
+```bash
+mandb --user-db ~/.local/share/man
+```
+
+### System-wide installs (`sudo pip install`)
+
+Pages land in `/usr/local/share/man/man1/` which is indexed by default. Run `sudo mandb` to refresh if pages don't appear immediately.
+
 ## Development
 
 ```bash

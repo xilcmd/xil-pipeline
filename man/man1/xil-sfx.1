@@ -1,0 +1,73 @@
+.TH XIL\-SFX "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.SH NAME
+xil\-sfx
+.SH SYNOPSIS
+.B xil\-sfx
+[-h] --episode EPISODE [--show SHOW] [--script SCRIPT] [--dry-run] [--max-duration MAX_DURATION] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only]
+.SH DESCRIPTION
+Generate SFX stems from an SFX config (standalone utility)
+
+.SH OPTIONS
+.TP
+\fB\-\-episode\fR \fI\,EPISODE\/\fR
+Episode tag (e.g. S01E01) — derives cast and SFX config paths
+
+.TP
+\fB\-\-show\fR \fI\,SHOW\/\fR
+Show name override (default: from project.json)
+
+.TP
+\fB\-\-script\fR \fI\,SCRIPT\/\fR
+Path to parsed script JSON (default: derived from cast config)
+
+.TP
+\fB\-\-dry\-run\fR
+Preview existing vs. new stems and estimated credit cost
+
+.TP
+\fB\-\-max\-duration\fR \fI\,MAX_DURATION\/\fR
+Only process effects with duration_seconds <= this value
+
+.TP
+\fB\-\-gen\-sfx\fR
+Limit to SFX and BEAT entries only
+
+.TP
+\fB\-\-gen\-music\fR
+Limit to MUSIC entries only
+
+.TP
+\fB\-\-gen\-ambience\fR
+Limit to AMBIENCE entries only
+
+.TP
+\fB\-\-sfx\-music\fR
+(deprecated) shorthand for \-\-gen\-sfx \-\-gen\-music \-\-gen\-ambience
+
+.TP
+\fB\-\-local\-only\fR
+Only place stems for effects already present in SFX/; skip API generation
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

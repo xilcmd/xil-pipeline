@@ -531,6 +531,54 @@ def export_daw_layers(
         logger.info(f"    Will save project:    {output_dir}/{tag}.aup3")
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-daw",
+        description="DAW Export — export episode as layered WAV files for Audacity",
+    )
+    parser.add_argument(
+        "--episode", required=True,
+        help="Episode tag (e.g. S01E02) — derives cast config, stems, and parsed JSON paths"
+    )
+    parser.add_argument(
+        "--show", default=None,
+        help="Show name override (default: from project.json)"
+    )
+    parser.add_argument(
+        "--parsed", default=None,
+        help="Path to parsed script JSON (default: parsed/parsed_<slug>_<TAG>.json)"
+    )
+    parser.add_argument(
+        "--output-dir", default=None,
+        help="Output directory for layer WAVs (default: daw/<TAG>/)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show export summary without writing files"
+    )
+    parser.add_argument(
+        "--save-aup3", action="store_true",
+        help="Include SaveProject2 step in the Audacity helper script (requires mod-script-pipe)"
+    )
+    parser.add_argument(
+        "--macro", action="store_true",
+        help="Write an Audacity macro to %%APPDATA%%\\audacity\\Macros\\ for one-click import"
+    )
+    parser.add_argument(
+        "--timeline", action="store_true",
+        help="Print an ASCII timeline visualization of asset placement to stdout"
+    )
+    parser.add_argument(
+        "--timeline-html", action="store_true",
+        help="Write an interactive HTML timeline to daw/<TAG>/<TAG>_timeline.html"
+    )
+    parser.add_argument(
+        "--gap-ms", type=int, default=SILENCE_GAP_MS,
+        help=f"Silence gap between foreground stems in ms (default: {SILENCE_GAP_MS})"
+    )
+    return parser
+
+
 def main() -> None:
     """CLI entry point for DAW layer export.
 
@@ -540,50 +588,7 @@ def main() -> None:
     """
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="DAW Export — export episode as layered WAV files for Audacity"
-        )
-        parser.add_argument(
-            "--episode", required=True,
-            help="Episode tag (e.g. S01E02) — derives cast config, stems, and parsed JSON paths"
-        )
-        parser.add_argument(
-            "--show", default=None,
-            help="Show name override (default: from project.json)"
-        )
-        parser.add_argument(
-            "--parsed", default=None,
-            help="Path to parsed script JSON (default: parsed/parsed_<slug>_<TAG>.json)"
-        )
-        parser.add_argument(
-            "--output-dir", default=None,
-            help="Output directory for layer WAVs (default: daw/<TAG>/)"
-        )
-        parser.add_argument(
-            "--dry-run", action="store_true",
-            help="Show export summary without writing files"
-        )
-        parser.add_argument(
-            "--save-aup3", action="store_true",
-            help="Include SaveProject2 step in the Audacity helper script (requires mod-script-pipe)"
-        )
-        parser.add_argument(
-            "--macro", action="store_true",
-            help="Write an Audacity macro to %%APPDATA%%\\audacity\\Macros\\ for one-click import"
-        )
-        parser.add_argument(
-            "--timeline", action="store_true",
-            help="Print an ASCII timeline visualization of asset placement to stdout"
-        )
-        parser.add_argument(
-            "--timeline-html", action="store_true",
-            help="Write an interactive HTML timeline to daw/<TAG>/<TAG>_timeline.html"
-        )
-        parser.add_argument(
-            "--gap-ms", type=int, default=SILENCE_GAP_MS,
-            help=f"Silence gap between foreground stems in ms (default: {SILENCE_GAP_MS})"
-        )
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         slug = resolve_slug(args.show)
         p = derive_paths(slug, args.episode)

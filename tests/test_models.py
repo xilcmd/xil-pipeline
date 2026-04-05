@@ -251,6 +251,7 @@ class TestParsedScript:
     def test_model_dump_roundtrip(self):
         raw = {
             "show": "THE 413", "episode": 1, "season": 1, "title": "Test",
+            "season_title": None,
             "source_file": "test.md",
             "entries": [self._make_entry()],
             "stats": self._make_stats(),
@@ -987,3 +988,40 @@ class TestResolveSlug:
         pj = tmp_path / "project.json"
         pj.write_text(json.dumps({"other": "value"}))
         assert models.resolve_slug(None, str(pj)) == "sample"
+
+
+class TestResolveSeasonTitle:
+    """Tests for resolve_season_title() resolution order."""
+
+    def test_explicit_arg_returned_directly(self):
+        result = models.resolve_season_title("The Holiday Shift")
+        assert result == "The Holiday Shift"
+
+    def test_falls_back_to_project_json(self, tmp_path):
+        pj = tmp_path / "project.json"
+        pj.write_text(json.dumps({"show": "THE 413", "season_title": "The Architect"}))
+        result = models.resolve_season_title(None, project_path=str(pj))
+        assert result == "The Architect"
+
+    def test_returns_none_when_absent_everywhere(self, tmp_path):
+        pj = tmp_path / "project.json"
+        pj.write_text(json.dumps({"show": "THE 413"}))
+        result = models.resolve_season_title(None, project_path=str(pj))
+        assert result is None
+
+    def test_explicit_wins_over_project_json(self, tmp_path):
+        pj = tmp_path / "project.json"
+        pj.write_text(json.dumps({"season_title": "Project Title"}))
+        result = models.resolve_season_title("Header Title", project_path=str(pj))
+        assert result == "Header Title"
+
+    def test_no_project_json_returns_none(self, tmp_path):
+        missing = tmp_path / "nonexistent.json"
+        result = models.resolve_season_title(None, project_path=str(missing))
+        assert result is None
+
+    def test_empty_string_in_project_json_returns_none(self, tmp_path):
+        pj = tmp_path / "project.json"
+        pj.write_text(json.dumps({"season_title": ""}))
+        result = models.resolve_season_title(None, project_path=str(pj))
+        assert result is None

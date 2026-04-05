@@ -501,48 +501,50 @@ def find_cues_file(episode: str, slug: str | None = None, cues_dir: str = CUES_D
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-cues",
+        description=(
+            "Parse a sound cues & music prompts markdown file into an asset "
+            "manifest, audit the SFX library, and optionally generate new "
+            "assets or enrich the episode sfx config."
+        ),
+    )
+    parser.add_argument(
+        "--episode", required=True,
+        help="Episode tag (e.g. S02E03) — derives sfx config path",
+    )
+    parser.add_argument(
+        "--show", default=None,
+        help="Show name override (default: from project.json)",
+    )
+    parser.add_argument(
+        "--cues", default=None,
+        help="Path to cues markdown file (auto-detected from cues/ if omitted)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help=(
+            "Show audit report and enrichment diff without API calls or "
+            "sfx config writes (manifest is always written)"
+        ),
+    )
+    parser.add_argument(
+        "--generate", action="store_true",
+        help="Generate NEW assets via ElevenLabs API into SFX/",
+    )
+    parser.add_argument(
+        "--enrich-sfx-config", action="store_true",
+        help="Update episode SFX config with cues-sheet prompts/durations",
+    )
+    return parser
+
+
 def main() -> None:
     """CLI entry point for the cues sheet ingester."""
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description=(
-                "Parse a sound cues & music prompts markdown file into an asset "
-                "manifest, audit the SFX library, and optionally generate new "
-                "assets or enrich the episode sfx config."
-            )
-        )
-        parser.add_argument(
-            "--episode", required=True,
-            help="Episode tag (e.g. S02E03) — derives sfx config path",
-        )
-        parser.add_argument(
-            "--show", default=None,
-            help="Show name override (default: from project.json)",
-        )
-        parser.add_argument(
-            "--cues", default=None,
-            help=(
-                "Path to cues markdown file "
-                "(auto-detected from cues/ if omitted)"
-            ),
-        )
-        parser.add_argument(
-            "--dry-run", action="store_true",
-            help=(
-                "Show audit report and enrichment diff without API calls or "
-                "sfx config writes (manifest is always written)"
-            ),
-        )
-        parser.add_argument(
-            "--generate", action="store_true",
-            help="Generate NEW assets via ElevenLabs API into SFX/",
-        )
-        parser.add_argument(
-            "--enrich-sfx-config", action="store_true",
-            help="Update episode SFX config with cues-sheet prompts/durations",
-        )
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         # Resolve cues file
         slug = resolve_slug(args.show)

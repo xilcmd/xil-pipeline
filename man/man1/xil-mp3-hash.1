@@ -1,0 +1,49 @@
+.TH XIL\-MP3\-HASH "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.SH NAME
+xil\-mp3\-hash
+.SH SYNOPSIS
+.B xil\-mp3\-hash
+[-h] [--output FILE] [--absolute] [--json] [path]
+.SH DESCRIPTION
+Recursively hash MP3 files and log <path> : <sha256>
+
+.TP
+\fBpath\fR
+File to hash or directory to scan recursively (default: current directory)
+
+.SH OPTIONS
+.TP
+\fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
+Write results to FILE in addition to logging
+
+.TP
+\fB\-\-absolute\fR
+Print absolute paths (default: paths relative to scan root)
+
+.TP
+\fB\-\-json\fR
+Output a JSON array of {"path": ..., "sha256": ...} to stdout (no banner)
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

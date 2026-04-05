@@ -330,59 +330,64 @@ def export_kit(records: list[dict], output_dir: str = ".") -> tuple[str, str]:
 # Main
 # ---------------------------------------------------------------------------
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-sfx-lib",
+        description="Discover personally generated Sound Effects from the ElevenLabs account or local SFX/ directory",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--api",
+        action="store_true",
+        help="Query ElevenLabs /v1/sound-generation/history (requires sound_generation permission)",
+    )
+    mode.add_argument(
+        "--local",
+        action="store_true",
+        help="Scan local SFX/ directory only (no API key needed)",
+    )
+    parser.add_argument(
+        "--sfx-dir",
+        default=SFX_DIR,
+        metavar="DIR",
+        help=f"Local SFX directory to scan (default: {SFX_DIR}/)",
+    )
+    parser.add_argument(
+        "--search",
+        metavar="TEXT",
+        help="Case-insensitive substring filter on the prompt/filename",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="(API mode) Paginate through the full account history; default: most recent 100",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Print all fields for each record",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results as a JSON array",
+    )
+    parser.add_argument(
+        "--export-kit",
+        metavar="DIR",
+        nargs="?",
+        const=".",
+        default=None,
+        help="Export SFX inventory JSON + scriptwriter reference doc to DIR (default: current directory)",
+    )
+    return parser
+
+
 def main() -> None:
     """CLI entry point for SFX discovery."""
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Discover personally generated Sound Effects from the ElevenLabs account or local SFX/ directory"
-        )
-        mode = parser.add_mutually_exclusive_group()
-        mode.add_argument(
-            "--api",
-            action="store_true",
-            help="Query ElevenLabs /v1/sound-generation/history (requires sound_generation permission)",
-        )
-        mode.add_argument(
-            "--local",
-            action="store_true",
-            help="Scan local SFX/ directory only (no API key needed)",
-        )
-        parser.add_argument(
-            "--sfx-dir",
-            default=SFX_DIR,
-            metavar="DIR",
-            help=f"Local SFX directory to scan (default: {SFX_DIR}/)",
-        )
-        parser.add_argument(
-            "--search",
-            metavar="TEXT",
-            help="Case-insensitive substring filter on the prompt/filename",
-        )
-        parser.add_argument(
-            "--all",
-            action="store_true",
-            help="(API mode) Paginate through the full account history; default: most recent 100",
-        )
-        parser.add_argument(
-            "--verbose", "-v",
-            action="store_true",
-            help="Print all fields for each record",
-        )
-        parser.add_argument(
-            "--json",
-            action="store_true",
-            help="Output results as a JSON array",
-        )
-        parser.add_argument(
-            "--export-kit",
-            metavar="DIR",
-            nargs="?",
-            const=".",
-            default=None,
-            help="Export SFX inventory JSON + scriptwriter reference doc to DIR (default: current directory)",
-        )
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         api_key = os.environ.get("ELEVENLABS_API_KEY", "")
         # Default to local scan — the /v1/sound-generation/history endpoint appears

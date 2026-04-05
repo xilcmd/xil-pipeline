@@ -1,0 +1,67 @@
+.TH XIL\-SFX\-LIB "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.SH NAME
+xil\-sfx\-lib
+.SH SYNOPSIS
+.B xil\-sfx\-lib
+[-h] [--api | --local] [--sfx-dir DIR] [--search TEXT] [--all] [--verbose] [--json] [--export-kit [DIR]]
+.SH DESCRIPTION
+Discover personally generated Sound Effects from the ElevenLabs account or local SFX/ directory
+
+.SH OPTIONS
+.TP
+\fB\-\-api\fR
+Query ElevenLabs /v1/sound\-generation/history (requires sound_generation
+permission)
+
+.TP
+\fB\-\-local\fR
+Scan local SFX/ directory only (no API key needed)
+
+.TP
+\fB\-\-sfx\-dir\fR \fI\,DIR\/\fR
+Local SFX directory to scan (default: SFX/)
+
+.TP
+\fB\-\-search\fR \fI\,TEXT\/\fR
+Case\-insensitive substring filter on the prompt/filename
+
+.TP
+\fB\-\-all\fR
+(API mode) Paginate through the full account history; default: most recent 100
+
+.TP
+\fB\-\-verbose\fR, \fB\-v\fR
+Print all fields for each record
+
+.TP
+\fB\-\-json\fR
+Output results as a JSON array
+
+.TP
+\fB\-\-export\-kit\fR \fI\,[DIR]\/\fR
+Export SFX inventory JSON + scriptwriter reference doc to DIR (default:
+current directory)
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

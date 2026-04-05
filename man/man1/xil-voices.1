@@ -1,0 +1,61 @@
+.TH XIL\-VOICES "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.SH NAME
+xil\-voices
+.SH SYNOPSIS
+.B xil\-voices
+[-h] [--category CAT [CAT ...]] [--search TEXT] [--id VOICE_ID] [--verbose] [--json] [--update-cast CAST_JSON] [--dry-run]
+.SH DESCRIPTION
+List ElevenLabs voices with enriched metadata
+
+.SH OPTIONS
+.TP
+\fB\-\-category\fR \fI\,CAT [CAT ...]\/\fR
+Filter by category: premade cloned generated professional
+
+.TP
+\fB\-\-search\fR \fI\,TEXT\/\fR
+Case\-insensitive substring filter on name or description
+
+.TP
+\fB\-\-id\fR \fI\,VOICE_ID\/\fR
+Show full detail for a single voice ID
+
+.TP
+\fB\-\-verbose\fR, \fB\-v\fR
+Print all fields for each voice
+
+.TP
+\fB\-\-json\fR
+Output results as JSON array
+
+.TP
+\fB\-\-update\-cast\fR \fI\,CAST_JSON\/\fR
+Back\-fill role and language_code in a cast JSON from API voice metadata
+
+.TP
+\fB\-\-dry\-run\fR
+With \-\-update\-cast: show changes without writing the file
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

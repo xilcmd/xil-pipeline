@@ -144,42 +144,54 @@ class TestParseScriptHeader:
     NO_SEASON = "THE 413 Episode 2: Another Episode"
 
     def test_full_header_extracts_show(self):
-        show, _, _, _ = parser.parse_script_header(self.FULL)
+        show, _, _, _, _ = parser.parse_script_header(self.FULL)
         assert show == "THE 413"
 
     def test_full_header_extracts_season(self):
-        _, season, _, _ = parser.parse_script_header(self.FULL)
+        _, season, _, _, _ = parser.parse_script_header(self.FULL)
         assert season == 1
 
     def test_full_header_extracts_episode(self):
-        _, _, episode, _ = parser.parse_script_header(self.FULL)
+        _, _, episode, _, _ = parser.parse_script_header(self.FULL)
         assert episode == 1
 
     def test_full_header_extracts_episode_title(self):
         """First quoted string after 'Episode N:' is the episode title, not the arc."""
-        _, _, _, title = parser.parse_script_header(self.FULL)
+        _, _, _, title, _ = parser.parse_script_header(self.FULL)
         assert title == "The Empty Booth"
 
     def test_arc_title_not_used_as_episode_title(self):
         header = 'THE 413 Season 1: Episode 2: "Reel to Real" Arc: "The Holiday Shift" (2 of 3) Runtime: ~30 minutes'
-        _, _, _, title = parser.parse_script_header(header)
+        _, _, _, title, _ = parser.parse_script_header(header)
         assert title == "Reel to Real"
 
     def test_minimal_header_extracts_season(self):
-        _, season, _, _ = parser.parse_script_header(self.MINIMAL)
+        _, season, _, _, _ = parser.parse_script_header(self.MINIMAL)
         assert season == 1
 
     def test_minimal_header_extracts_title_after_episode(self):
-        _, _, _, title = parser.parse_script_header(self.MINIMAL)
+        _, _, _, title, _ = parser.parse_script_header(self.MINIMAL)
         assert title == "Test"
 
     def test_no_season_returns_none(self):
-        _, season, _, _ = parser.parse_script_header(self.NO_SEASON)
+        _, season, _, _, _ = parser.parse_script_header(self.NO_SEASON)
         assert season is None
 
     def test_no_season_extracts_episode(self):
-        _, _, episode, _ = parser.parse_script_header(self.NO_SEASON)
+        _, _, episode, _, _ = parser.parse_script_header(self.NO_SEASON)
         assert episode == 2
+
+    def test_arc_title_extracted_as_season_title(self):
+        _, _, _, _, season_title = parser.parse_script_header(self.FULL)
+        assert season_title == "The Holiday Shift"
+
+    def test_no_arc_returns_none_season_title(self):
+        _, _, _, _, season_title = parser.parse_script_header(self.MINIMAL)
+        assert season_title is None
+
+    def test_no_arc_no_season_returns_none_season_title(self):
+        _, _, _, _, season_title = parser.parse_script_header(self.NO_SEASON)
+        assert season_title is None
 
 
 # ─── Integration Test: parse_script with minimal fixture ───
@@ -808,6 +820,30 @@ class TestGenerateCastConfig:
         assert member["pan"] == 0.0
         assert member["filter"] is False
         assert member["role"] == "TBD"
+
+    def test_cast_skeleton_includes_season_title(self, tmp_path):
+        parsed = {
+            "show": "THE 413", "season": 1, "episode": 1, "title": "T",
+            "season_title": "The Holiday Shift",
+            "stats": {"speakers": {"adam": 1}}, "entries": [],
+        }
+        cast_path = str(tmp_path / "cast.json")
+        parser.generate_cast_config(parsed, cast_path)
+        with open(cast_path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert config["season_title"] == "The Holiday Shift"
+
+    def test_cast_skeleton_null_season_title_when_absent(self, tmp_path):
+        parsed = {
+            "show": "THE 413", "season": 1, "episode": 1, "title": "T",
+            "season_title": None,
+            "stats": {"speakers": {"adam": 1}}, "entries": [],
+        }
+        cast_path = str(tmp_path / "cast.json")
+        parser.generate_cast_config(parsed, cast_path)
+        with open(cast_path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert config["season_title"] is None
 
     def test_skips_when_cast_exists(self, parsed, tmp_path, caplog):
         """main() should not overwrite existing cast config."""

@@ -159,6 +159,34 @@ def assemble_multitrack(
     subprocess.run(["mpg123", os.path.abspath(final_output)], check=False)
 
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-assemble",
+        description="Audio Assembly — assemble voice stems into master MP3",
+    )
+    parser.add_argument(
+        "--episode", required=True,
+        help="Episode tag (e.g. S01E01) — derives cast config path"
+    )
+    parser.add_argument(
+        "--show", default=None,
+        help="Show name override (default: from project.json)"
+    )
+    parser.add_argument(
+        "--output", default=None,
+        help="Output master MP3 path (default: <slug>_<TAG>_master.mp3)"
+    )
+    parser.add_argument(
+        "--parsed", default=None,
+        help="Path to parsed script JSON (default: parsed/parsed_<slug>_<TAG>.json)"
+    )
+    parser.add_argument(
+        "--gap-ms", type=int, default=SILENCE_GAP_MS,
+        help=f"Silence gap between foreground stems in ms (default: {SILENCE_GAP_MS})"
+    )
+    return parser
+
+
 def main() -> None:
     """CLI entry point for audio assembly.
 
@@ -169,30 +197,7 @@ def main() -> None:
     """
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Audio Assembly — assemble voice stems into master MP3"
-        )
-        parser.add_argument(
-            "--episode", required=True,
-            help="Episode tag (e.g. S01E01) — derives cast config path"
-        )
-        parser.add_argument(
-            "--show", default=None,
-            help="Show name override (default: from project.json)"
-        )
-        parser.add_argument(
-            "--output", default=None,
-            help="Output master MP3 path (default: <slug>_<TAG>_master.mp3)"
-        )
-        parser.add_argument(
-            "--parsed", default=None,
-            help="Path to parsed script JSON (default: parsed/parsed_<slug>_<TAG>.json)"
-        )
-        parser.add_argument(
-            "--gap-ms", type=int, default=SILENCE_GAP_MS,
-            help=f"Silence gap between foreground stems in ms (default: {SILENCE_GAP_MS})"
-        )
-        args = parser.parse_args()
+        args = get_parser().parse_args()
 
         slug = resolve_slug(args.show)
         p = derive_paths(slug, args.episode)
