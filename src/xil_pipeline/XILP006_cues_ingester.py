@@ -544,7 +544,8 @@ def main() -> None:
     """CLI entry point for the cues sheet ingester."""
     configure_logging()
     with run_banner():
-        args = get_parser().parse_args()
+        parser = get_parser()
+        args = parser.parse_args()
 
         # Resolve cues file
         slug = resolve_slug(args.show)

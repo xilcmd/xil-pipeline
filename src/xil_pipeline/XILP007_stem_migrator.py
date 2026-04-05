@@ -360,7 +360,8 @@ def main() -> None:
     """CLI entry point for stem migration."""
     configure_logging()
     with run_banner("XILP007 stem migrator"):
-        args = get_parser().parse_args()
+        parser = get_parser()
+        args = parser.parse_args()
 
         # Resolve paths
         if args.episode:
