@@ -16,7 +16,7 @@ pip install xil-pipeline[dev]       # development and testing
 
 ## Quick Start
 
-See [`samples/sample_S01E01.md`](samples/sample_S01E01.md) for an example of the markdown script format the pipeline expects. It demonstrates dialogue, acting directions, SFX/ambience/music cues, beats, sections, and scenes.
+See [`samples/Tech_Deep_Dive_S01E04.md`](samples/Tech_Deep_Dive_S01E04.md) for an example of the markdown script format the pipeline expects. It demonstrates dialogue, acting directions, SFX/ambience/music cues, beats, sections, and scenes. [`samples/S01E04_techdeepdive_2026-04-02.mp3`](samples/S01E04_techdeepdive_2026-04-02.mp3) is the rendered output — a two-host tech podcast segment generated entirely from that script.
 
 ```bash
 # Scaffold a new project workspace (creates a copy of the sample script)

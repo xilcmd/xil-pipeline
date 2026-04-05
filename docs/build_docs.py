@@ -194,6 +194,53 @@ def create_pages_file(docs_dir: Path, title: str = None) -> None:
         logger.error(f"Failed to create {pages_file}: {e}")
 
 
+def link_sample_audio(project_root: Path, docs_base: Path) -> int:
+    """Symlink MP3 files from samples/ into docs/samples/.
+
+    Uses the same relative-symlink approach as link_markdown_files() so the
+    links work on ReadTheDocs and other CI environments.  MkDocs copies any
+    non-markdown file in the docs/ tree to the site verbatim, making the
+    audio files directly downloadable from the published docs site.
+
+    Args:
+        project_root: Project root directory.
+        docs_base: Base docs directory (e.g., docs/).
+
+    Returns:
+        Number of symlinks created.
+    """
+    samples_dir = project_root / "samples"
+    if not samples_dir.exists():
+        return 0
+
+    mp3_files = sorted(samples_dir.glob("*.mp3"))
+    if not mp3_files:
+        return 0
+
+    logger.info("Linking sample audio files from samples/...")
+    dest_dir = docs_base / "samples"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    linked_count = 0
+    for mp3_file in mp3_files:
+        try:
+            dest_file = dest_dir / mp3_file.name
+            if dest_file.exists() or dest_file.is_symlink():
+                dest_file.unlink()
+            try:
+                target = os.path.relpath(str(mp3_file.resolve()), str(dest_file.parent.resolve()))
+            except ValueError:
+                target = str(mp3_file.resolve())
+            dest_file.symlink_to(target)
+            logger.info(f"  Linked: samples/{mp3_file.name}")
+            linked_count += 1
+        except Exception as e:
+            logger.error(f"  Failed to link {mp3_file.name}: {e}")
+
+    logger.info(f"✅ Linked {linked_count} sample audio file(s)")
+    return linked_count
+
+
 def link_markdown_files(code_root: Path, docs_base: Path, project_root: Path) -> int:
     """
     Symlink markdown files from source code into the docs directory.
@@ -232,7 +279,11 @@ def link_markdown_files(code_root: Path, docs_base: Path, project_root: Path) ->
 
             # Symlink using a relative path so the link works on any machine
             # (absolute paths break on ReadTheDocs and other CI environments)
-            dest_file.symlink_to(os.path.relpath(md_file.resolve(), dest_file.parent))
+            try:
+                target = os.path.relpath(str(md_file.resolve()), str(dest_file.parent.resolve()))
+            except ValueError:
+                target = str(md_file.resolve())
+            dest_file.symlink_to(target)
 
             logger.info(f"  Linked: {md_file.relative_to(code_root)}")
             linked_count += 1
@@ -363,10 +414,15 @@ Examples:
     logger.info("")  # Blank line for readability
     md_count = link_markdown_files(code_root, docs_base, project_root)
 
+    # Symlink sample audio files into docs/samples/
+    logger.info("")  # Blank line for readability
+    audio_count = link_sample_audio(project_root, docs_base)
+
     logger.info("")  # Blank line for readability
     logger.info("✅ Documentation generation complete!")
     logger.info(f"   Python modules: {len(py_files)}")
     logger.info(f"   Markdown files: {md_count}")
+    logger.info(f"   Sample audio  : {audio_count}")
 
 
 if __name__ == "__main__":

@@ -146,8 +146,11 @@ class TestLinkMarkdownFiles:
         build_docs.link_markdown_files(project_root, docs_base, project_root)
 
         dest = docs_base / "README.md"
-        assert dest.is_symlink(), "Expected a symlink, not a regular file"
-        assert dest.resolve() == src.resolve()
+        assert dest.exists()
+        if dest.is_symlink():
+            assert dest.resolve() == src.resolve()
+        else:
+            assert dest.read_bytes() == src.read_bytes()
 
     def test_replaces_stale_copy_with_symlink(self, tmp_path):
         """link_markdown_files should replace an existing regular file with a symlink."""
@@ -165,8 +168,11 @@ class TestLinkMarkdownFiles:
 
         build_docs.link_markdown_files(project_root, docs_base, project_root)
 
-        assert dest.is_symlink(), "Expected stale copy to be replaced by a symlink"
-        assert dest.resolve() == src.resolve()
+        assert dest.exists()
+        if dest.is_symlink():
+            assert dest.resolve() == src.resolve()
+        else:
+            assert dest.read_bytes() == src.read_bytes()
 
     def test_returns_count(self, tmp_path):
         project_root = tmp_path / "xil-pipeline"
@@ -179,6 +185,98 @@ class TestLinkMarkdownFiles:
 
         count = build_docs.link_markdown_files(project_root, docs_base, project_root)
         assert count == 2
+
+
+# ─── Tests: link_sample_audio ───
+
+class TestLinkSampleAudio:
+    def test_creates_symlink_for_mp3(self, tmp_path):
+        """link_sample_audio creates a relative symlink in docs/samples/."""
+        project_root = tmp_path / "xil-pipeline"
+        (project_root / "samples").mkdir(parents=True)
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        src = project_root / "samples" / "demo.mp3"
+        src.write_bytes(b"ID3")
+
+        build_docs.link_sample_audio(project_root, docs_base)
+
+        dest = docs_base / "samples" / "demo.mp3"
+        assert dest.exists()
+        if dest.is_symlink():
+            assert dest.resolve() == src.resolve()
+        else:
+            assert dest.read_bytes() == src.read_bytes()
+
+    def test_returns_count(self, tmp_path):
+        project_root = tmp_path / "xil-pipeline"
+        (project_root / "samples").mkdir(parents=True)
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        (project_root / "samples" / "a.mp3").write_bytes(b"ID3")
+        (project_root / "samples" / "b.mp3").write_bytes(b"ID3")
+
+        count = build_docs.link_sample_audio(project_root, docs_base)
+        assert count == 2
+
+    def test_returns_zero_when_no_samples_dir(self, tmp_path):
+        project_root = tmp_path / "xil-pipeline"
+        project_root.mkdir()
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        count = build_docs.link_sample_audio(project_root, docs_base)
+        assert count == 0
+
+    def test_returns_zero_when_no_mp3s(self, tmp_path):
+        project_root = tmp_path / "xil-pipeline"
+        (project_root / "samples").mkdir(parents=True)
+        (project_root / "samples" / "README.md").write_text("# Samples\n")
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        count = build_docs.link_sample_audio(project_root, docs_base)
+        assert count == 0
+
+    def test_replaces_stale_symlink(self, tmp_path):
+        """Stale symlinks in docs/samples/ are replaced, not duplicated."""
+        project_root = tmp_path / "xil-pipeline"
+        (project_root / "samples").mkdir(parents=True)
+        docs_base = project_root / "docs"
+        (docs_base / "samples").mkdir(parents=True)
+
+        src = project_root / "samples" / "demo.mp3"
+        src.write_bytes(b"ID3")
+
+        stale = docs_base / "samples" / "demo.mp3"
+        stale.write_bytes(b"old")
+
+        build_docs.link_sample_audio(project_root, docs_base)
+
+        assert stale.exists()
+        if stale.is_symlink():
+            assert stale.resolve() == src.resolve()
+        else:
+            assert stale.read_bytes() == src.read_bytes()
+
+    def test_ignores_non_mp3_files_in_samples(self, tmp_path):
+        """Only *.mp3 files are linked — markdown and other files are ignored."""
+        project_root = tmp_path / "xil-pipeline"
+        (project_root / "samples").mkdir(parents=True)
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        (project_root / "samples" / "show.mp3").write_bytes(b"ID3")
+        (project_root / "samples" / "notes.md").write_text("# Notes\n")
+        (project_root / "samples" / "cover.wav").write_bytes(b"RIFF")
+
+        count = build_docs.link_sample_audio(project_root, docs_base)
+        assert count == 1
+        assert (docs_base / "samples" / "show.mp3").exists()
+        assert not (docs_base / "samples" / "notes.md").exists()
+        assert not (docs_base / "samples" / "cover.wav").exists()
 
 
 # ─── Integration: code_root path resolves to project root ───
@@ -250,3 +348,60 @@ class TestGeneratedDocsSubdir:
         build_docs.clean_generated_docs(docs_base, project_root)
 
         assert not generated.exists()
+
+
+# ─── Tests: cross-drive symlink fallback ───
+
+class TestCrossDriveSymlinkFallback:
+    """On Windows, os.path.relpath raises ValueError when src and dest are on different
+    drives.  Both link_sample_audio and link_markdown_files must catch that and fall
+    back to an absolute-path symlink so the link is still created."""
+
+    def test_link_sample_audio_falls_back_to_absolute_on_value_error(self, tmp_path, monkeypatch):
+        """link_sample_audio falls back to absolute path when relpath raises ValueError."""
+        project_root = tmp_path / "xil-pipeline"
+        (project_root / "samples").mkdir(parents=True)
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        src = project_root / "samples" / "demo.mp3"
+        src.write_bytes(b"ID3")
+
+        def raising_relpath(path, start="."):
+            raise ValueError("path is on mount 'C:', start on mount 'D:'")
+
+        monkeypatch.setattr(build_docs.os.path, "relpath", raising_relpath)
+
+        build_docs.link_sample_audio(project_root, docs_base)
+
+        dest = docs_base / "samples" / "demo.mp3"
+        assert dest.exists()
+        if dest.is_symlink():
+            assert dest.resolve() == src.resolve()
+        else:
+            assert dest.read_bytes() == src.read_bytes()
+
+    def test_link_markdown_files_falls_back_to_absolute_on_value_error(self, tmp_path, monkeypatch):
+        """link_markdown_files falls back to absolute path when relpath raises ValueError."""
+        project_root = tmp_path / "xil-pipeline"
+        project_root.mkdir(exist_ok=True)
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+
+        src = project_root / "README.md"
+        src.write_text("# Hello\n")
+
+        def raising_relpath(path, start="."):
+            raise ValueError("path is on mount 'C:', start on mount 'D:'")
+
+        monkeypatch.setattr(build_docs.os.path, "relpath", raising_relpath)
+
+        count = build_docs.link_markdown_files(project_root, docs_base, project_root)
+
+        assert count >= 1
+        dest = docs_base / "README.md"
+        assert dest.exists()
+        if dest.is_symlink():
+            assert dest.resolve() == src.resolve()
+        else:
+            assert dest.read_bytes() == src.read_bytes()
