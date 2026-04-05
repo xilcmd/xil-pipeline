@@ -9,12 +9,10 @@ import json
 import os
 import sys
 
-import pytest
-
 from xil_pipeline import XILU007_mp3_hash as mp3hash
 
-
 # ─── Helpers ───
+
 
 def _write_mp3(path: str, content: bytes = b"ID3fake") -> bytes:
     """Write fake MP3 bytes and return them."""
@@ -29,6 +27,7 @@ def _sha256(data: bytes) -> str:
 
 
 # ─── Tests: hash_file ───
+
 
 class TestHashFile:
     def test_known_bytes(self, tmp_path):
@@ -58,6 +57,7 @@ class TestHashFile:
 
 
 # ─── Tests: scan_mp3s ───
+
 
 class TestScanMp3s:
     def test_finds_mp3_in_root(self, tmp_path):
@@ -107,12 +107,14 @@ class TestScanMp3s:
 
 # ─── Tests: main() ───
 
+
 class TestMain:
     def test_logs_filename_and_hash(self, tmp_path, caplog):
         content = b"ID3test"
         _write_mp3(str(tmp_path / "demo.mp3"), content)
         sys.argv = ["xil-mp3-hash", str(tmp_path)]
         import logging
+
         with caplog.at_level(logging.INFO):
             mp3hash.main()
         combined = caplog.text
@@ -125,6 +127,7 @@ class TestMain:
         _write_mp3(str(sub / "track.mp3"))
         sys.argv = ["xil-mp3-hash", str(tmp_path)]
         import logging
+
         with caplog.at_level(logging.INFO):
             mp3hash.main()
         # Should show relative path, not full absolute path
@@ -136,6 +139,7 @@ class TestMain:
         _write_mp3(str(tmp_path / "x.mp3"))
         sys.argv = ["xil-mp3-hash", str(tmp_path), "--absolute"]
         import logging
+
         with caplog.at_level(logging.INFO):
             mp3hash.main()
         assert str(tmp_path) in caplog.text
@@ -166,6 +170,7 @@ class TestMain:
     def test_no_mp3s_does_not_crash(self, tmp_path, caplog):
         sys.argv = ["xil-mp3-hash", str(tmp_path)]
         import logging
+
         with caplog.at_level(logging.INFO):
             mp3hash.main()
         assert "No MP3" in caplog.text
@@ -177,6 +182,7 @@ class TestMain:
         p.write_bytes(content)
         sys.argv = ["xil-mp3-hash", str(p)]
         import logging
+
         with caplog.at_level(logging.INFO):
             mp3hash.main()
         assert "one.mp3" in caplog.text
@@ -196,6 +202,7 @@ class TestMain:
     def test_invalid_path_logs_error(self, tmp_path, caplog):
         sys.argv = ["xil-mp3-hash", str(tmp_path / "nonexistent")]
         import logging
+
         with caplog.at_level(logging.ERROR):
             mp3hash.main()
         assert "Not a file or directory" in caplog.text
