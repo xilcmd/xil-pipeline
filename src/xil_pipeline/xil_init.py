@@ -34,7 +34,7 @@ SAMPLE_SPEAKERS = [
 ]
 
 SAMPLE_SCRIPT = """\
-{show} Season 1: Episode 1: "Pilot"
+{show}{season_part} Episode 1: "Pilot"{arc_part}
 
 CAST:
 * HOST — the radio host
@@ -117,12 +117,19 @@ END OF EPISODE
 """
 
 
-def scaffold(directory: str, show_name: str) -> None:
+def scaffold(
+    directory: str,
+    show_name: str,
+    season: int | None = None,
+    season_title: str | None = None,
+) -> None:
     """Create a new xil-pipeline workspace in *directory*.
 
     Args:
         directory: Target directory (created if it doesn't exist).
         show_name: Human-readable show name for project.json.
+        season: Optional season number for project.json and the sample script header.
+        season_title: Optional season/arc title for project.json and the sample script header.
     """
     os.makedirs(directory, exist_ok=True)
 
@@ -130,7 +137,7 @@ def scaffold(directory: str, show_name: str) -> None:
     project_path = os.path.join(directory, "project.json")
     if not os.path.exists(project_path):
         with open(project_path, "w", encoding="utf-8") as f:
-            json.dump({"show": show_name, "season": None, "season_title": None}, f, indent=2)
+            json.dump({"show": show_name, "season": season, "season_title": season_title}, f, indent=2)
             f.write("\n")
         logger.info(f"  Created {project_path}")
     else:
@@ -151,11 +158,17 @@ def scaffold(directory: str, show_name: str) -> None:
         path = os.path.join(directory, subdir)
         os.makedirs(path, exist_ok=True)
 
-    # Sample script
+    # Sample script — build header tokens from provided settings
+    season_part = f" Season {season}:" if season is not None else ""
+    arc_part = f' Arc: "{season_title}"' if season_title else ""
     script_path = os.path.join(directory, "scripts", "sample_S01E01.md")
     if not os.path.exists(script_path):
         with open(script_path, "w", encoding="utf-8") as f:
-            f.write(SAMPLE_SCRIPT.format(show=show_name))
+            f.write(SAMPLE_SCRIPT.format(
+                show=show_name,
+                season_part=season_part,
+                arc_part=arc_part,
+            ))
         logger.info(f"  Created {script_path}")
     else:
         logger.info(f"  Skipped {script_path} (already exists)")
@@ -201,6 +214,14 @@ def get_parser() -> argparse.ArgumentParser:
         "--show", default="Sample Show",
         help='Show name for project.json (default: "Sample Show")',
     )
+    parser.add_argument(
+        "--season", type=int, default=None,
+        help="Season number for project.json and the sample script header",
+    )
+    parser.add_argument(
+        "--season-title", default=None, metavar="TITLE",
+        help="Season/arc title for project.json and the sample script header",
+    )
     return parser
 
 
@@ -215,7 +236,7 @@ def main() -> None:
     logger.info(f"\nScaffolding xil-pipeline workspace in: {directory}")
     logger.info(f"Show: {show_name}\n")
 
-    scaffold(directory, show_name)
+    scaffold(directory, show_name, season=args.season, season_title=args.season_title)
     print_getting_started(args.directory)
 
 

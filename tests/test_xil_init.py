@@ -45,8 +45,9 @@ def test_scaffold_creates_sample_script(workspace):
     assert os.path.exists(path)
     with open(path) as f:
         content = f.read()
-    # Show name appears in header
-    assert "Test Show Season 1: Episode 1:" in content
+    # Show name appears in header; no Season N: when not specified
+    assert content.startswith("Test Show Episode 1:")
+    assert "Season" not in content.splitlines()[0]
     # Contains expected structure
     assert "COLD OPEN" in content
     assert "ACT ONE" in content
@@ -66,7 +67,21 @@ def test_scaffold_custom_show_name(tmp_path):
     assert data["show"] == "Night Owls"
     with open(os.path.join(target, "scripts", "sample_S01E01.md")) as f:
         content = f.read()
-    assert "Night Owls Season 1:" in content
+    assert content.startswith("Night Owls Episode 1:")
+
+
+def test_scaffold_with_season_and_title(tmp_path):
+    """--season and --season-title are written to project.json and the sample script."""
+    target = str(tmp_path / "arc-show")
+    scaffold(target, "Night Owls", season=2, season_title="The Bridge")
+    with open(os.path.join(target, "project.json")) as f:
+        data = json.load(f)
+    assert data["season"] == 2
+    assert data["season_title"] == "The Bridge"
+    with open(os.path.join(target, "scripts", "sample_S01E01.md")) as f:
+        header = f.readline()
+    assert "Season 2:" in header
+    assert 'Arc: "The Bridge"' in header
 
 
 def test_scaffold_skips_existing_files(workspace):
@@ -92,9 +107,12 @@ def test_scaffold_into_current_dir(tmp_path, monkeypatch):
     assert os.path.exists(os.path.join(str(tmp_path), "project.json"))
 
 
-def test_sample_script_parses_with_speakers(workspace):
+def test_sample_script_parses_with_speakers(workspace, monkeypatch):
     """The sample script should parse cleanly through XILP001 with the sample speakers."""
     from xil_pipeline.XILP001_script_parser import load_speakers, parse_script
+
+    # CWD must be workspace so resolve_season/resolve_season_title read workspace's project.json
+    monkeypatch.chdir(workspace)
 
     speakers_path = os.path.join(workspace, "speakers.json")
     script_path = os.path.join(workspace, "scripts", "sample_S01E01.md")
@@ -109,7 +127,7 @@ def test_sample_script_parses_with_speakers(workspace):
     parsed = parse_script(script_path, speakers_path=speakers_path)
 
     assert parsed["show"] == "Test Show"
-    assert parsed["season"] == 1
+    assert parsed["season"] is None   # no --season passed to scaffold
     assert parsed["episode"] == 1
     assert parsed["title"] == "Pilot"
 

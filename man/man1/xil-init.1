@@ -3,7 +3,7 @@
 xil\-init
 .SH SYNOPSIS
 .B xil\-init
-[-h] [--show SHOW] [directory]
+[-h] [--show SHOW] [--season SEASON] [--season-title TITLE] [directory]
 .SH DESCRIPTION
 Scaffold a new xil\-pipeline project workspace
 
@@ -15,6 +15,14 @@ Target directory (default: current directory)
 .TP
 \fB\-\-show\fR \fI\,SHOW\/\fR
 Show name for project.json (default: "Sample Show")
+
+.TP
+\fB\-\-season\fR \fI\,SEASON\/\fR
+Season number for project.json and the sample script header
+
+.TP
+\fB\-\-season\-title\fR \fI\,TITLE\/\fR
+Season/arc title for project.json and the sample script header
 
 .SH SEE ALSO
 .BR xil (1),
