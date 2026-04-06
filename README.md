@@ -80,6 +80,28 @@ xil-master --episode S01E01
 
 All scripts accept `--show` to override the show name. Resolution order: `--show` flag > `project.json` > default `"sample"`.
 
+### Episode tag formats
+
+The `<TAG>` portion of all file and directory names supports any string. Use `--episode` for standard episodic content or `--tag` for non-episodic formats:
+
+| Content type | Tag format | Examples | Notes |
+|---|---|---|---|
+| Podcast episode | `S01E04` | `S02E11`, `S03E01` | Default — derived from script header |
+| Audiobook chapter | `V01C03` | `V01C01`–`V01C20` | Volume + Chapter; use `--tag V01C03` with `xil-parse` |
+| Drama short | `S01D01` | `S01D03` | Season + Drama number; or just use `S01E01` |
+| Standalone one-shot | `E01` | `E01`–`E99` | No season prefix; standard `--episode E01` works |
+| Bonus / special | `BONUS01` | `TRAILER`, `BONUS02` | Any string via `--tag`; use uppercase by convention |
+
+Episodic tags (`S01E04`, `E01`) are derived automatically from the script header. All other formats require `--tag` on `xil-parse`:
+
+```bash
+xil-parse scripts/gatsby_V01C03.md --tag V01C03
+xil-produce --episode V01C03 --dry-run
+xil-daw --episode V01C03
+```
+
+Stems are stored under `stems/<slug>/<TAG>/`, so multiple shows and tag formats coexist safely in one workspace.
+
 See the [SFX Reuse Guide](sfx-reuse-guide.md) for workflows that minimize ElevenLabs API credit usage by referencing existing assets in the `SFX/` library.
 
 ## Environment

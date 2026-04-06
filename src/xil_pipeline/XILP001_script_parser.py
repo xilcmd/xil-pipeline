@@ -891,7 +891,7 @@ def print_dialogue_preview(parsed: dict, limit: int | None = None) -> None:
         logger.info("")
 
 
-def generate_cast_config(parsed: dict, cast_path: str) -> None:
+def generate_cast_config(parsed: dict, cast_path: str, tag_override: str | None = None) -> None:
     """Generate a skeleton cast config JSON from parsed script data.
 
     Creates a cast config with all speakers found in the parsed script,
@@ -901,6 +901,9 @@ def generate_cast_config(parsed: dict, cast_path: str) -> None:
     Args:
         parsed: Parsed script dict from :func:`parse_script`.
         cast_path: Output path for the cast config JSON.
+        tag_override: Raw non-episodic tag (e.g. ``"V01C03"``); when set,
+            ``season``/``episode`` are written as ``null`` and ``tag_override``
+            is added to the config.
     """
     # Build reverse mapping: speaker_key -> display name (first entry per key wins)
     key_to_display: dict[str, str] = {}
@@ -923,12 +926,14 @@ def generate_cast_config(parsed: dict, cast_path: str) -> None:
 
     config = {
         "show": parsed.get("show", "Unknown Show"),
-        "season": parsed.get("season"),
-        "episode": parsed.get("episode", 1),
+        "season": None if tag_override else parsed.get("season"),
+        "episode": None if tag_override else parsed.get("episode", 1),
         "title": parsed.get("title", ""),
         "season_title": parsed.get("season_title"),
         "cast": cast,
     }
+    if tag_override:
+        config["tag_override"] = tag_override
 
     with open(cast_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
@@ -937,7 +942,7 @@ def generate_cast_config(parsed: dict, cast_path: str) -> None:
           f"(voice_id=TBD — run XILU001 to assign)")
 
 
-def generate_sfx_config(parsed: dict, sfx_path: str) -> None:
+def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = None) -> None:
     """Generate a skeleton SFX config JSON from parsed script data.
 
     Creates an SFX config with entries for each unique direction found
@@ -1007,11 +1012,13 @@ def generate_sfx_config(parsed: dict, sfx_path: str) -> None:
 
     config = {
         "show": parsed.get("show", "Unknown Show"),
-        "season": parsed.get("season"),
-        "episode": parsed.get("episode", 1),
+        "season": None if tag_override else parsed.get("season"),
+        "episode": None if tag_override else parsed.get("episode", 1),
         "defaults": {"prompt_influence": 0.3},
         "effects": effects,
     }
+    if tag_override:
+        config["tag_override"] = tag_override
 
     with open(sfx_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
@@ -1104,8 +1111,15 @@ def get_parser() -> argparse.ArgumentParser:
         description="Parse production script markdown into structured JSON",
     )
     parser.add_argument("script", help="Path to the production script markdown file")
-    parser.add_argument("--episode", default=None,
-                        help="Episode tag (e.g. S01E01) — validates header and auto-generates absent cast/sfx configs")
+    tag_group = parser.add_mutually_exclusive_group()
+    tag_group.add_argument(
+        "--episode", default=None,
+        help="Episode tag (e.g. S01E01) — validates header and auto-generates absent cast/sfx configs",
+    )
+    tag_group.add_argument(
+        "--tag", default=None,
+        help="Raw tag for non-episodic content (e.g. V01C03, D01, CH003) — skips season/episode header validation",
+    )
     parser.add_argument("--show", default=None,
                         help="Show name override (default: from project.json)")
     parser.add_argument("--output", "-o", default=None,
@@ -1138,14 +1152,16 @@ def main() -> None:
         # Parse first so we can derive the output path from metadata
         parsed = parse_script(args.script, speakers_path=args.speakers)
 
-        # Derive tag from parsed header
-        tag = episode_tag(parsed.get("season"), parsed["episode"])
-
-        # Validate --episode matches script header
-        if args.episode is not None and args.episode != tag:
-            logger.error(f"Script header indicates {tag} but "
-                  f"--episode {args.episode} was specified")
-            sys.exit(1)
+        if args.tag:
+            # Non-episodic mode: use the raw tag string, skip header validation
+            tag = args.tag
+        else:
+            # Episodic mode: derive tag from parsed header
+            tag = episode_tag(parsed.get("season"), parsed["episode"])
+            if args.episode is not None and args.episode != tag:
+                logger.error(f"Script header indicates {tag} but "
+                      f"--episode {args.episode} was specified")
+                sys.exit(1)
 
         # Derive default output path from parsed season/episode
         slug = show_slug(parsed.get("show", "")) or resolve_slug(args.show)
@@ -1175,14 +1191,15 @@ def main() -> None:
             # --stats with --quiet: show only the speaker table
             print_speaker_stats(parsed)
 
-        # Auto-generate cast/sfx configs if --episode provided and files absent
-        if args.episode:
+        # Auto-generate cast/sfx configs if --episode or --tag provided and files absent
+        trigger_tag = args.tag or args.episode
+        if trigger_tag:
             cast_path = paths["cast"]
             sfx_path = paths["sfx"]
             if not os.path.exists(cast_path):
-                generate_cast_config(parsed, cast_path)
+                generate_cast_config(parsed, cast_path, tag_override=args.tag)
             if not os.path.exists(sfx_path):
-                generate_sfx_config(parsed, sfx_path)
+                generate_sfx_config(parsed, sfx_path, tag_override=args.tag)
             else:
                 backfill_sfx_sources(parsed, sfx_path)
 

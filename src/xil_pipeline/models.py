@@ -368,7 +368,11 @@ class CastConfiguration(BaseModel):
 
     show: str = Field(..., description="Show title")
     season: int | None = Field(default=None, description="Season number")
-    episode: int = Field(..., description="Episode number")
+    episode: int | None = Field(default=None, description="Episode number")
+    tag_override: str | None = Field(
+        default=None,
+        description="Raw tag for non-episodic content (e.g. V01C03, D01) — overrides season/episode derivation",
+    )
     title: str | None = Field(default=None, description="Episode title")
     season_title: str | None = Field(default=None, description="Season subtitle/arc title")
     artist: str = Field(
@@ -381,7 +385,11 @@ class CastConfiguration(BaseModel):
 
     @property
     def tag(self) -> str:
-        """Compact season/episode tag, e.g. ``S01E01`` or ``E01``."""
+        """Compact tag: raw override (e.g. ``V01C03``) or derived ``S01E01`` / ``E01``."""
+        if self.tag_override:
+            return self.tag_override
+        if self.episode is None:
+            raise ValueError("CastConfiguration requires either tag_override or episode")
         return episode_tag(self.season, self.episode)
 
 
@@ -516,7 +524,11 @@ class SfxConfiguration(BaseModel):
 
     show: str = Field(..., description="Show title")
     season: int | None = Field(default=None, description="Season number")
-    episode: int = Field(..., description="Episode number")
+    episode: int | None = Field(default=None, description="Episode number")
+    tag_override: str | None = Field(
+        default=None,
+        description="Raw tag for non-episodic content (e.g. V01C03, D01) — overrides season/episode derivation",
+    )
     defaults: dict = Field(default_factory=dict, description="Shared SFX defaults")
     effects: dict[str, SfxEntry] = Field(
         ..., description="Direction text to SFX mapping"
@@ -524,5 +536,9 @@ class SfxConfiguration(BaseModel):
 
     @property
     def tag(self) -> str:
-        """Compact season/episode tag, e.g. ``S01E01`` or ``E01``."""
+        """Compact tag: raw override (e.g. ``V01C03``) or derived ``S01E01`` / ``E01``."""
+        if self.tag_override:
+            return self.tag_override
+        if self.episode is None:
+            raise ValueError("SfxConfiguration requires either tag_override or episode")
         return episode_tag(self.season, self.episode)

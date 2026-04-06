@@ -85,6 +85,32 @@ class TestCastConfigurationTag:
         )
         assert cc.tag == "E05"
 
+    def test_tag_override_returns_raw_string(self):
+        cc = models.CastConfiguration(show="THE 413", tag_override="V01C03", cast={})
+        assert cc.tag == "V01C03"
+
+    def test_tag_override_takes_precedence_over_episode(self):
+        cc = models.CastConfiguration(
+            show="THE 413", season=1, episode=4, tag_override="D01", cast={},
+        )
+        assert cc.tag == "D01"
+
+    def test_tag_override_none_falls_back_to_episode(self):
+        cc = models.CastConfiguration(
+            show="THE 413", season=1, episode=4, tag_override=None, cast={},
+        )
+        assert cc.tag == "S01E04"
+
+    def test_no_episode_no_override_raises(self):
+        cc = models.CastConfiguration(show="THE 413", cast={})
+        with pytest.raises(ValueError, match="requires either tag_override or episode"):
+            _ = cc.tag
+
+    def test_tag_override_various_formats(self):
+        for raw in ("V01C03", "D01", "CH003", "BONUS01"):
+            cc = models.CastConfiguration(show="THE 413", tag_override=raw, cast={})
+            assert cc.tag == raw
+
 
 # ---------------------------------------------------------------------------
 # Phase 1 — Script Models
@@ -491,8 +517,9 @@ class TestCastConfiguration:
 
     def test_model_dump_roundtrip(self):
         raw = {
-            "show": "THE 413", "episode": 1, "season": None, "title": "Test",
-            "season_title": None,
+            "show": "THE 413", "episode": 1, "season": None,
+            "tag_override": None,
+            "title": "Test", "season_title": None,
             "artist": "Tina Brissette for Berkshire Talking Chronicles",
             "preamble": None,
             "postamble": None,
@@ -888,6 +915,7 @@ class TestSfxConfiguration:
     def test_model_dump_roundtrip(self):
         raw = {
             "show": "THE 413", "season": 1, "episode": 1,
+            "tag_override": None,
             "defaults": {"prompt_influence": 0.3},
             "effects": {
                 "BEAT": {
@@ -903,6 +931,34 @@ class TestSfxConfiguration:
             },
         }
         assert models.SfxConfiguration(**raw).model_dump() == raw
+
+
+class TestSfxConfigurationTagOverride:
+    """Tests for SfxConfiguration.tag with tag_override."""
+
+    def _fx(self):
+        return {"BEAT": {"type": "silence", "duration_seconds": 1.0}}
+
+    def test_tag_override_returns_raw_string(self):
+        sc = models.SfxConfiguration(show="THE 413", tag_override="V01C03", effects=self._fx())
+        assert sc.tag == "V01C03"
+
+    def test_tag_override_takes_precedence_over_episode(self):
+        sc = models.SfxConfiguration(
+            show="THE 413", season=1, episode=4, tag_override="D01", effects=self._fx(),
+        )
+        assert sc.tag == "D01"
+
+    def test_no_episode_no_override_raises(self):
+        sc = models.SfxConfiguration(show="THE 413", effects=self._fx())
+        with pytest.raises(ValueError, match="requires either tag_override or episode"):
+            _ = sc.tag
+
+    def test_tag_override_none_falls_back_to_episode(self):
+        sc = models.SfxConfiguration(
+            show="THE 413", season=2, episode=3, tag_override=None, effects=self._fx(),
+        )
+        assert sc.tag == "S02E03"
 
 
 # ---------------------------------------------------------------------------

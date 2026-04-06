@@ -1798,3 +1798,99 @@ class TestUnrecognizedDirectionFilter:
         bad = [e for e in parsed["entries"]
                if e["type"] == "direction" and e["direction_type"] is None]
         assert bad == [], f"Found direction entries with direction_type=None: {bad}"
+
+
+# ─── Tests: --tag flag (non-episodic content) ───
+
+class TestTagOverride:
+    """Tests for the --tag flag in xil-parse for non-episodic tag formats."""
+
+    @pytest.fixture
+    def script_file(self, tmp_path):
+        f = tmp_path / "test_script.md"
+        f.write_text(MINIMAL_SCRIPT, encoding="utf-8")
+        return str(f)
+
+    def test_tag_names_output_file_with_raw_tag(self, script_file, tmp_path):
+        """--tag uses the raw tag for the output file path."""
+        original_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            with unittest.mock.patch("sys.argv", [
+                "XILP001", script_file, "--tag", "V01C03", "--quiet",
+            ]):
+                parser.main()
+        finally:
+            os.chdir(original_cwd)
+        assert (tmp_path / "parsed" / "parsed_the413_V01C03.json").exists()
+
+    def test_tag_generates_cast_config_with_tag_override(self, script_file, tmp_path):
+        """--tag writes tag_override and null episode/season to the skeleton cast config."""
+        original_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            with unittest.mock.patch("sys.argv", [
+                "XILP001", script_file, "--tag", "V01C03", "--quiet",
+            ]):
+                parser.main()
+        finally:
+            os.chdir(original_cwd)
+        with open(tmp_path / "cast_the413_V01C03.json", encoding="utf-8") as f:
+            config = json.load(f)
+        assert config["tag_override"] == "V01C03"
+        assert config["episode"] is None
+        assert config["season"] is None
+
+    def test_tag_generates_sfx_config_with_tag_override(self, script_file, tmp_path):
+        """--tag writes tag_override and null episode/season to the skeleton sfx config."""
+        original_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            with unittest.mock.patch("sys.argv", [
+                "XILP001", script_file, "--tag", "D01", "--quiet",
+            ]):
+                parser.main()
+        finally:
+            os.chdir(original_cwd)
+        with open(tmp_path / "sfx_the413_D01.json", encoding="utf-8") as f:
+            config = json.load(f)
+        assert config["tag_override"] == "D01"
+        assert config["episode"] is None
+        assert config["season"] is None
+
+    def test_tag_and_episode_are_mutually_exclusive(self, script_file):
+        """--tag and --episode cannot be used together."""
+        with pytest.raises(SystemExit):
+            with unittest.mock.patch("sys.argv", [
+                "XILP001", script_file, "--tag", "V01C03", "--episode", "S01E01",
+            ]):
+                parser.main()
+
+    def test_tag_skips_header_validation(self, script_file, tmp_path):
+        """--tag with a value that doesn't match the script header does not exit."""
+        original_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            with unittest.mock.patch("sys.argv", [
+                "XILP001", script_file, "--tag", "BONUS99", "--quiet",
+            ]):
+                parser.main()  # must not raise SystemExit
+        finally:
+            os.chdir(original_cwd)
+        assert (tmp_path / "parsed" / "parsed_the413_BONUS99.json").exists()
+
+    def test_tag_cast_config_loads_as_cast_configuration(self, script_file, tmp_path):
+        """Generated cast config with tag_override round-trips through CastConfiguration."""
+        original_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            with unittest.mock.patch("sys.argv", [
+                "XILP001", script_file, "--tag", "V01C03", "--quiet",
+            ]):
+                parser.main()
+        finally:
+            os.chdir(original_cwd)
+        with open(tmp_path / "cast_the413_V01C03.json", encoding="utf-8") as f:
+            config = json.load(f)
+        cc = models.CastConfiguration(**config)
+        assert cc.tag == "V01C03"
