@@ -729,23 +729,12 @@ def _dry_run_voice_block(block, cast_cfg, stem_path: str, label: str) -> None:
         logger.info(" [%s] %s — stem exists, will skip\n", label, spk)
         return
 
-    kwargs = _episode_kwargs(cast_cfg)
     if block.segments:
-        logger.info(" [%s] %s | %d segments", label, spk, len(block.segments))
-        total_new = 0
-        for seg in block.segments:
-            resolved = seg.text.format(**kwargs)
-            if seg.shared_key:
-                cached_path = os.path.join("SFX", f"{seg.shared_key}.mp3")
-                status = "CACHED" if file_nonempty(cached_path) else "NEW   "
-                logger.info("   %s  SFX/%s.mp3  (%d chars)", status, seg.shared_key, len(resolved))
-                if status.strip() == "NEW":
-                    total_new += len(resolved)
-            else:
-                logger.info("   NEW     [episode variable]  (%d chars)", len(resolved))
-                total_new += len(resolved)
-        logger.info("   Total NEW chars for TTS: %d\n", total_new)
+        resolved = _resolve_voice_block_text(block, cast_cfg)
+        logger.info(" [%s] %s | %d chars (single call)", label, spk, len(resolved))
+        logger.info("   stem: %s\n", os.path.basename(stem_path))
     else:
+        kwargs = _episode_kwargs(cast_cfg)
         resolved = block.text.format(**kwargs)
         logger.info(" [%s] %s | %d chars", label, spk, len(resolved))
         logger.info("   stem: %s\n", os.path.basename(stem_path))
@@ -761,12 +750,12 @@ def _dry_run_postamble(cast_cfg, postamble_voice_stem: str) -> None:
 
 def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
                            label: str, sfx_dir: str = "SFX") -> None:
-    """Generate a voice stem from a Preamble/postamble block.
+    """Generate a voice stem from a preamble or postamble block.
 
-    For segment configs, stock segments (``shared_key`` set) are cached in
-    *sfx_dir* and reused across episodes.  Episode-specific segments are
-    generated to a temp file and cleaned up after concatenation.  The legacy
-    single-text form generates the stem directly.
+    All segment texts (when ``block.segments`` is present) are resolved and
+    joined into a single string, then sent to ElevenLabs as one TTS call.
+    This produces natural prosody across the whole block without audible seams.
+    The legacy single ``text`` field is also supported.
     """
     if file_nonempty(voice_stem):
         logger.info("   Exists: %s — skipping", voice_stem)
@@ -778,57 +767,19 @@ def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
         logger.warning("No voice_id for %s — skipping %s", spk, os.path.basename(voice_stem))
         return
 
-    kwargs = _episode_kwargs(cast_cfg)
-
     if block.segments:
-        segment_paths: list[str] = []
-        tmp_files: list[str] = []
-        for i, seg in enumerate(block.segments):
-            resolved = seg.text.format(**kwargs)
-            if not has_enough_characters(resolved):
-                logger.warning("Insufficient quota for %s segment %d — aborting", label.lower(), i)
-                for f in tmp_files:
-                    if os.path.exists(f):
-                        os.remove(f)
-                return
-            if seg.shared_key:
-                cached = os.path.join(sfx_dir, f"{seg.shared_key}.mp3")
-                if file_nonempty(cached):
-                    logger.info("   CACHED  SFX/%s.mp3", seg.shared_key)
-                else:
-                    os.makedirs(sfx_dir, exist_ok=True)
-                    _tts_segment(resolved, cached, voice_id, block.speed)
-                    logger.info("   Saved:  SFX/%s.mp3", seg.shared_key)
-                segment_paths.append(cached)
-            else:
-                tmp_fd, tmp = tempfile.mkstemp(
-                    dir=os.path.dirname(voice_stem) or ".",
-                    suffix=f".seg{i}.tmp.mp3",
-                )
-                os.close(tmp_fd)
-                _tts_segment(resolved, tmp, voice_id, block.speed)
-                segment_paths.append(tmp)
-                tmp_files.append(tmp)
-
-        logger.info("   Concatenating %d segment(s) → %s", len(segment_paths), os.path.basename(voice_stem))
-        combined = AudioSegment.empty()
-        for p in segment_paths:
-            combined += AudioSegment.from_file(p)
-        combined.export(voice_stem, format="mp3")
-        for f in tmp_files:
-            if os.path.exists(f):
-                os.remove(f)
-        logger.info("   Saved: %s", voice_stem)
-        _log_stem_hash(voice_stem)
+        resolved = _resolve_voice_block_text(block, cast_cfg)
     else:
+        kwargs = _episode_kwargs(cast_cfg)
         resolved = block.text.format(**kwargs)
-        if not has_enough_characters(resolved):
-            logger.warning("Insufficient quota for %s — skipping", label.lower())
-            return
-        logger.info(" > [%s] %s (%d chars)...", label, spk, len(resolved))
-        _tts_segment(resolved, voice_stem, voice_id, block.speed)
-        logger.info("   Saved: %s", voice_stem)
-        _log_stem_hash(voice_stem)
+
+    if not has_enough_characters(resolved):
+        logger.warning("Insufficient quota for %s — skipping", label.lower())
+        return
+    logger.info(" > [%s] %s (%d chars)...", label, spk, len(resolved))
+    _tts_segment(resolved, voice_stem, voice_id, block.speed)
+    logger.info("   Saved: %s", voice_stem)
+    _log_stem_hash(voice_stem)
 
 
 def _generate_preamble_voice(cast_cfg, config: dict, preamble_voice_stem: str,

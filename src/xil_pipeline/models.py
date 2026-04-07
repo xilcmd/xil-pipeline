@@ -300,19 +300,19 @@ class CastMember(BaseModel):
 
 
 class PreambleSegment(BaseModel):
-    """One cacheable slice of a multi-part preamble.
+    """One text slice of a multi-part preamble or postamble.
 
     Attributes:
         text: Spoken text (may use {season_title}, {episode}, {title} placeholders).
-        shared_key: If set, the segment is cached as ``SFX/{shared_key}.mp3`` and
-            reused across episodes.  If ``None`` the segment is episode-specific
-            and regenerated each run.
+        shared_key: Retained for backward compatibility with existing cast JSONs.
+            No longer used at generation time — all segments are joined and sent
+            as a single TTS call to produce seamless prosody across the whole block.
     """
 
     text: str = Field(..., description="Segment text (may use {season_title}, {episode}, {title})")
     shared_key: str | None = Field(
         default=None,
-        description="SFX cache key (e.g. 'preamble-myshow-host-intro'); None = episode-specific",
+        description="Legacy cache key; retained for backward compatibility, not used for generation",
     )
 
 

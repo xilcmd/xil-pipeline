@@ -939,7 +939,7 @@ class TestPreambleSegments:
     # _dry_run_preamble — segments path
     # ------------------------------------------------------------------
 
-    def test_dry_run_segments_shows_segment_count(self, tmp_path, caplog):
+    def test_dry_run_segments_shows_single_call(self, tmp_path, caplog):
         cfg = self._make_cast_cfg({
             "speaker": "tina",
             "segments": [
@@ -950,16 +950,10 @@ class TestPreambleSegments:
         })
         stem = str(tmp_path / "n002_preamble_tina.mp3")
         producer._dry_run_preamble(cfg, stem)
-        assert "3 segments" in caplog.text
+        assert "single call" in caplog.text
         assert "tina" in caplog.text
 
-    def test_dry_run_segments_cached_vs_new(self, tmp_path, caplog):
-        # Create the intro cache file; outro is absent
-        sfx_dir = tmp_path / "SFX"
-        sfx_dir.mkdir()
-        intro = sfx_dir / "preamble-intro.mp3"
-        intro.write_bytes(b"\xff\xfb" + b"\x00" * 100)  # non-zero dummy MP3
-
+    def test_dry_run_segments_shows_total_char_count(self, tmp_path, caplog):
         cfg = self._make_cast_cfg({
             "speaker": "tina",
             "segments": [
@@ -969,14 +963,10 @@ class TestPreambleSegments:
             ],
         })
         stem = str(tmp_path / "n002_preamble_tina.mp3")
-        original_cwd = os.getcwd()
-        os.chdir(str(tmp_path))
-        try:
-            producer._dry_run_preamble(cfg, stem)
-        finally:
-            os.chdir(original_cwd)
-        assert "CACHED" in caplog.text
-        assert "NEW" in caplog.text
+        producer._dry_run_preamble(cfg, stem)
+        # Should show total resolved char count, not per-segment CACHED/NEW
+        assert "single call" in caplog.text
+        assert "chars" in caplog.text
 
     def test_dry_run_stem_exists_skips(self, tmp_path, caplog):
         stem = tmp_path / "n002_preamble_tina.mp3"

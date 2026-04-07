@@ -47,6 +47,7 @@ All internal imports use the package namespace: `from xil_pipeline.models import
 ## Project Configuration
 
 `project.json` at the repo root declares the show name and optional season title used across the pipeline:
+
 ```json
 {
     "show": "THE 413",
@@ -76,6 +77,7 @@ Creates: `project.json`, `speakers.json`, `scripts/sample_S01E01.md`, and empty 
 ## Speaker Configuration
 
 `speakers.json` in the project root defines the speaker names the parser recognizes:
+
 ```json
 [
     {"display": "ADAM", "key": "adam"},
@@ -104,6 +106,7 @@ python XILP000_script_scanner.py "scripts/<script>.md" --json
 ## Architecture: Nine-Stage Pipeline (+ Cues Ingester Pre-Processing)
 
 ### Stage 1: Script Parsing
+
 `XILP001_script_parser.py` — Parses markdown production scripts into structured JSON.
 
 ```bash
@@ -131,6 +134,7 @@ python XILP001_script_parser.py "scripts/<script>.md" --episode S01E01 --preview
 - Sections: COLD OPEN, OPENING CREDITS, ACT ONE, ACT TWO, MID-EPISODE BREAK, CLOSING
 
 ### Stage 1.5: Cues Sheet Ingestion (Pre-processing)
+
 `XILP006_cues_ingester.py` — Parses a sound cues & music prompts markdown file into a structured asset manifest, audits the shared SFX library, and optionally enriches the episode sfx config or generates new assets.
 
 ```bash
@@ -152,6 +156,7 @@ python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --gener
 - Duration cap: assets longer than 30s are generated at 30s and flagged `[CAPPED]` in the audit
 
 ### Stage 2: Voice Generation
+
 `XILP002_producer.py` — Calls ElevenLabs API to generate voice stems.
 
 ```bash
@@ -165,7 +170,7 @@ python XILP002_producer.py --episode S01E01 --dry-run
 - **Preamble stems** (when cast config has a `preamble` block): `n002_preamble_tina.mp3` (voice, seq −2) and `n001_preamble_sfx.mp3` (intro music, seq −1); music source read from `sfx_config.effects["INTRO MUSIC"].source`
 - After generation, injects seq −2/−1 entries into the parsed JSON via `inject_preamble_entries()` — idempotent, re-running replaces existing preamble entries
 - **Postamble stems** (when cast config has a `postamble` block): `{max+1:03d}_postamble_{speaker}.mp3` (voice) and `{max+2:03d}_postamble_sfx.mp3` (outro music, source from `sfx_config.effects["OUTRO MUSIC"].source`); injected into parsed JSON with `section="postamble"` via `inject_postamble_entries()` — idempotent
-- Both `preamble` and `postamble` support multi-segment TTS: `segments` list with optional `shared_key` caches stock parts to `SFX/{shared_key}.mp3` (generated once, reused across episodes); episode-specific segments (no `shared_key`) are generated as temp files, concatenated with pydub, then cleaned up; legacy `text` field still works as a fallback
+- Both `preamble` and `postamble` support multi-segment text: `segments` list texts are joined into a single string and sent as one TTS call, producing seamless prosody across the whole block; `shared_key` is retained in the model for backward compatibility but is no longer used for per-segment caching; legacy `text` field still works as a fallback
 - Supports `--start-from N` for resuming interrupted runs; `--stop-at N` to halt after a specific seq (useful for previewing a section without regenerating the full episode)
 - Supports `--dry-run` to preview lines and TTS character cost without API calls; includes a per-speaker breakdown table (lines + chars to generate vs. already on disk) sorted by chars descending; per-entry marker: `[ ]` = will generate, `[=]` = stem exists/skip, `[x]` = out of range
 - Supports `--terse` to truncate each line to 3 words (minimizes TTS character cost)
@@ -175,6 +180,7 @@ python XILP002_producer.py --episode S01E01 --dry-run
 - Skips stems that already exist on disk
 
 ### Stage 3: Audio Assembly
+
 `XILP003_audio_assembly.py` — Two-pass multi-track mix into a final master MP3.
 
 ```bash
@@ -196,6 +202,7 @@ python XILP003_audio_assembly.py --episode S01E01 --parsed parsed/parsed_<slug>_
 - No ElevenLabs API key required — safe to re-run freely
 
 ### Stage 4: Studio Project Onboarding
+
 `XILP004_studio_onboard.py` — Creates an ElevenLabs Studio project from parsed episode data.
 
 ```bash
@@ -216,6 +223,7 @@ python XILP004_studio_onboard.py --episode S01E02 --quality high
 - Requires `ELEVENLABS_API_KEY` env var for non-dry-run mode
 
 ### Stage 5: DAW Layer Export
+
 `XILP005_daw_export.py` — Exports four isolated, full-length WAV layers for human mixing in Audacity.
 
 ```bash
@@ -248,6 +256,7 @@ python XILP005_daw_export.py --episode S01E01 --timeline --timeline-html
 - Shared mixing logic imported from `mix_common.py`; visualization via `timeline_viz.py`
 
 ### Stage 6: Stem Migration (Punch-In Workflow)
+
 `XILP007_stem_migrator.py` — Migrates episode stems when a parsed script is revised. Compares an old and new parsed JSON, copies unchanged stems to their new seq-numbered filenames, and reports which entries need fresh TTS/SFX generation. Run XILP002 afterwards to fill only the gaps.
 
 ```bash
@@ -271,6 +280,7 @@ python XILP007_stem_migrator.py \
 - No ElevenLabs API key required — no API calls made
 
 ### Stage 7: Stale Stem Cleanup
+
 `XILP008_stale_stem_cleanup.py` — Removes stale stems left behind after a parsed script revision and stem migration. After XILP007 copies unchanged stems to new seq-numbered filenames, old stems whose seq numbers now map to a different entry type remain on disk. This script finds and deletes them.
 
 ```bash
@@ -291,6 +301,7 @@ python XILP008_stale_stem_cleanup.py \
 - No ElevenLabs API key required — no API calls made
 
 ### Stage 8: Studio Export Import
+
 `XILP010_studio_import.py` — Extracts dialogue and direction stems from an ElevenLabs Studio export ZIP and renames them to the pipeline's stem naming convention.
 
 ```bash
@@ -317,6 +328,7 @@ python XILP010_studio_import.py --episode S02E02 --zip "ElevenLabs_exports/expor
 - No ElevenLabs API key required — no API calls made
 
 ### Stage 9: Final Master MP3 Export
+
 `XILP011_master_export.py` — Overlays the four DAW layer WAVs from XILP005 into a single podcast-ready MP3.
 
 ```bash
@@ -339,6 +351,7 @@ python XILP011_master_export.py --episode S02E03 --show "Night Owls"
 ## ElevenLabs API Cost Controls
 
 Every script that calls the API includes three guard functions (duplicated per file, not shared):
+
 - `check_elevenlabs_quota()` — displays current character usage vs limit
 - `has_enough_characters(text)` — per-line quota check before each API call
 - `get_best_model_for_budget()` — always returns `eleven_v3`; logs a warning when balance is low (no longer falls back to `eleven_flash_v2_5`, which does not support `[pause]` and other native audio tags)
@@ -348,6 +361,7 @@ Always use `--dry-run` before running voice generation on a new script to verify
 ## File Naming Convention
 
 All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console entry points plus a unified `xil` command via `pyproject.toml` (example: `xil parse ...` routes to `xil-parse`). Scripts use prefix `XIL` (ElevenLabs, avoiding numeric prefixes). The suffix pattern is:
+
 - `XILP000_*` — pre-flight script scanner (no API, no side effects)
 - `XILU001_*` — voice discovery (browse ElevenLabs voices; `--update-cast` back-fills role/language_code into a cast JSON)
 - `XILU002_*` — standalone SFX stem generation
@@ -376,6 +390,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 ## Cast Configuration
 
 `cast_<slug>_S01E01.json` (e.g. `cast_the413_S01E01.json`) contains show-level metadata (`show`, `season`, `episode`, `title`) and a `cast` dict mapping character keys to settings:
+
 ```json
 {
   "show": "THE 413", "season": 1, "episode": 1, "title": "The Holiday Shift",
@@ -384,9 +399,11 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
   }
 }
 ```
+
 Voice IDs are discovered via `XILU001_discover_voices_T2S.py` (filters to premade category).
 
 Optional `preamble` and `postamble` blocks (`intro_music_source` is **not** a field — intro/outro music lives in the SFX config under `"INTRO MUSIC"` / `"OUTRO MUSIC"` keys):
+
 ```json
 {
   "preamble": {
@@ -408,11 +425,13 @@ Optional `preamble` and `postamble` blocks (`intro_music_source` is **not** a fi
   }
 }
 ```
-Legacy single-string `"text"` field still works as a fallback for un-migrated episodes. `segments[].shared_key` caches stock parts to `SFX/{shared_key}.mp3` — generated once, reused across episodes. Use native v3 audio tags like `[pause]` for pauses — SSML (`<break time="1s"/>`) is no longer supported; `_select_model()` no longer falls back to `eleven_multilingual_v2` for SSML segments (it logs a warning instead). All TTS generation uses `eleven_v3` unconditionally.
+
+Legacy single-string `"text"` field still works as a fallback for un-migrated episodes. When `segments` is present, all segment texts are joined into a single string and sent as one TTS call — `shared_key` is retained in the model for backward compatibility but is no longer used for per-segment caching. Use native v3 audio tags like `[pause]` for pauses — SSML (`<break time="1s"/>`) is no longer supported; `_select_model()` no longer falls back to `eleven_multilingual_v2` for SSML segments (it logs a warning instead). All TTS generation uses `eleven_v3` unconditionally.
 
 ## SFX Configuration
 
 `sfx_<slug>_S01E01.json` (e.g. `sfx_the413_S01E01.json`) maps parsed direction entry text to ElevenLabs Sound Effects API parameters:
+
 ```json
 {
   "show": "THE 413", "season": 1, "episode": 1,
@@ -424,6 +443,7 @@ Legacy single-string `"text"` field still works as a fallback for un-migrated ep
   }
 }
 ```
+
 - Keys match the `text` field of parsed direction entries exactly
 - `"INTRO MUSIC"` is the reserved key for preamble intro music; XILP002 reads its `source` field to copy the audio file into `n001_preamble_sfx.mp3` — no API generation
 - `type: "sfx"` (default) entries call `client.text_to_sound_effects.convert()` with the `prompt`
@@ -435,6 +455,7 @@ Legacy single-string `"text"` field still works as a fallback for un-migrated ep
 - SFX stems use `_sfx` suffix: `002_cold-open_sfx.mp3`
 
 ### Shared SFX Library
+
 Each unique sound effect is generated **once** into the `SFX/` directory as a shared asset (e.g. `SFX/beat.mp3`, `SFX/sfx_phone-buzzing.mp3`). Episode stems in `stems/<slug>/<TAG>/` are copies of these shared assets with sequence-numbered filenames. This avoids regenerating the same effect for repeated uses (e.g. BEAT appears 26 times in S01E01). See `docs/sfx-reuse-guide.md` for a workflow guide on maximizing SFX reuse and minimizing API credit spend.
 
 - Shared asset naming: `slugify_effect_key()` in `sfx_common.py` converts direction text to filesystem-safe slugs
@@ -444,6 +465,7 @@ Each unique sound effect is generated **once** into the `SFX/` directory as a sh
 - `tag_wav()` writes ID3 metadata (Album, Genre, Year, Title, Artist) to WAV layer exports
 
 ### Standalone SFX Utility
+
 `XILU002_generate_SFX.py` — Generates SFX stems independently of XILP002 voice generation.
 
 ```bash
@@ -469,6 +491,7 @@ python XILU002_generate_SFX.py --episode S01E01
 - Skips stems that already exist on disk
 
 ### CSV Annotation Utility
+
 `XILU003_csv_sfx_join.py` — Joins a parsed episode CSV with the SFX JSON and cast JSON, producing an annotated review CSV with SFX prompt, duration, and cast metadata columns appended alongside each dialogue and direction entry.
 
 ```bash
@@ -483,6 +506,7 @@ python XILU003_csv_sfx_join.py --episode S02E03 --output my_review.csv
 - No API key required — read-only join utility
 
 ### Voice Sample Utility
+
 `XILU004_sample_voices_T2S.py` — Generates a short TTS sample for each cast member to audition voice assignments.
 
 ```bash
@@ -499,6 +523,7 @@ python XILU004_sample_voices_T2S.py --episode S02E03 --force
 - Requires `ELEVENLABS_API_KEY`
 
 ### SFX Library Discovery
+
 `XILU005_discover_SFX.py` — Lists and searches the local shared SFX asset library.
 
 ```bash
@@ -522,6 +547,7 @@ python XILU005_discover_SFX.py --api --all        # paginate full API history (d
 - `--export-kit [DIR]` generates an SFX inventory JSON (`sfx_inventory.json`) and copies the scriptwriter reference doc (`claude-scriptwriter-reference.md`) into DIR (default: current directory); attach both files to a Claude project as knowledge files to enable SFX-aware script writing
 
 ### Parsed JSON Splice Utility
+
 `XILU006_splice_parsed.py` — Inserts entries into or deletes entries from a parsed episode JSON with automatic seq renumbering.
 
 ```bash
@@ -554,6 +580,7 @@ python XILU006_splice_parsed.py --episode S02E03 --insert-after 322 \
 Automated testing via Python and Bash serves as the fundamental mechanism for the Verification Loop. The project mandates that Claude must mention how it will verify its work before it begins any task.
 
 Use tests for everything it implements:
+
 - Determine which tests are appropriate; the model will then generate a test for every single feature it builds
 - Test-Driven Development (TDD): A key best practice is implementing a verification-led technique where tests for a new feature are written first, followed by the actual code implementation
 
