@@ -1,4 +1,5 @@
-Audiobook Sample: Chapter 1: "The Signal"
+# Audiobook Sample: "Signals" Chapter 1: "The Signal"
+
 CAST:
 
 NARRATOR — measured, unhurried; the voice carrying the story
@@ -30,4 +31,5 @@ She wrote down the time. Then the frequency. Then, after a long moment, a single
 [BEAT]
 NARRATOR
 Alive.
+
 ===

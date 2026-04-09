@@ -148,6 +148,12 @@ def load_speakers(
 SECTION_MAP = {
     "COLD OPEN": "cold-open",
     "OPENING CREDITS": "opening-credits",
+    "CHAPTER ONE": "chapter1",
+    "CHAPTER 1": "chapter1",                    # numeral variant
+    "CHAPTER TWO": "chapter2",
+    "CHAPTER 2": "chapter2",                    # numeral variant
+    "CHAPTER THREE": "chapter3",
+    "CHAPTER 3": "chapter3",                    # numeral variant
     "ACT ONE": "act1",
     "ACT 1": "act1",                            # numeral variant
     "ACT TWO": "act2",

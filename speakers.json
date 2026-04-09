@@ -25,5 +25,7 @@
   { "display": "CALLER", "key": "caller" },
   { "display": "TOBY", "key": "toby" },
   { "display": "GUEST", "key": "guest" },
-  { "display": "DARIUS", "key": "darius" }
+  { "display": "DARIUS", "key": "darius" },
+  { "display": "NARRATOR", "key": "narrator" },
+  { "display": "ELARA", "key": "elara" }
 ]
