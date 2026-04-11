@@ -30,6 +30,9 @@ try:
 except ImportError:
     HAS_GTTS = False
 
+import subprocess
+import threading
+
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import (
     CastConfiguration,
@@ -425,6 +428,7 @@ def generate_voices(
     config: dict[str, dict], dialogue_entries: list[dict],
     stems_dir: str, start_from: int = 1, stop_at: int | None = None,
     show: str = "Sample Show", backend: str = "elevenlabs",
+    chatterbox_client: "_ChatterboxClient | None" = None,
 ) -> None:
     """Generate individual voice stem MP3s via the configured TTS backend.
 
@@ -537,6 +541,10 @@ def generate_voices(
         if backend == "gtts":
             logger.info(" > [%03d] %s via gTTS (%d chars)...", entry['seq'], speaker, len(text))
             _gtts_generate(text, stem_file)
+        elif backend == "chatterbox":
+            logger.info(" > [%03d] %s via Chatterbox (%d chars)...", entry['seq'], speaker, len(text))
+            assert chatterbox_client is not None
+            chatterbox_client.generate(text, stem_file, speaker)
         else:
             logger.info(" > [%03d] %s with %s (%d chars)...", entry['seq'], speaker, current_model, len(text))
             audio_stream = client.text_to_speech.convert(
@@ -742,8 +750,102 @@ def _gtts_generate(text: str, out_path: str) -> None:
                 os.unlink(tmp_path)
 
 
+class _ChatterboxClient:
+    """Persistent subprocess bridge to the Chatterbox TTS worker.
+
+    The worker script (``chatterbox_worker.py``) runs under the chatterbox
+    venv Python and keeps the model loaded across all generation requests.
+    Communication uses newline-delimited JSON on stdin/stdout.
+
+    Args:
+        python_path: Path to the chatterbox venv Python executable.
+        voice_refs_dir: Directory containing ``<speaker_key>.wav`` reference
+            clips for zero-shot voice cloning.  Missing refs fall back to
+            Chatterbox's default voice.
+        device: ``"cuda"`` (default) or ``"cpu"``.
+        exaggeration: Emotion exaggeration level (0.0 = flat, 1.0 = dramatic).
+        cfg_weight: CFG weight controlling pacing/delivery (~0.3–0.5 typical).
+    """
+
+    _WORKER = os.path.join(os.path.dirname(__file__), "chatterbox_worker.py")
+
+    def __init__(
+        self,
+        python_path: str,
+        voice_refs_dir: str = "voice_refs",
+        device: str = "cuda",
+        exaggeration: float = 0.5,
+        cfg_weight: float = 0.5,
+    ) -> None:
+        self._python = python_path
+        self._voice_refs_dir = voice_refs_dir
+        self._device = device
+        self._exaggeration = exaggeration
+        self._cfg_weight = cfg_weight
+        self._proc: subprocess.Popen | None = None
+
+    def _start(self) -> None:
+        logger.info("Starting Chatterbox worker (%s, %s)…", self._python, self._device)
+        self._proc = subprocess.Popen(
+            [self._python, self._WORKER, self._device],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=sys.stderr,
+            text=True,
+            bufsize=1,
+        )
+        # Drain startup noise on stderr in background thread
+        raw = self._proc.stdout.readline()
+        if not raw:
+            raise RuntimeError("Chatterbox worker exited before sending ready signal.")
+        msg = json.loads(raw)
+        if not msg.get("ready"):
+            raise RuntimeError(f"Chatterbox worker start failed: {msg}")
+        logger.info("Chatterbox worker ready (sample_rate=%d)", msg["sr"])
+
+    def _ref_for(self, speaker_key: str) -> str | None:
+        for ext in (".wav", ".mp3"):
+            p = os.path.join(self._voice_refs_dir, f"{speaker_key}{ext}")
+            if os.path.exists(p):
+                return p
+        return None
+
+    def generate(self, text: str, out_path: str, speaker_key: str) -> None:
+        if self._proc is None:
+            self._start()
+        ref = self._ref_for(speaker_key)
+        if ref:
+            logger.info("   ref: %s", os.path.basename(ref))
+        req = {
+            "text": text,
+            "out_path": out_path,
+            "ref_audio": ref,
+            "exaggeration": self._exaggeration,
+            "cfg_weight": self._cfg_weight,
+        }
+        assert self._proc is not None
+        self._proc.stdin.write(json.dumps(req) + "\n")
+        self._proc.stdin.flush()
+        raw = self._proc.stdout.readline()
+        if not raw:
+            raise RuntimeError("Chatterbox worker closed pipe unexpectedly.")
+        resp = json.loads(raw)
+        if "error" in resp:
+            raise RuntimeError(f"Chatterbox: {resp['error']}")
+
+    def close(self) -> None:
+        if self._proc is not None:
+            with contextlib.suppress(Exception):
+                self._proc.stdin.close()
+            with contextlib.suppress(Exception):
+                self._proc.wait(timeout=15)
+            self._proc = None
+
+
 def _tts_segment(text: str, out_path: str, voice_id: str, speed: float | None,
-                 backend: str = "elevenlabs") -> None:
+                 backend: str = "elevenlabs",
+                 chatterbox_client: "_ChatterboxClient | None" = None,
+                 speaker_key: str | None = None) -> None:
     """Call TTS backend and write the result to *out_path*.
 
     Uses a unique ``.tmp`` staging file so a partial write is never mistaken
@@ -751,6 +853,10 @@ def _tts_segment(text: str, out_path: str, voice_id: str, speed: float | None,
     """
     if backend == "gtts":
         _gtts_generate(text, out_path)
+        return
+    if backend == "chatterbox":
+        assert chatterbox_client is not None, "chatterbox_client required for backend='chatterbox'"
+        chatterbox_client.generate(text, out_path, speaker_key or "")
         return
     tmp_fd, tmp_path = tempfile.mkstemp(
         dir=os.path.dirname(out_path) or ".", suffix=".tmp"
@@ -808,7 +914,8 @@ def _dry_run_postamble(cast_cfg, postamble_voice_stem: str) -> None:
 
 def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
                            label: str, sfx_dir: str = "SFX",
-                           backend: str = "elevenlabs") -> None:
+                           backend: str = "elevenlabs",
+                           chatterbox_client: "_ChatterboxClient | None" = None) -> None:
     """Generate a voice stem from a preamble or postamble block.
 
     All segment texts (when ``block.segments`` is present) are resolved and
@@ -836,21 +943,26 @@ def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
         logger.warning("Insufficient quota for %s — skipping", label.lower())
         return
     logger.info(" > [%s] %s (%d chars)...", label, spk, len(resolved))
-    _tts_segment(resolved, voice_stem, voice_id, block.speed, backend=backend)
+    _tts_segment(resolved, voice_stem, voice_id, block.speed, backend=backend,
+                 chatterbox_client=chatterbox_client, speaker_key=spk)
     logger.info("   Saved: %s", voice_stem)
     _log_stem_hash(voice_stem)
 
 
 def _generate_preamble_voice(cast_cfg, config: dict, preamble_voice_stem: str,
-                              sfx_dir: str = "SFX", backend: str = "elevenlabs") -> None:
+                              sfx_dir: str = "SFX", backend: str = "elevenlabs",
+                              chatterbox_client: "_ChatterboxClient | None" = None) -> None:
     _generate_voice_block(cast_cfg.preamble, cast_cfg, config,
-                          preamble_voice_stem, "PREAMBLE", sfx_dir, backend=backend)
+                          preamble_voice_stem, "PREAMBLE", sfx_dir, backend=backend,
+                          chatterbox_client=chatterbox_client)
 
 
 def _generate_postamble_voice(cast_cfg, config: dict, postamble_voice_stem: str,
-                               sfx_dir: str = "SFX", backend: str = "elevenlabs") -> None:
+                               sfx_dir: str = "SFX", backend: str = "elevenlabs",
+                               chatterbox_client: "_ChatterboxClient | None" = None) -> None:
     _generate_voice_block(cast_cfg.postamble, cast_cfg, config,
-                          postamble_voice_stem, "POSTAMBLE", sfx_dir, backend=backend)
+                          postamble_voice_stem, "POSTAMBLE", sfx_dir, backend=backend,
+                          chatterbox_client=chatterbox_client)
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -885,14 +997,36 @@ def get_parser() -> argparse.ArgumentParser:
                         help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
     parser.add_argument("--local-only", action="store_true",
                         help="Only place stems for effects already present in SFX/; skip API generation")
-    parser.add_argument("--backend", choices=["elevenlabs", "gtts"], default="elevenlabs",
-                        metavar="BACKEND",
+    parser.add_argument("--backend", choices=["elevenlabs", "gtts", "chatterbox"],
+                        default="elevenlabs", metavar="BACKEND",
                         help=(
                             "TTS backend for dialogue voice stems. 'elevenlabs' (default) calls "
                             "the ElevenLabs API. 'gtts' generates a flat-voice draft via Google "
                             "Translate TTS at no cost — all characters sound the same, useful for "
                             "checking episode duration before spending API credits. "
-                            "Requires: pip install xil-pipeline[tts-alt]"
+                            "'chatterbox' uses local Chatterbox TTS with per-character voice "
+                            "cloning from voice_refs/<key>.wav reference clips — near-production "
+                            "quality, free, GPU-accelerated. "
+                            "Requires: pip install xil-pipeline[tts-alt] (gtts) or "
+                            "a configured venv-chatterbox (chatterbox)."
+                        ))
+    parser.add_argument("--chatterbox-python", default=None, metavar="PATH",
+                        help=(
+                            "Path to the Python executable in the chatterbox venv "
+                            "(default: auto-detect ./venv-chatterbox/bin/python3). "
+                            "Used only with --backend chatterbox."
+                        ))
+    parser.add_argument("--voice-refs", default="voice_refs", metavar="DIR",
+                        help=(
+                            "Directory of <speaker_key>.wav reference clips for Chatterbox "
+                            "zero-shot voice cloning (default: voice_refs/). "
+                            "Missing refs fall back to Chatterbox's default voice."
+                        ))
+    parser.add_argument("--exaggeration", type=float, default=0.5, metavar="FLOAT",
+                        help=(
+                            "Chatterbox emotion exaggeration level: 0.0 = flat/monotone, "
+                            "1.0 = dramatically expressive (default: 0.5). "
+                            "Used only with --backend chatterbox."
                         ))
     return parser
 
@@ -1032,60 +1166,89 @@ def main() -> None:
                     for _msg in _missing:
                         logger.error(_msg)
                     sys.exit(1)
-            if cast_cfg.preamble:
-                os.makedirs(stems_dir, exist_ok=True)
-                _generate_preamble_voice(cast_cfg, config, preamble_voice_stem,
-                                         backend=args.backend)
-                # Copy intro music from sfx config 'INTRO MUSIC' source (always regenerate — free local copy)
-                if sfx_config_model and "INTRO MUSIC" in sfx_config_model.effects:
-                    intro_entry = sfx_config_model.effects["INTRO MUSIC"]
-                    if intro_entry.source:
-                        clip = AudioSegment.from_file(intro_entry.source)
-                        if intro_entry.play_duration is not None:
-                            trim_ms = int(len(clip) * intro_entry.play_duration / 100.0)
-                            clip = clip[:trim_ms]
-                            logger.info("   Trimmed intro music to %.1fs (%s%%)", trim_ms/1000, intro_entry.play_duration)
-                        clip.export(preamble_music_stem, format="mp3")
-                        logger.info("   Saved: %s", preamble_music_stem)
-                        _log_stem_hash(preamble_music_stem)
+
+            # --- Chatterbox client (backend=chatterbox only) ---
+            chatterbox_client: _ChatterboxClient | None = None
+            if args.backend == "chatterbox":
+                cb_python = args.chatterbox_python
+                if cb_python is None:
+                    # Auto-detect: look for venv-chatterbox adjacent to CWD
+                    cb_default = os.path.join(os.getcwd(), "venv-chatterbox", "bin", "python3")
+                    if os.path.exists(cb_default):
+                        cb_python = cb_default
                     else:
-                        logger.warning("INTRO MUSIC entry has no 'source' — skipping music stem")
-                else:
-                    logger.warning("No 'INTRO MUSIC' entry in sfx config — skipping music stem")
-            generate_voices(config, dialogue_entries, stems_dir,
-                            start_from=args.start_from, stop_at=args.stop_at,
-                            show=cast_cfg.show, backend=args.backend)
-            if sfx_entries and sfx_config_data:
-                generate_sfx_stems(sfx_entries, sfx_config_data, stems_dir,
-                                   client=client, start_from=args.start_from)
-            # Inject preamble entries into parsed JSON (idempotent)
-            if cast_cfg.preamble and preamble_text is not None and os.path.exists(args.script):
-                inject_preamble_entries(args.script, preamble_text, cast_cfg.preamble.speaker)
-            # --- Postamble ---
-            if cast_cfg.postamble and postamble_text is not None and os.path.exists(args.script):
-                os.makedirs(stems_dir, exist_ok=True)
-                music_seq, voice_seq = inject_postamble_entries(
-                    args.script, postamble_text, cast_cfg.postamble.speaker
+                        logger.error(
+                            "Cannot find chatterbox venv Python. "
+                            "Pass --chatterbox-python PATH or create venv-chatterbox/ in the project root."
+                        )
+                        sys.exit(1)
+                chatterbox_client = _ChatterboxClient(
+                    python_path=cb_python,
+                    voice_refs_dir=args.voice_refs,
+                    exaggeration=args.exaggeration,
                 )
-                spk_post = cast_cfg.postamble.speaker
-                postamble_music_stem = os.path.join(stems_dir, f"{music_seq:03d}_postamble_sfx.mp3")
-                postamble_voice_stem = os.path.join(stems_dir, f"{voice_seq:03d}_postamble_{spk_post}.mp3")
-                # Copy outro music from sfx config 'OUTRO MUSIC' source (always regenerate — free local copy)
-                if sfx_config_model and "OUTRO MUSIC" in sfx_config_model.effects:
-                    outro_entry = sfx_config_model.effects["OUTRO MUSIC"]
-                    if outro_entry.source:
-                        clip = AudioSegment.from_file(outro_entry.source)
-                        if outro_entry.play_duration is not None:
-                            trim_ms = int(len(clip) * outro_entry.play_duration / 100.0)
-                            clip = clip[:trim_ms]
-                            logger.info("   Trimmed outro music to %.1fs (%s%%)", trim_ms/1000, outro_entry.play_duration)
-                        clip.export(postamble_music_stem, format="mp3")
-                        logger.info("   Saved: %s", postamble_music_stem)
-                        _log_stem_hash(postamble_music_stem)
+
+            try:
+                if cast_cfg.preamble:
+                    os.makedirs(stems_dir, exist_ok=True)
+                    _generate_preamble_voice(cast_cfg, config, preamble_voice_stem,
+                                             backend=args.backend,
+                                             chatterbox_client=chatterbox_client)
+                    # Copy intro music from sfx config 'INTRO MUSIC' source (always regenerate — free local copy)
+                    if sfx_config_model and "INTRO MUSIC" in sfx_config_model.effects:
+                        intro_entry = sfx_config_model.effects["INTRO MUSIC"]
+                        if intro_entry.source:
+                            clip = AudioSegment.from_file(intro_entry.source)
+                            if intro_entry.play_duration is not None:
+                                trim_ms = int(len(clip) * intro_entry.play_duration / 100.0)
+                                clip = clip[:trim_ms]
+                                logger.info("   Trimmed intro music to %.1fs (%s%%)", trim_ms/1000, intro_entry.play_duration)
+                            clip.export(preamble_music_stem, format="mp3")
+                            logger.info("   Saved: %s", preamble_music_stem)
+                            _log_stem_hash(preamble_music_stem)
+                        else:
+                            logger.warning("INTRO MUSIC entry has no 'source' — skipping music stem")
                     else:
-                        logger.warning("OUTRO MUSIC entry has no 'source' — skipping outro music stem")
-                _generate_postamble_voice(cast_cfg, config, postamble_voice_stem,
-                                         backend=args.backend)
+                        logger.warning("No 'INTRO MUSIC' entry in sfx config — skipping music stem")
+                generate_voices(config, dialogue_entries, stems_dir,
+                                start_from=args.start_from, stop_at=args.stop_at,
+                                show=cast_cfg.show, backend=args.backend,
+                                chatterbox_client=chatterbox_client)
+                if sfx_entries and sfx_config_data:
+                    generate_sfx_stems(sfx_entries, sfx_config_data, stems_dir,
+                                       client=client, start_from=args.start_from)
+                # Inject preamble entries into parsed JSON (idempotent)
+                if cast_cfg.preamble and preamble_text is not None and os.path.exists(args.script):
+                    inject_preamble_entries(args.script, preamble_text, cast_cfg.preamble.speaker)
+                # --- Postamble ---
+                if cast_cfg.postamble and postamble_text is not None and os.path.exists(args.script):
+                    os.makedirs(stems_dir, exist_ok=True)
+                    music_seq, voice_seq = inject_postamble_entries(
+                        args.script, postamble_text, cast_cfg.postamble.speaker
+                    )
+                    spk_post = cast_cfg.postamble.speaker
+                    postamble_music_stem = os.path.join(stems_dir, f"{music_seq:03d}_postamble_sfx.mp3")
+                    postamble_voice_stem = os.path.join(stems_dir, f"{voice_seq:03d}_postamble_{spk_post}.mp3")
+                    # Copy outro music from sfx config 'OUTRO MUSIC' source (always regenerate — free local copy)
+                    if sfx_config_model and "OUTRO MUSIC" in sfx_config_model.effects:
+                        outro_entry = sfx_config_model.effects["OUTRO MUSIC"]
+                        if outro_entry.source:
+                            clip = AudioSegment.from_file(outro_entry.source)
+                            if outro_entry.play_duration is not None:
+                                trim_ms = int(len(clip) * outro_entry.play_duration / 100.0)
+                                clip = clip[:trim_ms]
+                                logger.info("   Trimmed outro music to %.1fs (%s%%)", trim_ms/1000, outro_entry.play_duration)
+                            clip.export(postamble_music_stem, format="mp3")
+                            logger.info("   Saved: %s", postamble_music_stem)
+                            _log_stem_hash(postamble_music_stem)
+                        else:
+                            logger.warning("OUTRO MUSIC entry has no 'source' — skipping outro music stem")
+                    _generate_postamble_voice(cast_cfg, config, postamble_voice_stem,
+                                             backend=args.backend,
+                                             chatterbox_client=chatterbox_client)
+            finally:
+                if chatterbox_client is not None:
+                    chatterbox_client.close()
 
 
 if __name__ == "__main__":
