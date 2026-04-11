@@ -36,9 +36,9 @@ def main() -> None:
     import warnings
     warnings.filterwarnings("ignore", category=FutureWarning)
 
+    import torchaudio  # type: ignore[import]
     from chatterbox.tts import ChatterboxTTS  # type: ignore[import]
-    import torchaudio                          # type: ignore[import]
-    from pydub import AudioSegment             # type: ignore[import]
+    from pydub import AudioSegment  # type: ignore[import]
 
     model = ChatterboxTTS.from_pretrained(device=device)
     print(json.dumps({"ready": True, "sr": model.sr}), flush=True)

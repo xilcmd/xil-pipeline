@@ -31,7 +31,6 @@ except ImportError:
     HAS_GTTS = False
 
 import subprocess
-import threading
 
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import (
