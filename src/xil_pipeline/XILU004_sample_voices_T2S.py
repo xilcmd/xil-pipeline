@@ -258,6 +258,14 @@ def get_parser() -> argparse.ArgumentParser:
              "Used only with --backend chatterbox.",
     )
     parser.add_argument(
+        "--sample-text", default=None, metavar="TEXT",
+        help=(
+            "Override the sample text spoken by each voice. Use {name} as a placeholder "
+            "for the speaker's full name. "
+            "Default: \"I am {name} not yo momma\""
+        ),
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Print what would be generated without calling any TTS API",
     )
@@ -335,7 +343,8 @@ def main() -> None:
                     continue
 
                 out_path = os.path.join(out_dir, f"{key}.mp3")
-                text = f"I am {member.full_name} not yo momma"
+                template = args.sample_text or "I am {name} not yo momma"
+                text = template.format(name=member.full_name)
 
                 if not args.force and os.path.exists(out_path):
                     logger.info(f"  [EXISTS] {key:12s}  {out_path}")
