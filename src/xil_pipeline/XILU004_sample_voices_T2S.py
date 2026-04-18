@@ -179,6 +179,9 @@ class _ChatterboxClient:
                 return p
         return None
 
+    def _cond_for(self, speaker_key: str) -> str:
+        return os.path.join(self._voice_refs_dir, f"{speaker_key}.conds.pt")
+
     def generate(self, text: str, out_path: str, speaker_key: str) -> None:
         if self._proc is None:
             self._start()
@@ -189,6 +192,7 @@ class _ChatterboxClient:
             "text": text,
             "out_path": out_path,
             "ref_audio": ref,
+            "cond_path": self._cond_for(speaker_key),
             "exaggeration": self._exaggeration,
             "cfg_weight": self._cfg_weight,
         }

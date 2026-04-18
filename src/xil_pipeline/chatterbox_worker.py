@@ -12,8 +12,18 @@ Protocol (newline-delimited JSON on stdin/stdout):
 
   Startup:  worker prints  {"ready": true, "sr": <int>}
   Request:  {"text": "...", "out_path": "...", "ref_audio": "<path>|null",
-             "exaggeration": 0.5, "cfg_weight": 0.5}
+             "cond_path": "<path>|null", "exaggeration": 0.5, "cfg_weight": 0.5}
   Response: {"done": true} | {"done": true, "skipped": true} | {"error": "..."}
+
+cond_path caching
+-----------------
+If ``cond_path`` points to an existing ``.conds.pt`` file the worker loads the
+pre-computed ``Conditionals`` object directly, skipping reference-audio processing
+(fast path).  On the first run, if ``ref_audio`` is provided together with
+``cond_path``, the computed conditionals are saved to ``cond_path`` for reuse in
+subsequent sessions (slow path → write).  Deleting the ``.conds.pt`` file forces
+a rebuild — required when ``--exaggeration`` changes, because that value is baked
+into the cached conditionals.
 
 eleven_v3 inline tags ([pause], [exhausted], etc.) are stripped before
 generation so they are not read aloud verbatim.
@@ -56,6 +66,7 @@ def main() -> None:
         text = TAG_RE.sub("", req["text"]).strip()
         out_path = req["out_path"]
         ref_audio = req.get("ref_audio") or None
+        cond_path = req.get("cond_path") or None
         exaggeration = float(req.get("exaggeration", 0.5))
         cfg_weight = float(req.get("cfg_weight", 0.5))
 
@@ -66,12 +77,27 @@ def main() -> None:
         tmp_wav = None
         tmp_mp3 = None
         try:
-            wav = model.generate(
-                text,
-                audio_prompt_path=ref_audio,
-                exaggeration=exaggeration,
-                cfg_weight=cfg_weight,
-            )
+            if cond_path and os.path.exists(cond_path):
+                # Fast path: pre-computed conditioning — skip ref audio processing
+                from chatterbox.tts import Conditionals  # type: ignore[import]
+                model.conds = Conditionals.load(cond_path, map_location=device)
+                print(f"[conds] loaded ← {os.path.basename(cond_path)}", file=sys.stderr, flush=True)
+                wav = model.generate(text, cfg_weight=cfg_weight)
+            elif ref_audio:
+                # Slow path: compute from ref audio, save conds for next session
+                wav = model.generate(
+                    text,
+                    audio_prompt_path=ref_audio,
+                    exaggeration=exaggeration,
+                    cfg_weight=cfg_weight,
+                )
+                if cond_path and model.conds is not None:
+                    os.makedirs(os.path.dirname(os.path.abspath(cond_path)), exist_ok=True)
+                    model.conds.save(cond_path)
+                    print(f"[conds] saved  → {os.path.basename(cond_path)}", file=sys.stderr, flush=True)
+            else:
+                # No ref, no cache: use model default voice
+                wav = model.generate(text, cfg_weight=cfg_weight)
 
             # WAV → temp file → MP3 → final path (atomic replace)
             tmp_fd, tmp_wav = tempfile.mkstemp(suffix=".wav")

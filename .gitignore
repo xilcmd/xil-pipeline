@@ -1,5 +1,6 @@
 # Python
 venv/
+venv-chatterbox/
 logs/
 __pycache__/
 *.pyc
@@ -51,4 +52,4 @@ ElevenLabs_exports/
 masters/
 parsed/
 cues/
-SFX/
+SFX/voice_refs/*.conds.pt
