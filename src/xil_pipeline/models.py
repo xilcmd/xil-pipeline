@@ -268,14 +268,16 @@ class CastMember(BaseModel):
         full_name: Character's display name (e.g., ``"Adam Santos"``).
         voice_id: ElevenLabs voice identifier, or ``"TBD"`` if unassigned.
         pan: Stereo pan position from -1.0 (full left) to 1.0 (full right).
-        filter: Whether to apply phone-speaker audio filter.
+        filter: Audio filter chain. ``False``/``None`` = none; ``True``/``"phone"``
+            = phone filter; ``"vintage"`` = vintage filter; ``"vintage,phone"``
+            = both filters applied in listed order.
         role: Character role description (e.g., ``"Host/Narrator"``).
     """
 
     full_name: str = Field(..., description="Character display name")
     voice_id: str = Field(..., min_length=1, description="ElevenLabs voice ID")
     pan: float = Field(..., ge=-1.0, le=1.0, description="Stereo pan position")
-    filter: bool = Field(..., description="Apply phone-speaker filter")
+    filter: str | bool | None = Field(..., description="Audio filter chain (false/phone/vintage/vintage,phone)")
     role: str = Field(..., description="Character role description")
     stability: float | None = Field(
         default=None, ge=0.0, le=1.0,
@@ -407,12 +409,12 @@ class VoiceConfig(BaseModel):
     Attributes:
         id: ElevenLabs voice identifier.
         pan: Stereo pan position from -1.0 (full left) to 1.0 (full right).
-        filter: Whether to apply phone-speaker audio filter.
+        filter: Audio filter chain (see ``CastMember.filter``).
     """
 
     id: str = Field(..., description="ElevenLabs voice ID")
     pan: float = Field(..., ge=-1.0, le=1.0, description="Stereo pan position")
-    filter: bool = Field(..., description="Apply phone-speaker filter")
+    filter: str | bool | None = Field(..., description="Audio filter chain (false/phone/vintage/vintage,phone)")
 
 
 class DialogueEntry(BaseModel):
@@ -532,6 +534,13 @@ class SfxConfiguration(BaseModel):
     defaults: dict = Field(default_factory=dict, description="Shared SFX defaults")
     effects: dict[str, SfxEntry] = Field(
         ..., description="Direction text to SFX mapping"
+    )
+    vintage_scenes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Scene labels whose dialogue receives the vintage audio filter "
+            "(e.g. [\"scene-3\", \"scene-4\"]). Empty list = no vintage treatment."
+        ),
     )
 
     @property

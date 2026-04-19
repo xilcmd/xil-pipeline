@@ -144,7 +144,7 @@ _FIELDNAMES = [
 ]
 
 
-def main() -> None:
+def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="xil-stem-log",
         description="Parse xil-pipeline logs into a stem generation chronology CSV.",
@@ -171,7 +171,11 @@ def main() -> None:
         action="store_true",
         help="Print CSV to stdout (equivalent to --output -)",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = get_parser().parse_args()
 
     logs_dir = Path(args.logs_dir)
     if not logs_dir.is_dir():

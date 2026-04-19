@@ -71,6 +71,7 @@ class StemPlan:
     direction_type: str | None
     entry_type: str | None
     text: str | None = None
+    scene: str | None = None
     foreground_override: bool = False
     volume_percentage: float | None = None
     ramp_in_seconds: float | None = None
@@ -318,6 +319,7 @@ def collect_stem_plans(
             direction_type=entry.get("direction_type"),
             entry_type=entry_type,
             text=entry.get("text"),
+            scene=entry.get("scene"),
         )
         # Preamble intro music (seq < 0) and postamble outro music both play
         # sequentially in the foreground rather than as background overlays.
@@ -405,11 +407,61 @@ def apply_phone_filter(segment: AudioSegment) -> AudioSegment:
     return segment.high_pass_filter(300).low_pass_filter(3000) + 5
 
 
+def apply_vintage_filter(segment: AudioSegment) -> AudioSegment:
+    """Apply a vintage (1960s-era) audio filter to an audio segment.
+
+    Rolls off high frequencies above 5 kHz (1960s tape/broadcast ceiling)
+    and low rumble below 150 Hz, then reduces volume by 3 dB to simulate
+    the compressed, mid-forward quality of aged tape recording.
+
+    Args:
+        segment: Input audio segment to filter.
+
+    Returns:
+        Filtered audio segment.
+    """
+    mono = segment.set_channels(1).set_channels(segment.channels)
+    return mono.low_pass_filter(5000).high_pass_filter(150) - 3
+
+
+def _apply_speaker_filters(segment: AudioSegment, filter_val: "str | bool | None") -> AudioSegment:
+    """Apply audio filter(s) to a segment based on the cast config filter value.
+
+    Accepts the ``filter`` field from a cast member config entry and applies
+    the corresponding filter chain.  Supported values:
+
+    - ``False`` / ``None`` / ``""`` — no filter
+    - ``True`` / ``"phone"`` — phone filter
+    - ``"vintage"`` — vintage filter
+    - ``"vintage,phone"`` or ``"phone,vintage"`` — both filters in listed order
+
+    Args:
+        segment: Input audio segment.
+        filter_val: Cast config ``filter`` field value.
+
+    Returns:
+        Filtered (or unmodified) audio segment.
+    """
+    if not filter_val:
+        return segment
+    # Normalise: True (legacy bool) → "phone"
+    if filter_val is True:
+        names = ["phone"]
+    else:
+        names = [n.strip().lower() for n in str(filter_val).split(",") if n.strip()]
+    for name in names:
+        if name == "phone":
+            segment = apply_phone_filter(segment)
+        elif name == "vintage":
+            segment = apply_vintage_filter(segment)
+    return segment
+
+
 def build_foreground(
     stem_plans: list[StemPlan],
     cast_config: dict,
-    apply_effects_fn=None,
     gap_ms: int = 600,
+    vintage_scenes: list[str] | None = None,
 ) -> tuple[AudioSegment, dict[int, int]]:
     """Build the foreground audio track and a full-episode timeline.
 
@@ -422,12 +474,14 @@ def build_foreground(
 
     Args:
         stem_plans: Classified stem list from :func:`collect_stem_plans`.
-        cast_config: ``{speaker_key: {"pan": float, "filter": bool}}``
-            for per-speaker audio effects.
-        apply_effects_fn: Optional callable applied to speakers with
-            ``filter=True`` (typically :func:`apply_phone_filter`).
-            Pass ``None`` to skip phone filtering.
+        cast_config: ``{speaker_key: {"pan": float, "filter": str | bool | None}}``
+            for per-speaker audio effects.  ``filter`` accepts ``False``/``None``
+            (no filter), ``True``/``"phone"`` (phone filter), ``"vintage"``, or a
+            comma-separated combination such as ``"vintage,phone"``.
         gap_ms: Silence inserted between foreground stems in ms.
+        vintage_scenes: Optional list of scene labels (e.g. ``["scene-3",
+            "scene-4"]``) whose dialogue stems receive an additional vintage
+            filter pass.  Applied after the per-speaker filter chain.
 
     Returns:
         Tuple of ``(foreground_audio, timeline)`` where ``timeline``
@@ -456,9 +510,13 @@ def build_foreground(
         basename = os.path.splitext(os.path.basename(plan.filepath))[0]
         speaker = basename.rsplit("_", 1)[-1]
         if speaker in cast_config:
-            if cast_config[speaker].get("filter") and apply_effects_fn:
-                segment = apply_effects_fn(segment)
+            segment = _apply_speaker_filters(segment, cast_config[speaker].get("filter"))
             segment = segment.pan(cast_config[speaker].get("pan", 0.0))
+
+        # Scene-scoped vintage filter: applies to all dialogue in listed scenes.
+        if (vintage_scenes and plan.entry_type == "dialogue"
+                and plan.scene in vintage_scenes):
+            segment = apply_vintage_filter(segment)
 
         foreground += segment + AudioSegment.silent(duration=gap_ms)
         current_ms += len(segment) + gap_ms
@@ -632,20 +690,22 @@ def build_dialogue_layer(
     timeline: dict[int, int],
     total_ms: int,
     cast_config: dict,
-    apply_effects_fn=None,
+    vintage_scenes: list[str] | None = None,
 ) -> tuple:
     """Build an isolated dialogue layer for DAW export.
 
     Places only dialogue stems (``entry_type == "dialogue"``) at their
     foreground timeline positions in a full-length silent segment.
-    Phone filter and pan effects are applied per speaker as configured.
+    Filter and pan effects are applied per speaker as configured.
 
     Args:
         stem_plans: Classified stem list from :func:`collect_stem_plans`.
         timeline: Cue-point timestamps from :func:`build_foreground`.
         total_ms: Total track length in milliseconds.
         cast_config: Per-speaker audio settings.
-        apply_effects_fn: Optional phone filter callable.
+        vintage_scenes: Optional list of scene labels whose dialogue stems
+            receive an additional vintage filter pass (same as
+            :func:`build_foreground`).
 
     Returns:
         Tuple of ``(layer, labels)`` where *layer* is a full-length
@@ -663,9 +723,10 @@ def build_dialogue_layer(
         basename = os.path.splitext(os.path.basename(plan.filepath))[0]
         speaker = basename.rsplit("_", 1)[-1]
         if speaker in cast_config:
-            if cast_config[speaker].get("filter") and apply_effects_fn:
-                segment = apply_effects_fn(segment)
+            segment = _apply_speaker_filters(segment, cast_config[speaker].get("filter"))
             segment = segment.pan(cast_config[speaker].get("pan", 0.0))
+        if (vintage_scenes and plan.scene in vintage_scenes):
+            segment = apply_vintage_filter(segment)
         end_ms = start_ms + len(segment)
         labels.append((start_ms / 1000.0, end_ms / 1000.0, speaker, None, None, None, None, None, plan.seq))
         layer = layer.overlay(segment, position=start_ms)

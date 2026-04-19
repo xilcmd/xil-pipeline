@@ -41,7 +41,6 @@ import textwrap
 
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.mix_common import (
-    apply_phone_filter,
     build_ambience_layer,
     build_dialogue_layer,
     build_foreground,
@@ -80,7 +79,7 @@ SILENCE_GAP_MS = 600
 
 # Layer definitions: (key, filename_suffix, description)
 LAYERS: list[tuple[str, str, str]] = [
-    ("dialogue", "layer_dialogue", "Spoken dialogue (phone filter + pan applied)"),
+    ("dialogue", "layer_dialogue", "Spoken dialogue (audio filter chain + pan applied per speaker)"),
     ("ambience", "layer_ambience", "Looped environmental background (no ducking)"),
     ("music",    "layer_music",    "Music stings and themes (no ducking)"),
     ("sfx",      "layer_sfx",      "One-shot sound effects and beat silences"),
@@ -339,7 +338,15 @@ def _make_audacity_script(
     return script
 
 
-def dry_run_daw(tag: str, stem_plans, entries_index: dict, output_dir: str, stems_dir: str = "") -> None:
+def dry_run_daw(
+    tag: str,
+    stem_plans,
+    entries_index: dict,
+    output_dir: str,
+    stems_dir: str = "",
+    sfx_config=None,
+    cast_config: dict | None = None,
+) -> None:
     """Print a DAW export summary without writing any files.
 
     Args:
@@ -348,6 +355,8 @@ def dry_run_daw(tag: str, stem_plans, entries_index: dict, output_dir: str, stem
         entries_index: Parsed entry index.
         output_dir: Target directory (shown in summary).
         stems_dir: Stems source directory (shown in summary).
+        sfx_config: SfxConfiguration instance for vintage_scenes lookup.
+        cast_config: Per-speaker voice settings dict for filter reporting.
     """
     _validate_tag_for_script(tag)
     bg_plans = [p for p in stem_plans if p.is_background]
@@ -356,6 +365,9 @@ def dry_run_daw(tag: str, stem_plans, entries_index: dict, output_dir: str, stem
     sfx = [p for p in stem_plans if p.direction_type in ("SFX", "BEAT")]
     dialogue = [p for p in stem_plans if p.entry_type == "dialogue"]
 
+    vintage_scenes = sfx_config.vintage_scenes if sfx_config else []
+    vintage_count = sum(1 for p in dialogue if p.scene in vintage_scenes) if vintage_scenes else 0
+
     logger.info(f"\n--- DAW Export Dry Run: {tag} ---")
     logger.info(f"   Stems directory : {stems_dir or f'stems/{tag}'}")
     logger.info(f"   Output directory: {output_dir}/")
@@ -363,6 +375,14 @@ def dry_run_daw(tag: str, stem_plans, entries_index: dict, output_dir: str, stem
     logger.info("   Layer             Stems")
     logger.info("   ─────────────────────────────")
     logger.info(f"   dialogue          {len(dialogue):3d} stems")
+    if vintage_scenes:
+        scenes_str = ", ".join(vintage_scenes)
+        logger.info(f"     vintage scenes : {scenes_str}  ({vintage_count} stems — mono collapse + LPF 5kHz)")
+    if cast_config:
+        filtered = {k: v.get("filter") for k, v in cast_config.items() if v.get("filter")}
+        if filtered:
+            parts = "  ".join(f"{k}={v}" for k, v in filtered.items())
+            logger.info(f"     per-speaker    : {parts}")
     logger.info(f"   ambience          {len(ambience):3d} stems  (looped to scene boundaries)")
     logger.info(f"   music             {len(music):3d} stems  (one-shot at cue points)")
     logger.info(f"   sfx               {len(sfx):3d} stems")
@@ -414,8 +434,9 @@ def export_daw_layers(
         return
 
     logger.info(f"--- Building foreground timeline from {len(stem_plans)} stems ---")
+    vintage_scenes = sfx_config.vintage_scenes if sfx_config else []
     foreground, cue_timeline = build_foreground(
-        stem_plans, config, apply_phone_filter, gap_ms=gap_ms
+        stem_plans, config, gap_ms=gap_ms, vintage_scenes=vintage_scenes
     )
 
     if len(foreground) == 0:
@@ -431,8 +452,17 @@ def export_daw_layers(
 
     # --- Dialogue layer ---
     logger.info("--- Building dialogue layer ---")
+    dialogue_plans = [p for p in stem_plans if p.entry_type == "dialogue"]
+    vintage_count = sum(1 for p in dialogue_plans if p.scene in vintage_scenes) if vintage_scenes else 0
+    if vintage_scenes:
+        scenes_str = ", ".join(vintage_scenes)
+        logger.info(f"    vintage scenes : {scenes_str}  ({vintage_count} stems — mono collapse + LPF 5kHz)")
+    speaker_filters = {k: v.get("filter") for k, v in config.items() if v.get("filter")}
+    if speaker_filters:
+        for speaker, fval in speaker_filters.items():
+            logger.info(f"    per-speaker    : {speaker} → {fval}")
     dlg, labels = build_dialogue_layer(
-        stem_plans, cue_timeline, total_ms, config, apply_phone_filter
+        stem_plans, cue_timeline, total_ms, config, vintage_scenes=vintage_scenes
     )
     fname = f"{tag}_layer_dialogue.wav"
     wav_path = os.path.join(output_dir, fname)
@@ -647,7 +677,8 @@ def main() -> None:
         stem_plans = collect_stem_plans(stems_dir, entries_index, sfx_config=sfx_config)
 
         if args.dry_run:
-            dry_run_daw(tag, stem_plans, entries_index, output_dir, stems_dir)
+            dry_run_daw(tag, stem_plans, entries_index, output_dir, stems_dir,
+                        sfx_config=sfx_config, cast_config=config)
             if args.timeline or args.timeline_html:
                 total_ms, timeline = build_foreground_timeline_only(
                     stem_plans, gap_ms=args.gap_ms

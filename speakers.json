@@ -31,5 +31,7 @@
   { "display": "EVE", "key": "eve" },
   { "display": "JAMES", "key": "james" },
   { "display": "A.I. VOICE 1", "key": "aivoice1" },
-  { "display": "A.I. VOICE 2", "key": "aivoice2" }
+  { "display": "A.I. VOICE 2", "key": "aivoice2" },
+  { "display": "Collin", "key": "collin" },
+  { "display": "Ray", "key": "ray" }
 ]

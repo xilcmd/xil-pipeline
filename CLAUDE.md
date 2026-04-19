@@ -197,7 +197,8 @@ python XILP003_audio_assembly.py --episode S01E01 --parsed parsed/parsed_<slug>_
 - Falls back to single-pass sequential concatenation when no parsed JSON is found
 - Stem classification uses `direction_type` from the parsed JSON, keyed by seq number in the filename
 - Shared mixing logic lives in `mix_common.py` — also used by XILP005
-- Applies per-speaker effects (pan, phone filter) from cast config
+- Applies per-speaker effects (pan, audio filters) from cast config; `filter` field accepts `false`/`null` (none), `true`/`"phone"` (phone filter), `"vintage"` (vintage filter), or a comma-separated combination such as `"vintage,phone"`
+- Applies scene-scoped vintage filter to all dialogue in scenes listed in `sfx_config.vintage_scenes`; applied after the per-speaker filter chain
 - `--show` overrides the show name used for slug derivation (see Project Configuration)
 - Supports `--output` to set the master MP3 path (default: `<slug>_S01E01_master.mp3`)
 - `--gap-ms N` sets the silence gap between foreground stems in milliseconds (default: 600); reducing to 200–300 can shorten episode runtime by 1.5–2 minutes
@@ -240,7 +241,7 @@ python XILP005_daw_export.py --episode S01E01 --timeline --timeline-html
 - `--episode` or `--tag` (one required) derives `cast_<slug>_S01E01.json` and `parsed/parsed_<slug>_S01E01.json`
 - `--show` overrides the show name used for slug derivation (see Project Configuration)
 - Outputs four WAV files to `daw/{TAG}/` — all identical duration, all aligned at t=0:
-  - `{TAG}_layer_dialogue.wav` — spoken dialogue (phone filter + pan applied)
+  - `{TAG}_layer_dialogue.wav` — spoken dialogue (audio filter chain + pan applied per speaker)
   - `{TAG}_layer_ambience.wav` — environmental background looped to fill scene durations
   - `{TAG}_layer_music.wav` — music stings/themes at cue positions
   - `{TAG}_layer_sfx.wav` — one-shot SFX and BEAT silences
@@ -371,6 +372,8 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILU004_*` — voice sample generator (audition cast voices)
 - `XILU005_*` — SFX library discovery (`--local` scans `SFX/` directory, default; `--api` queries ElevenLabs history)
 - `XILU006_*` — parsed JSON splice utility (insert/delete entries with automatic seq renumbering)
+- `XILU007_*` — MP3 hash utility (compute SHA256 checksums for stem files)
+- `XILU008_*` — stem log report (parse daily logs → chronological stem generation CSV with backend/model/hash)
 - `XILP001_*` — script parser
 - `XILP002_*` — voice generation (ElevenLabs TTS)
 - `XILP003_*` — audio assembly (stems → master MP3, two-pass multi-track mix)
@@ -382,7 +385,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILP009_*` — reverse script generator (parsed JSON → production script markdown)
 - `XILP010_*` — Studio export importer (ElevenLabs Studio ZIP → pipeline stems)
 - `XILP011_*` — final master MP3 export (overlay 4 DAW layer WAVs → single stereo 48 kHz VBR MP3)
-- `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `volume_percentage`, `ramp_in_seconds`, and `ramp_out_seconds` each fall back to the global key when no category-specific key exists (e.g. SFX/MUSIC when `sfx_volume_percentage`/`music_ramp_in_seconds` are absent from the config defaults); `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing
+- `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.scene` (str|None): scene label from parsed JSON, used for scene-scoped vintage filter; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `volume_percentage`, `ramp_in_seconds`, and `ramp_out_seconds` each fall back to the global key when no category-specific key exists (e.g. SFX/MUSIC when `sfx_volume_percentage`/`music_ramp_in_seconds` are absent from the config defaults); `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing; `apply_vintage_filter()` applies a 1960s-era HF roll-off + 1 dB reduction; `_apply_speaker_filters(segment, filter_val)` resolves the cast config `filter` string and applies the named filter chain (`false`/`None` = none, `true`/`"phone"` = phone, `"vintage"` = vintage, `"vintage,phone"` = both)
 - `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency; HTML bar badges: `ri` (↑ ramp in, left), `ro` (↓ ramp out, right-top), `pd` (% play duration, center), `vb` (🔊 volume%, right-bottom, shown when `volume_pct != 100`); applies to music, ambience, and SFX spans
 - `models.py` — Pydantic data models plus `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "sample"` fallback
@@ -397,7 +400,9 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 {
   "show": "THE 413", "season": 1, "episode": 1, "title": "The Holiday Shift",
   "cast": {
-    "adam": { "full_name": "Adam Santos", "voice_id": "...", "pan": 0.0, "filter": false, "role": "Host/Narrator" }
+    "adam": { "full_name": "Adam Santos", "voice_id": "...", "pan": 0.0, "filter": false, "role": "Host/Narrator" },
+    "mr_patterson": { "full_name": "Mr. Patterson", "voice_id": "...", "pan": -0.3, "filter": "phone", "role": "Caller" },
+    "young_adam": { "full_name": "Young Adam", "voice_id": "...", "pan": 0.0, "filter": "vintage", "role": "Flashback" }
   }
 }
 ```
@@ -454,6 +459,7 @@ Legacy single-string `"text"` field still works as a fallback for un-migrated ep
 - `volume_percentage` — per-effect volume as a percentage (100 = unity, 50 = half volume); applies to SFX, BEAT, MUSIC, and AMBIENCE entries; overrides the category default (`sfx_volume_percentage`, `music_volume_percentage`, `ambience_volume_percentage`) in the `defaults` block
 - `play_duration` — percentage of file to play (e.g. `45` = play 45% of file duration); for INTRO MUSIC, the trim is applied when copying to the stem file so all downstream tools see the correct duration
 - Stop markers: `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` entries use `type: "silence", duration_seconds: 0.0`; they inject a boundary marker into the mixing timeline without generating audio
+- `vintage_scenes` — optional top-level list of scene labels (e.g. `["scene-3", "scene-4", "scene-5"]`); all dialogue in those scenes receives the vintage audio filter (HF roll-off + 1 dB reduction) during assembly; applied after per-speaker filters; omit or leave empty for no vintage treatment; the same scene labels used in the parsed JSON `scene` field
 - SFX stems use `_sfx` suffix: `002_cold-open_sfx.mp3`
 
 ### Shared SFX Library
@@ -514,15 +520,19 @@ python XILU003_csv_sfx_join.py --episode S02E03 --output my_review.csv
 ```bash
 python XILU004_sample_voices_T2S.py --episode S02E03 --dry-run
 python XILU004_sample_voices_T2S.py --episode S02E03
+python XILU004_sample_voices_T2S.py --episode S02E03 --backend chatterbox
+python XILU004_sample_voices_T2S.py --episode S02E03 --backend gtts
 python XILU004_sample_voices_T2S.py --episode S02E03 --force
 ```
 
 - `--episode` or `--tag` (one required) or `--cast PATH` to specify the cast config
 - `--show` overrides the show name used for slug derivation (see Project Configuration)
-- Sample text: `"I am {full_name} not yo momma"` using `cast_member.full_name`
-- Output: `voice_samples/{TAG}/{actor}.mp3` (e.g. `voice_samples/S02E03/adam.mp3`)
-- Skips members with `voice_id=TBD`; `--force` regenerates existing samples
-- Requires `ELEVENLABS_API_KEY`
+- `--backend elevenlabs|gtts|chatterbox` (default: `elevenlabs`): selects TTS backend for sample generation
+- Default sample text: `"I am {name} not yo momma"`; override with `--sample-text` (use `{name}` placeholder)
+- Output: `voice_samples/{TAG}/{backend}/{actor}.mp3` — backend subdirectory enables side-by-side comparison
+- Skips members with `voice_id=TBD` (ElevenLabs only); `--force` regenerates existing samples
+- `--chatterbox-python PATH`, `--voice-refs DIR`, `--exaggeration FLOAT` — Chatterbox-specific options (same as `xil-produce`)
+- Requires `ELEVENLABS_API_KEY` for `--backend elevenlabs`
 
 ### SFX Library Discovery
 
@@ -577,6 +587,26 @@ python XILU006_splice_parsed.py --episode S02E03 --insert-after 322 \
 - Recomputes the `stats` block after modification
 - No ElevenLabs API key required — no API calls made
 
+### Stem Log Report
+
+`XILU008_stem_log_report.py` — Parses daily pipeline log files into a chronological stem generation CSV. Useful for auditing what was generated, when, with which backend, and confirming SHA256 checksums.
+
+```bash
+xil-stem-log --episode S03E03
+xil-stem-log --episode S03E03 --since 2026-04-01
+xil-stem-log --logs-dir logs/ --output stem_log_report.csv
+```
+
+- `--episode` or `--show` (optional) filters log entries to a specific episode tag or show slug
+- `--logs-dir DIR` path to log directory (default: `logs/`)
+- `--output PATH` output CSV path (default: `stem_log_report.csv`)
+- `--since DATE` filter to logs on or after the given date (YYYY-MM-DD)
+- Parses `logs/xil_YYYY-MM-DD.log` files; three regex patterns match ElevenLabs, gTTS, and Chatterbox generation lines
+- State machine: generation line → saved line → SHA256 line → emits one record
+- `run_index` counter increments per `Phase 1: Generating` marker, grouping stems by production run
+- Output columns: `date`, `run_index`, `seq`, `speaker`, `backend`, `model`, `sha256`, `approx_time`, `out_path`
+- No ElevenLabs API key required — reads local log files only
+
 ## Developer/Maintainer Rules
 
 Automated testing via Python and Bash serves as the fundamental mechanism for the Verification Loop. The project mandates that Claude must mention how it will verify its work before it begins any task.
@@ -623,13 +653,13 @@ pytest tests/ -v
 
 ## Man Pages
 
-Unix man pages for all 19 CLI commands are pre-generated and committed to `man/man1/`. They are installed automatically when the package is built into a wheel and installed via pip.
+Unix man pages for all 21 CLI commands are pre-generated and committed to `man/man1/`. They are installed automatically when the package is built into a wheel and installed via pip.
 
 **Regenerating after CLI changes** (run whenever flags or descriptions change):
 
 ```bash
 pip install -e ".[dev]"      # includes argparse-manpage
-python scripts/build_man.py  # regenerate all 18 argparse-based pages
+python scripts/build_man.py  # regenerate all 20 argparse-based pages
 # xil.1 is hand-crafted — edit man/man1/xil.1 directly when the dispatcher changes
 ```
 

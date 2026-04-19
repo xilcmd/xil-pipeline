@@ -929,8 +929,20 @@ class TestSfxConfiguration:
                     "play_duration": None,
                 },
             },
+            "vintage_scenes": [],
         }
         assert models.SfxConfiguration(**raw).model_dump() == raw
+
+    def test_vintage_scenes_default_empty(self):
+        sc = models.SfxConfiguration(show="TEST", episode=1, effects={})
+        assert sc.vintage_scenes == []
+
+    def test_vintage_scenes_accepted(self):
+        sc = models.SfxConfiguration(
+            show="TEST", episode=1, effects={},
+            vintage_scenes=["scene-3", "scene-4", "scene-5"],
+        )
+        assert sc.vintage_scenes == ["scene-3", "scene-4", "scene-5"]
 
 
 class TestSfxConfigurationTagOverride:

@@ -139,9 +139,69 @@ class TestApplyPhoneFilter:
         assert isinstance(filtered, AudioSegment)
         assert len(filtered) > 0
 
-    def test_available_from_assembly(self):
-        """apply_phone_filter imported into XILP003 from mix_common."""
-        assert hasattr(assembly, "apply_phone_filter")
+    def test_available_from_mix_common(self):
+        """apply_phone_filter lives in mix_common."""
+        assert hasattr(mix_common, "apply_phone_filter")
+
+
+# ─── Tests: apply_vintage_filter / _apply_speaker_filters ───
+
+class TestApplyVintageFilter:
+    def test_returns_audio_segment(self):
+        tone = _make_tone(100)
+        filtered = mix_common.apply_vintage_filter(tone)
+        assert isinstance(filtered, AudioSegment)
+        assert len(filtered) > 0
+
+    def test_lower_volume_than_input(self):
+        tone = _make_tone(100)
+        assert mix_common.apply_vintage_filter(tone).dBFS < tone.dBFS + 0.1
+
+    def test_mono_collapse_identical_channels(self):
+        # stereo input: L and R channels are different (pan left)
+        stereo = _make_tone(100).pan(-1.0)
+        filtered = mix_common.apply_vintage_filter(stereo)
+        assert filtered.channels == 2
+        left, right = filtered.split_to_mono()
+        assert left.raw_data == right.raw_data
+
+
+class TestApplySpeakerFilters:
+    def test_false_returns_unchanged(self):
+        tone = _make_tone(100)
+        out = mix_common._apply_speaker_filters(tone, False)
+        assert len(out) == len(tone)
+
+    def test_none_returns_unchanged(self):
+        tone = _make_tone(100)
+        out = mix_common._apply_speaker_filters(tone, None)
+        assert len(out) == len(tone)
+
+    def test_true_applies_phone_filter(self):
+        tone = _make_tone(100)
+        with unittest.mock.patch.object(mix_common, "apply_phone_filter", wraps=mix_common.apply_phone_filter) as m:
+            mix_common._apply_speaker_filters(tone, True)
+            m.assert_called_once()
+
+    def test_phone_string_applies_phone_filter(self):
+        tone = _make_tone(100)
+        with unittest.mock.patch.object(mix_common, "apply_phone_filter", wraps=mix_common.apply_phone_filter) as m:
+            mix_common._apply_speaker_filters(tone, "phone")
+            m.assert_called_once()
+
+    def test_vintage_string_applies_vintage_filter(self):
+        tone = _make_tone(100)
+        with unittest.mock.patch.object(mix_common, "apply_vintage_filter", wraps=mix_common.apply_vintage_filter) as m:
+            mix_common._apply_speaker_filters(tone, "vintage")
+            m.assert_called_once()
+
+    def test_vintage_phone_applies_both(self):
+        tone = _make_tone(100)
+        with unittest.mock.patch.object(mix_common, "apply_phone_filter", wraps=mix_common.apply_phone_filter) as mp, \
+             unittest.mock.patch.object(mix_common, "apply_vintage_filter", wraps=mix_common.apply_vintage_filter) as mv:
+            mix_common._apply_speaker_filters(tone, "vintage,phone")
+            mv.assert_called_once()
+            mp.assert_called_once()
 
 
 # ─── Tests: mix_common.extract_seq ───
@@ -261,8 +321,83 @@ class TestBuildForeground:
         with unittest.mock.patch.object(
             mix_common, "apply_phone_filter", wraps=mix_common.apply_phone_filter
         ) as mock_filter:
-            mix_common.build_foreground(plans, cfg, apply_effects_fn=mix_common.apply_phone_filter)
+            mix_common.build_foreground(plans, cfg)
         mock_filter.assert_called_once()  # only frank (seq 5) gets filtered
+
+
+# ─── Tests: vintage_scenes (scene-scoped vintage filter) ───
+
+@pytest.fixture
+def stems_with_scenes(tmp_path):
+    """Stems dir with two dialogue stems in different scenes."""
+    stems_dir = tmp_path / "stems"
+    stems_dir.mkdir()
+    _write_mp3(str(stems_dir / "003_act1-scene-1_adam.mp3"), duration_ms=300)
+    _write_mp3(str(stems_dir / "005_act1-scene-2_adam.mp3"), duration_ms=300)
+    return stems_dir
+
+
+@pytest.fixture
+def index_with_scenes():
+    return {
+        3: {"seq": 3, "type": "dialogue", "direction_type": None,
+            "speaker": "adam", "scene": "scene-1"},
+        5: {"seq": 5, "type": "dialogue", "direction_type": None,
+            "speaker": "adam", "scene": "scene-2"},
+    }
+
+
+class TestVintageScenes:
+    def test_scene_field_populated(self, stems_with_scenes, index_with_scenes):
+        plans = mix_common.collect_stem_plans(str(stems_with_scenes), index_with_scenes)
+        plan_by_seq = {p.seq: p for p in plans}
+        assert plan_by_seq[3].scene == "scene-1"
+        assert plan_by_seq[5].scene == "scene-2"
+
+    def test_vintage_applied_to_matching_scene(self, stems_with_scenes, index_with_scenes):
+        cfg = {"adam": {"pan": 0.0, "filter": False}}
+        plans = mix_common.collect_stem_plans(str(stems_with_scenes), index_with_scenes)
+        with unittest.mock.patch.object(
+            mix_common, "apply_vintage_filter", wraps=mix_common.apply_vintage_filter
+        ) as mv:
+            mix_common.build_foreground(plans, cfg, vintage_scenes=["scene-2"])
+        mv.assert_called_once()  # only seq 5 (scene-2) gets filtered
+
+    def test_vintage_not_applied_when_no_scenes_configured(self, stems_with_scenes, index_with_scenes):
+        cfg = {"adam": {"pan": 0.0, "filter": False}}
+        plans = mix_common.collect_stem_plans(str(stems_with_scenes), index_with_scenes)
+        with unittest.mock.patch.object(
+            mix_common, "apply_vintage_filter", wraps=mix_common.apply_vintage_filter
+        ) as mv:
+            mix_common.build_foreground(plans, cfg, vintage_scenes=[])
+        mv.assert_not_called()
+
+    def test_vintage_applied_in_dialogue_layer(self, stems_with_scenes, index_with_scenes):
+        cfg = {"adam": {"pan": 0.0, "filter": False}}
+        plans = mix_common.collect_stem_plans(str(stems_with_scenes), index_with_scenes)
+        _, timeline = mix_common.build_foreground(plans, cfg)
+        total_ms = max(timeline.values()) + 1000
+        with unittest.mock.patch.object(
+            mix_common, "apply_vintage_filter", wraps=mix_common.apply_vintage_filter
+        ) as mv:
+            mix_common.build_dialogue_layer(
+                plans, timeline, total_ms, cfg, vintage_scenes=["scene-1"]
+            )
+        mv.assert_called_once()  # only seq 3 (scene-1)
+
+    def test_sfx_configuration_vintage_scenes_field(self):
+        from xil_pipeline.models import SfxConfiguration
+        cfg = SfxConfiguration(
+            show="TEST", season=1, episode=1,
+            effects={},
+            vintage_scenes=["scene-3", "scene-4"],
+        )
+        assert cfg.vintage_scenes == ["scene-3", "scene-4"]
+
+    def test_sfx_configuration_defaults_empty(self):
+        from xil_pipeline.models import SfxConfiguration
+        cfg = SfxConfiguration(show="TEST", season=1, episode=1, effects={})
+        assert cfg.vintage_scenes == []
 
 
 # ─── Tests: mix_common._loop_clip ───
@@ -363,11 +498,12 @@ class TestAssembleAudio:
         assert "No stems found" in caplog.text
 
     def test_applies_phone_filter_for_frank(self, config, stems_with_audio, tmp_path):
+        import xil_pipeline.mix_common as _mc
         output_path = str(tmp_path / "master.mp3")
         with unittest.mock.patch("subprocess.run"):
             with unittest.mock.patch.object(
-                assembly, "apply_phone_filter",
-                wraps=assembly.apply_phone_filter
+                _mc, "apply_phone_filter",
+                wraps=_mc.apply_phone_filter
             ) as mock_filter:
                 assembly.assemble_audio(config, str(stems_with_audio), output_path)
                 mock_filter.assert_called_once()

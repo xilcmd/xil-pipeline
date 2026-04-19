@@ -11,7 +11,7 @@ hand-crafted (man/man1/xil.1) and is never overwritten by this script.
 
 Usage::
 
-    python scripts/build_man.py               # regenerate all 18 pages
+    python scripts/build_man.py               # regenerate all 20 pages
     python scripts/build_man.py xil-parse     # regenerate one page
     python scripts/build_man.py --check       # exit 1 if any file is stale
 
@@ -53,6 +53,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("xil-sfx-lib",  "xil_pipeline.XILU005_discover_SFX"),
     ("xil-splice",   "xil_pipeline.XILU006_splice_parsed"),
     ("xil-mp3-hash", "xil_pipeline.XILU007_mp3_hash"),
+    ("xil-stem-log", "xil_pipeline.XILU008_stem_log_report"),
 ]
 
 SEE_ALSO_LINES = [

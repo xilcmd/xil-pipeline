@@ -49,7 +49,7 @@ flowchart TD
     SFXLIB --> ST
 
     XILU004["XILU004_sample_voices_T2S.py"]
-    VSAMPLES["`🎙️ voice_samples/<TAG>/
+    VSAMPLES["`🎙️ voice_samples/<TAG>/<backend>/
     <actor>.mp3 — audition samples`"]
     C --> XILU004
     XILU004 --> VSAMPLES
@@ -372,6 +372,12 @@ flowchart TD
     CFG_LOAD --> SEQ
 ```
 
+> **Vintage filter (scene-scoped):** Add `"vintage_scenes": ["scene-3", "scene-4"]` to the
+> SFX config to apply a 1960s-era audio filter (HF roll-off + −1 dB) to all dialogue in
+> those scenes. The scene label must match the `scene` field in the parsed JSON.
+> Tape hiss or other ambient texture for the flashback is handled separately as a looped
+> AMBIENCE entry — no code change needed.
+
 > **Restartability:** XILP003 has no ElevenLabs dependency. Re-running assembly after adjusting
 > effects or adding missing stems requires no API key and carries no TTS quota risk.
 
@@ -498,17 +504,11 @@ flowchart TD
     CMP -->|no| HALT
 
     BUDGET["`get_best_model_for_budget()
-    remaining > 5000?`"]
+    always eleven_v3`"]
     V3["`eleven_v3
     standard quality`"]
-    FLASH["`eleven_flash_v2_5
-    50% cheaper`"]
-    FALLBACK["`eleven_multilingual_v2
-    API error fallback`"]
 
-    BUDGET -->|yes| V3
-    BUDGET -->|no| FLASH
-    BUDGET -->|exception| FALLBACK
+    BUDGET --> V3
 ```
 
 ---
@@ -538,7 +538,7 @@ flowchart TD
 
     TL5 --> DLG5["`build_dialogue_layer()
     dialogue stems at timeline positions
-    phone filter + pan applied`"]
+    audio filter chain + pan applied per speaker`"]
     TL5 --> AMB5["`build_ambience_layer(level_db=0)
     AMBIENCE looped to next cue
     no ducking — producer controls level`"]
@@ -1059,7 +1059,46 @@ flowchart TD
 > warnings from XILP005.  XILP008 additionally catches stems whose seq is not present
 > in the parsed JSON at all (orphaned stems), which XILP005 does not warn about.
 
-## 15. XILP009 — Reverse Script Generator
+## 15. XILU008 — Stem Log Report
+
+Parses daily pipeline log files to reconstruct a chronological stem generation history.
+Useful for auditing what was generated, when, with which backend, and confirming SHA256 checksums.
+
+```bash
+xil-stem-log --episode S03E03
+xil-stem-log --episode S03E03 --since 2026-04-01 --output stem_log.csv
+xil-stem-log --logs-dir /path/to/logs
+```
+
+### Flow
+
+```mermaid
+flowchart TD
+    LOGS["`📂 logs/xil_YYYY-MM-DD.log
+    One or more daily log files`"]
+    PARSE["`Parse log lines
+    Regex patterns per backend:
+    elevenlabs / gtts / chatterbox`"]
+    STATE["`State machine
+    generation line → saved → SHA256`"]
+    RUNIDX["`run_index
+    increments per 'Phase 1' marker`"]
+    RECORDS["`Records:
+    date · run_index · seq · speaker
+    backend · model · sha256
+    approx_time · out_path`"]
+    CSV["`📊 stem_log_report.csv
+    Chronological stem history`"]
+
+    LOGS --> PARSE --> STATE --> RUNIDX --> RECORDS --> CSV
+```
+
+> **`--since DATE`** filters to logs on or after the given date (YYYY-MM-DD format).
+> **No API key required** — reads local log files only.
+
+---
+
+## 16. XILP009 — Reverse Script Generator
 
 Reconstructs a readable markdown production script from a parsed JSON, using cast config
 for speaker display names.  Serves as a verification tool and produces a clean "revised"
@@ -1106,7 +1145,7 @@ flowchart TD
 >
 > **No API key required** — read-only transformation, no audio generated.
 
-## 16. XILP010 — Studio Export Importer
+## 17. XILP010 — Studio Export Importer
 
 Extracts dialogue stems from an ElevenLabs Studio export ZIP and renames them to the pipeline's stem naming convention (`{seq:03d}_{section}[-{scene}]_{speaker}.mp3`).
 
@@ -1145,7 +1184,7 @@ flowchart TD
 > **No API key required** — extraction only, no API calls made.
 > After import, run XILU002 for SFX stems and XILP002 for preamble/postamble injection.
 
-## 17. XILP011 — Final Master MP3 Export
+## 18. XILP011 — Final Master MP3 Export
 
 Overlays the four DAW layer WAV files produced by XILP005 into a single stereo MP3 file suitable for podcast distribution.
 
@@ -1190,7 +1229,7 @@ flowchart TD
 
 ## Man Pages
 
-All 19 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
+All 21 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
 
 ### Accessing man pages
 

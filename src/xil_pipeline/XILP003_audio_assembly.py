@@ -38,7 +38,7 @@ from pydub import AudioSegment
 
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.mix_common import (
-    apply_phone_filter,
+    _apply_speaker_filters,
     build_ambience_layer,
     build_foreground,
     build_music_layer,
@@ -91,8 +91,7 @@ def assemble_audio(config: dict[str, dict], stems_dir: str, final_output: str, g
 
         # Apply per-speaker effects
         if speaker in config:
-            if config[speaker]["filter"]:
-                segment = apply_phone_filter(segment)
+            segment = _apply_speaker_filters(segment, config[speaker].get("filter"))
             segment = segment.pan(config[speaker]["pan"])
 
         full_vocals += segment + AudioSegment.silent(duration=gap_ms)
@@ -134,8 +133,9 @@ def assemble_multitrack(
 
     logger.info("--- Phase 2: Assembling %d stems (multi-track) ---", len(stem_plans))
 
+    vintage_scenes = sfx_config.vintage_scenes if sfx_config else []
     foreground, timeline = build_foreground(
-        stem_plans, config, apply_phone_filter, gap_ms=gap_ms
+        stem_plans, config, gap_ms=gap_ms, vintage_scenes=vintage_scenes
     )
 
     if len(foreground) == 0:
