@@ -69,12 +69,12 @@ def _find_episodes() -> list[tuple[str, str]]:
                 seen.add(pair)
                 results.append(pair)
 
-    results.sort(key=lambda x: x[1], reverse=True)
+    results.sort(key=lambda x: (x[0], x[1]))
     return results
 
 
 def _ep_choice(slug: str, tag: str) -> str:
-    return f"{tag}  ({slug})"
+    return f"{slug}  {tag}"
 
 
 def _episode_choices() -> list[str]:
@@ -82,10 +82,10 @@ def _episode_choices() -> list[str]:
 
 
 def _parse_choice(choice: str) -> tuple[str, str]:
-    """'S03E03  (the413)' → ('the413', 'S03E03')"""
-    m = re.match(r"^(\S+)\s+\((.+)\)$", choice.strip())
-    if m:
-        return m.group(2), m.group(1)
+    """'the413  S03E03' → ('the413', 'S03E03')"""
+    parts = choice.strip().split()
+    if len(parts) >= 2:
+        return parts[0], parts[1]
     return "", ""
 
 
@@ -288,18 +288,28 @@ def _build_app():
             gr.update(choices=new_choices),
         )
 
+    def auto_dir_from_show(show_name: str, current_dir: str) -> str:
+        if current_dir.strip():
+            return current_dir
+        import re
+        slug = re.sub(r"[^a-z0-9]+", "-", show_name.strip().lower()).strip("-")
+        return slug if slug else ""
+
     def run_init(show_name: str, content_type: str, directory: str, season: str, season_title: str):
         if not show_name.strip():
             yield "Show name is required."
             return
+        import re
+        target_dir = directory.strip()
+        if not target_dir:
+            target_dir = re.sub(r"[^a-z0-9]+", "-", show_name.strip().lower()).strip("-")
         cmd = [sys.executable, "-m", "xil_pipeline.xil_init",
                "--show", show_name.strip(), "--type", content_type]
         if season.strip():
             cmd += ["--season", season.strip()]
         if season_title.strip():
             cmd += ["--season-title", season_title.strip()]
-        if directory.strip():
-            cmd.append(directory.strip())
+        cmd.append(target_dir)
         yield "$ " + " ".join(cmd) + "\n\n"
         try:
             proc = subprocess.Popen(
@@ -319,6 +329,24 @@ def _build_app():
         except Exception as exc:
             yield f"Error: {exc}"
 
+    _PROJECT_JSON_PATH = os.path.join(workspace, "project.json")
+
+    def load_project_json() -> str:
+        if os.path.exists(_PROJECT_JSON_PATH):
+            with open(_PROJECT_JSON_PATH, encoding="utf-8") as f:
+                return f.read()
+        return json.dumps({"show": "", "season": 1}, indent=2)
+
+    def save_project_json(text: str) -> str:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            return f"Invalid JSON — not saved: {exc}"
+        with open(_PROJECT_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        return f"Saved {_PROJECT_JSON_PATH}"
+
     # ── layout ────────────────────────────────────────────────────────────
 
     with gr.Blocks(title="xil-pipeline", theme=gr.themes.Soft()) as demo:
@@ -329,6 +357,22 @@ def _build_app():
             refresh_btn = gr.Button("⟳ Refresh", size="sm", scale=0)
 
         with gr.Tabs():
+
+            # ── Tab 0: Project ───────────────────────────────────────
+            with gr.Tab("Project"):
+                gr.Markdown(f"### `{_PROJECT_JSON_PATH}`")
+                proj_editor = gr.Code(
+                    value=load_project_json(),
+                    language="json",
+                    lines=20,
+                    label="project.json",
+                )
+                with gr.Row():
+                    proj_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
+                    proj_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
+                proj_status = gr.Textbox(label="Status", lines=1, interactive=False)
+                proj_reload_btn.click(fn=load_project_json, inputs=[], outputs=proj_editor)
+                proj_save_btn.click(fn=save_project_json, inputs=proj_editor, outputs=proj_status)
 
             # ── Tab 1: Episodes ──────────────────────────────────────
             with gr.Tab("Episodes"):
@@ -438,8 +482,8 @@ def _build_app():
                         scale=1,
                     )
                     init_dir = gr.Textbox(
-                        label="Directory (optional)",
-                        placeholder="defaults to current directory",
+                        label="New workspace directory",
+                        placeholder="auto-filled from show name",
                         scale=2,
                     )
                 with gr.Row():
@@ -454,6 +498,11 @@ def _build_app():
                 init_btn = gr.Button("▶ Create workspace", variant="primary")
                 init_log = gr.Textbox(
                     label="Output", lines=12, max_lines=12, autoscroll=True, interactive=False,
+                )
+                init_show.change(
+                    fn=auto_dir_from_show,
+                    inputs=[init_show, init_dir],
+                    outputs=init_dir,
                 )
                 init_btn.click(
                     fn=run_init,

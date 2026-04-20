@@ -661,7 +661,7 @@ def main() -> None:
 
         stems_dir = os.path.join(STEMS_DIR, slug, tag)
         parsed_path = args.parsed or p["parsed"]
-        output_dir = args.output_dir or os.path.join(DAW_DIR, tag)
+        output_dir = args.output_dir or p["daw"]
 
         if not os.path.exists(parsed_path):
             logger.warning(f"Parsed JSON not found: {parsed_path!r}. Run XILP001 first.")

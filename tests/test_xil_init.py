@@ -29,7 +29,7 @@ def test_scaffold_creates_project_json(workspace):
 
 
 def test_scaffold_creates_speakers_json(workspace):
-    path = os.path.join(workspace, "speakers.json")
+    path = os.path.join(workspace, "configs", "testshow", "speakers.json")
     assert os.path.exists(path)
     with open(path) as f:
         data = json.load(f)
@@ -118,7 +118,7 @@ def test_sample_script_parses_with_speakers(workspace, monkeypatch):
     # CWD must be workspace so resolve_season/resolve_season_title read workspace's project.json
     monkeypatch.chdir(workspace)
 
-    speakers_path = os.path.join(workspace, "speakers.json")
+    speakers_path = os.path.join(workspace, "configs", "testshow", "speakers.json")
     script_path = os.path.join(workspace, "scripts", "sample_S01E01.md")
 
     # Load speakers from the scaffolded speakers.json

@@ -88,6 +88,7 @@ Four types are supported: **podcast**, **audiobook**, **drama**, **special**. Th
 New workspaces created with `xil-init` use a normalized directory layout:
 
 ```
+configs/{slug}/speakers.json        ← was speakers.json at root
 configs/{slug}/cast_{tag}.json      ← was cast_{slug}_{tag}.json at root
 configs/{slug}/sfx_{tag}.json       ← was sfx_{slug}_{tag}.json at root
 parsed/{slug}/parsed_{tag}.json     ← was parsed/parsed_{slug}_{tag}.json
@@ -120,7 +121,7 @@ Creates: `project.json`, `speakers.json`, `scripts/sample_{tag}.md`, and empty s
 
 ## Speaker Configuration
 
-`speakers.json` in the project root defines the speaker names the parser recognizes:
+`configs/{slug}/speakers.json` defines the speaker names the parser recognizes (created by `xil-init`):
 
 ```json
 [
@@ -130,7 +131,7 @@ Creates: `project.json`, `speakers.json`, `scripts/sample_{tag}.md`, and empty s
 ]
 ```
 
-Resolution order: `--speakers PATH` flag > `speakers.json` in CWD > built-in defaults. The list is auto-sorted longest-first for correct compound-name matching. Both `xil-scan` (XILP000) and `xil-parse` (XILP001) accept the `--speakers` flag.
+Resolution order: `--speakers PATH` flag > `configs/{slug}/speakers.json` > `speakers.json` in CWD (legacy fallback) > built-in defaults. The list is auto-sorted longest-first for correct compound-name matching. Both `xil-scan` (XILP000) and `xil-parse` (XILP001) accept the `--speakers` flag.
 
 ## Pre-Flight Script Scanner
 

@@ -99,8 +99,9 @@ def load_speakers(
     Resolution order:
 
     1. Explicit *path* (from ``--speakers`` CLI flag)
-    2. ``speakers.json`` in the current working directory
-    3. Built-in ``_BUILTIN_KNOWN_SPEAKERS`` / ``_BUILTIN_SPEAKER_KEYS``
+    2. ``configs/{slug}/speakers.json`` (normalized layout)
+    3. ``speakers.json`` in the current working directory (legacy fallback)
+    4. Built-in ``_BUILTIN_KNOWN_SPEAKERS`` / ``_BUILTIN_SPEAKER_KEYS``
 
     The JSON file is an array of objects with ``display`` and ``key`` fields::
 
@@ -122,6 +123,18 @@ def load_speakers(
     # Determine which file to load
     speakers_file = path
     if speakers_file is None:
+        # 2a. configs/{slug}/speakers.json (normalized layout)
+        try:
+            from xil_pipeline.models import load_project_config, show_slug
+            cfg = load_project_config()
+            slug = show_slug(cfg.show)
+            normalized = os.path.join(os.getcwd(), "configs", slug, "speakers.json")
+            if os.path.exists(normalized):
+                speakers_file = normalized
+        except Exception:
+            pass
+    if speakers_file is None:
+        # 2b. speakers.json at workspace root (legacy fallback)
         cwd_file = os.path.join(os.getcwd(), "speakers.json")
         if os.path.exists(cwd_file):
             speakers_file = cwd_file

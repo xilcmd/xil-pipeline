@@ -450,8 +450,13 @@ def scaffold(
     else:
         logger.info(f"  Skipped {project_path} (already exists)")
 
-    # speakers.json
-    speakers_path = os.path.join(directory, "speakers.json")
+    # Subdirectories (new normalized layout — configs/{slug}/ for episode configs)
+    for subdir in ("scripts", f"configs/{slug}", "parsed", "stems", "SFX", "daw", "masters", "cues"):
+        path = os.path.join(directory, subdir)
+        os.makedirs(path, exist_ok=True)
+
+    # speakers.json — lives in configs/{slug}/ so each show has its own cast list
+    speakers_path = os.path.join(directory, "configs", slug, "speakers.json")
     if not os.path.exists(speakers_path):
         speakers = SPEAKERS_BY_TYPE.get(content_type, SPEAKERS_BY_TYPE["podcast"])
         with open(speakers_path, "w", encoding="utf-8") as f:
@@ -460,11 +465,6 @@ def scaffold(
         logger.info(f"  Created {speakers_path}")
     else:
         logger.info(f"  Skipped {speakers_path} (already exists)")
-
-    # Subdirectories (new normalized layout — configs/{slug}/ for episode configs)
-    for subdir in ("scripts", f"configs/{slug}", "parsed", "stems", "SFX", "daw", "masters", "cues"):
-        path = os.path.join(directory, subdir)
-        os.makedirs(path, exist_ok=True)
 
     # Sample script
     tag = SAMPLE_TAG_BY_TYPE.get(content_type, "S01E01")
@@ -505,7 +505,7 @@ Getting Started
    {cd_prefix}xil-produce --episode {tag} --dry-run
 
 5. To use your own script:
-   - Edit speakers.json with your cast
+   - Edit configs/<slug>/speakers.json with your cast
    - Write your script in scripts/
    - Set your ElevenLabs API key: export ELEVENLABS_API_KEY=your-key
    - Run the pipeline stages in order (see README.md)

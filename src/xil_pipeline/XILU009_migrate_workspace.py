@@ -6,6 +6,7 @@
 
 Old (flat) layout::
 
+    speakers.json                   → configs/{slug}/speakers.json
     cast_{slug}_{tag}.json          → configs/{slug}/cast_{tag}.json
     sfx_{slug}_{tag}.json           → configs/{slug}/sfx_{tag}.json
     parsed/parsed_{slug}_{tag}.json → parsed/{slug}/parsed_{tag}.json
@@ -70,6 +71,13 @@ def _discover_moves(workspace: str = ".") -> list[tuple[str, str]]:
         dst = _abs(dst_rel)
         if os.path.exists(src) and src != dst:
             moves.append((src, dst))
+
+    # --- Root-level speakers.json → configs/{slug}/speakers.json ---
+    root_speakers = os.path.join(workspace, "speakers.json")
+    if os.path.exists(root_speakers):
+        slug = _infer_slug_from_project(workspace)
+        if slug:
+            _add("speakers.json", f"configs/{slug}/speakers.json")
 
     # --- Root-level cast configs: cast_{slug}_{tag}.json ---
     for path in glob.glob(os.path.join(workspace, "cast_*.json")):
@@ -172,6 +180,21 @@ def _discover_moves(workspace: str = ".") -> list[tuple[str, str]]:
                     _add(f"cues/cues_manifest_{tag}.json", f"cues/{slug}/cues_manifest_{tag}.json")
 
     return moves
+
+
+def _infer_slug_from_project(workspace: str) -> str | None:
+    """Read project.json at workspace root to derive the show slug."""
+    project_path = os.path.join(workspace, "project.json")
+    if not os.path.exists(project_path):
+        return None
+    try:
+        import json as _json
+        from xil_pipeline.models import show_slug
+        with open(project_path, encoding="utf-8") as f:
+            data = _json.load(f)
+        return show_slug(data.get("show", ""))
+    except Exception:
+        return None
 
 
 def _infer_slug_from_tag(workspace: str, tag: str) -> str | None:
