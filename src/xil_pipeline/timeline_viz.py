@@ -293,14 +293,18 @@ _HTML_TEMPLATE = """\
   .controls button {{ background: #333; color: #ccc; border: 1px solid #555; padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }}
   .controls button:hover {{ background: #444; }}
   .zoom-info {{ font-size: 12px; color: #888; }}
-  #xil-player {{ position: fixed; bottom: 0; left: 0; right: 0; background: #111;
-    padding: 6px 12px; border-top: 1px solid #444; z-index: 100; display: none; }}
+  #xil-player {{ position: sticky; top: 0; z-index: 200; background: #111;
+    padding: 6px 12px; border-bottom: 1px solid #444; margin-bottom: 8px; display: none; }}
   #xil-player.active {{ display: block; }}
   #player-label {{ font-size: 11px; color: #aaa; margin-bottom: 3px; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }}
 </style>
 </head>
 <body>
+<div id="xil-player">
+  <div id="player-label"></div>
+  <audio id="audio-el" controls style="width:100%;height:36px;"></audio>
+</div>
 <h1>Timeline: {tag}</h1>
 <p class="subtitle">Duration: {duration_fmt} &middot; {span_count} assets across 4 layers &middot; Generated {generated_at}</p>
 <div class="controls">
@@ -310,10 +314,6 @@ _HTML_TEMPLATE = """\
   <span class="zoom-info" id="zoom-info">100%</span>
 </div>
 <div id="floattip"></div>
-<div id="xil-player">
-  <div id="player-label"></div>
-  <audio id="audio-el" controls style="width:100%;height:36px;"></audio>
-</div>
 <div class="timeline-container" id="tc">
   <div class="timeline-inner" id="ti">
     <div class="ruler" id="ruler"></div>
@@ -370,7 +370,8 @@ function render() {{
       const seqPrefix = sp.seq != null ? '<span style="opacity:0.6">#'+String(sp.seq).padStart(3,'0')+'</span> ' : '';
       tips[ti] = seqPrefix+'<strong>'+sp.label.replace(/</g,'&lt;')+'</strong>'+snippetLine+'<br>'+fmtTime(sp.start_s)+' \u2192 '+fmtTime(sp.end_s)+' ('+dur+'s)'+tipExtra;
       tiToSeq[ti] = sp.seq;
-      lhtml += '<div class="span '+COLORS[key]+'" style="left:'+left+'%;width:'+w+'%" data-ti="'+ti+'">'+rampBadges+'</div>';
+      const seqAttr = (sp.seq != null) ? ' data-seq="'+sp.seq+'"' : '';
+      lhtml += '<div class="span '+COLORS[key]+'" style="left:'+left+'%;width:'+w+'%" data-ti="'+ti+'"'+seqAttr+'>'+rampBadges+'</div>';
       ti++;
     }}
     lhtml += '</div></div>';
@@ -419,17 +420,16 @@ document.getElementById('tc').addEventListener('wheel', function(e) {{
 render();
 
 document.getElementById('layers').addEventListener('click', function(e) {{
-  const el = e.target.closest('.span[data-ti]');
+  const el = e.target.closest('.span[data-seq]');
   if (!el) return;
-  const ti = +el.dataset.ti;
-  const seq = tiToSeq[ti];
-  if (seq == null) return;
-  const fp = CLIPS[String(seq)];
+  const seq = el.dataset.seq;
+  const fp = CLIPS[seq];
   if (!fp) return;
   document.querySelectorAll('.span.playing').forEach(function(s) {{ s.classList.remove('playing'); }});
   el.classList.add('playing');
   const audioEl = document.getElementById('audio-el');
-  const rawLabel = (tips[ti] || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const ti = el.dataset.ti;
+  const rawLabel = ti != null ? (tips[ti] || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : seq;
   document.getElementById('player-label').textContent = rawLabel;
   audioEl.src = '/gradio_api/file=' + fp;
   document.getElementById('xil-player').classList.add('active');
