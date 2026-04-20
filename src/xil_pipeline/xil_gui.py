@@ -272,8 +272,11 @@ def _build_app():
                 f"Generate it first:<br>"
                 f"<code>xil daw --episode {tag} --timeline-html</code></p>"
             )
-        with open(html_path, encoding="utf-8") as f:
-            return f.read()
+        abs_path = os.path.abspath(html_path)
+        return (
+            f'<iframe src="/gradio_api/file={abs_path}" '
+            f'style="width:100%;height:600px;border:none;"></iframe>'
+        )
 
     def refresh_all():
         new_choices = _episode_choices()
