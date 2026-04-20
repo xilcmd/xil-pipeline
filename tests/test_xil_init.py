@@ -38,6 +38,10 @@ def test_scaffold_creates_speakers_json(workspace):
     for entry in data:
         assert "display" in entry
         assert "key" in entry
+    # Default podcast type has host and caller
+    keys = [e["key"] for e in data]
+    assert "host" in keys
+    assert "caller" in keys
 
 
 def test_scaffold_creates_sample_script(workspace):
@@ -120,8 +124,8 @@ def test_sample_script_parses_with_speakers(workspace, monkeypatch):
     # Load speakers from the scaffolded speakers.json
     known, keys = load_speakers(speakers_path)
     assert "HOST" in known
+    assert "CO-HOST" in known
     assert "CALLER" in known
-    assert "GUEST" in known
 
     # Parse the script
     parsed = parse_script(script_path, speakers_path=speakers_path)
@@ -131,13 +135,12 @@ def test_sample_script_parses_with_speakers(workspace, monkeypatch):
     assert parsed["episode"] == 1
     assert parsed["title"] == "Pilot"
 
-    # Should have dialogue entries for all three speakers
+    # Should have dialogue entries for at least two speakers
     speakers_found = set(
         e["speaker"] for e in parsed["entries"] if e["type"] == "dialogue"
     )
     assert "host" in speakers_found
     assert "caller" in speakers_found
-    assert "guest" in speakers_found
 
     # Should have directions (SFX, AMBIENCE, BEAT, MUSIC)
     direction_types = set(

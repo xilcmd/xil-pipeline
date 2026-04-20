@@ -606,6 +606,10 @@ class TestMainCli:
         cues_ingester.SFX_DIR = str(tmp_path / "SFX")
         cues_ingester.CUES_DIR = str(tmp_path / "cues")
         (tmp_path / "project.json").write_text(json.dumps({"show": "THE 413"}))
+        # Create a legacy cast config to trigger derive_paths() legacy layout detection
+        (tmp_path / "cast_the413_S02E03.json").write_text(
+            json.dumps({"show": "THE 413", "episode": 3, "cast": {}}), encoding="utf-8"
+        )
         original_cwd = os.getcwd()
         os.chdir(str(tmp_path))
         # sfx_config_file fixture already writes to tmp_path — no copy needed

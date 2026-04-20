@@ -54,6 +54,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("xil-splice",   "xil_pipeline.XILU006_splice_parsed"),
     ("xil-mp3-hash", "xil_pipeline.XILU007_mp3_hash"),
     ("xil-stem-log", "xil_pipeline.XILU008_stem_log_report"),
+    ("xil-migrate-workspace", "xil_pipeline.XILU009_migrate_workspace"),
 ]
 
 SEE_ALSO_LINES = [
@@ -77,6 +78,7 @@ SEE_ALSO_LINES = [
     ".BR xil-sfx-lib (1),",
     ".BR xil-splice (1),",
     ".BR xil-mp3-hash (1),",
+    ".BR xil-migrate-workspace (1),",
     ".BR xil-init (1)",
     ".SH AUTHOR",
     "John Brissette <xilcmd@gmail.com>",

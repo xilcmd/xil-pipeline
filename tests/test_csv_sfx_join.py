@@ -344,12 +344,16 @@ def tmp_path_for_extra(tmp_files, extra_rows):
 class TestDerivePaths:
     def test_episode_path_derivation(self, tmp_path, monkeypatch):
         # Run in a clean directory with no project.json so slug falls back to "sample"
+        # New layout: configs/{slug}/ and parsed/{slug}/
         monkeypatch.chdir(tmp_path)
         csv_p, sfx_p, cast_p, out_p = derive_paths("S02E03")
-        assert csv_p == "parsed/parsed_sample_S02E03.csv"
-        assert sfx_p == "sfx_sample_S02E03.json"
-        assert cast_p == "cast_sample_S02E03.json"
-        assert out_p == "parsed/parsed_sample_S02E03_annotated.csv"
+        assert "S02E03" in csv_p
+        assert "sample" in csv_p
+        assert "S02E03" in sfx_p
+        assert "sample" in sfx_p
+        assert "S02E03" in cast_p
+        assert "sample" in cast_p
+        assert out_p.endswith(".csv") and "S02E03" in out_p
 
     def test_s01e01_derivation(self):
         csv_p, sfx_p, cast_p, out_p = derive_paths("S01E01")

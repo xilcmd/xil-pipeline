@@ -1098,7 +1098,61 @@ flowchart TD
 
 ---
 
-## 16. XILP009 — Reverse Script Generator
+## 16. XILU009 — Workspace Migration
+
+Moves pre-0.1.8 workspace files to the normalized layout introduced in 0.1.8. Idempotent —
+re-running skips files already at their target path. Run once per existing workspace after
+upgrading; new workspaces created by `xil-init` use the normalized layout automatically.
+
+```bash
+xil migrate-workspace --dry-run    # preview what would move
+xil migrate-workspace              # execute moves
+xil migrate-workspace --workspace /path/to/workspace
+```
+
+### Layout change summary
+
+| Asset | Pre-0.1.8 (legacy) | 0.1.8+ (normalized) |
+|-------|-------------------|----------------------|
+| Cast config | `cast_{slug}_{tag}.json` (root) | `configs/{slug}/cast_{tag}.json` |
+| SFX config | `sfx_{slug}_{tag}.json` (root) | `configs/{slug}/sfx_{tag}.json` |
+| Parsed JSON | `parsed/parsed_{slug}_{tag}.json` | `parsed/{slug}/parsed_{tag}.json` |
+| DAW layers | `daw/{tag}/` | `daw/{slug}/{tag}/` |
+| Masters | `masters/{slug}_{tag}_master.mp3` | `masters/{slug}/{tag}_master.mp3` |
+| Cues | `cues/cues_{slug}_{tag}.md` | `cues/{slug}/cues_{tag}.md` |
+| Cues manifest | `cues/cues_manifest_{tag}.json` | `cues/{slug}/cues_manifest_{tag}.json` |
+| Stems | `stems/{slug}/{tag}/` | unchanged |
+
+### Flow
+
+```mermaid
+flowchart TD
+    SCAN["`Scan workspace
+    Regex patterns per asset type`"]
+    DISCO["`_discover_moves()
+    Build (src → dst) list`"]
+    INFER["`_infer_slug_from_tag()
+    Cross-ref cast configs for
+    daw/ and cues_manifest/ moves`"]
+    DRY{dry_run?}
+    EXEC["`_execute_moves()
+    os.makedirs + shutil.move`"]
+    REPORT["`Print summary:
+    N files moved / skipped`"]
+
+    SCAN --> DISCO --> INFER --> DRY
+    DRY -- yes --> REPORT
+    DRY -- no --> EXEC --> REPORT
+```
+
+> **Backward compatibility**: `derive_paths()` automatically detects the legacy layout (root cast
+> config present) and returns legacy paths, so existing workspaces continue to work without
+> migration. Run `xil migrate-workspace` when ready to adopt the new layout.
+> **No API key required** — local filesystem operations only.
+
+---
+
+## 17. XILP009 — Reverse Script Generator
 
 Reconstructs a readable markdown production script from a parsed JSON, using cast config
 for speaker display names.  Serves as a verification tool and produces a clean "revised"
@@ -1145,7 +1199,7 @@ flowchart TD
 >
 > **No API key required** — read-only transformation, no audio generated.
 
-## 17. XILP010 — Studio Export Importer
+## 18. XILP010 — Studio Export Importer
 
 Extracts dialogue stems from an ElevenLabs Studio export ZIP and renames them to the pipeline's stem naming convention (`{seq:03d}_{section}[-{scene}]_{speaker}.mp3`).
 
@@ -1184,7 +1238,7 @@ flowchart TD
 > **No API key required** — extraction only, no API calls made.
 > After import, run XILU002 for SFX stems and XILP002 for preamble/postamble injection.
 
-## 18. XILP011 — Final Master MP3 Export
+## 19. XILP011 — Final Master MP3 Export
 
 Overlays the four DAW layer WAV files produced by XILP005 into a single stereo MP3 file suitable for podcast distribution.
 

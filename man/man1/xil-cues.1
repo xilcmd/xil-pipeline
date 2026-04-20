@@ -1,9 +1,9 @@
-.TH XIL\-CUES "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.TH XIL\-CUES "1" "2026\-04\-19" "xil\-pipeline 0.1.8" "User Commands"
 .SH NAME
 xil\-cues
 .SH SYNOPSIS
 .B xil\-cues
-[-h] --episode EPISODE [--show SHOW] [--cues CUES] [--dry-run] [--generate] [--enrich-sfx-config]
+[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--cues CUES] [--dry-run] [--generate] [--enrich-sfx-config]
 .SH DESCRIPTION
 Parse a sound cues & music prompts markdown file into an asset manifest, audit the SFX library, and optionally generate new assets or enrich the episode sfx config.
 
@@ -11,6 +11,10 @@ Parse a sound cues & music prompts markdown file into an asset manifest, audit t
 .TP
 \fB\-\-episode\fR \fI\,EPISODE\/\fR
 Episode tag (e.g. S02E03) — derives sfx config path
+
+.TP
+\fB\-\-tag\fR \fI\,TAG\/\fR
+Raw tag for non\-episodic content (e.g. V01C03, D01)
 
 .TP
 \fB\-\-show\fR \fI\,SHOW\/\fR
@@ -53,6 +57,7 @@ Update episode SFX config with cues\-sheet prompts/durations
 .BR xil-sfx-lib (1),
 .BR xil-splice (1),
 .BR xil-mp3-hash (1),
+.BR xil-migrate-workspace (1),
 .BR xil-init (1)
 .SH AUTHOR
 John Brissette <xilcmd@gmail.com>

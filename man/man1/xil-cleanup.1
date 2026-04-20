@@ -1,9 +1,9 @@
-.TH XIL\-CLEANUP "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.TH XIL\-CLEANUP "1" "2026\-04\-19" "xil\-pipeline 0.1.8" "User Commands"
 .SH NAME
 xil\-cleanup
 .SH SYNOPSIS
 .B xil\-cleanup
-[-h] [--episode TAG] [--show SHOW] [--parsed PATH] [--stems DIR] [--dry-run]
+[-h] [--episode TAG] [--tag TAG] [--show SHOW] [--parsed PATH] [--stems DIR] [--dry-run]
 .SH DESCRIPTION
 Remove stale stems that no longer match the current parsed script.  Use \-\-dry\-run first to review what would be deleted.
 
@@ -11,6 +11,10 @@ Remove stale stems that no longer match the current parsed script.  Use \-\-dry\
 .TP
 \fB\-\-episode\fR \fI\,TAG\/\fR
 Episode tag (e.g. S02E03); derives \-\-parsed and \-\-stems
+
+.TP
+\fB\-\-tag\fR \fI\,TAG\/\fR
+Raw tag for non\-episodic content (e.g. V01C03, D01); same as \-\-episode
 
 .TP
 \fB\-\-show\fR \fI\,SHOW\/\fR
@@ -48,6 +52,7 @@ List stale stems without deleting them
 .BR xil-sfx-lib (1),
 .BR xil-splice (1),
 .BR xil-mp3-hash (1),
+.BR xil-migrate-workspace (1),
 .BR xil-init (1)
 .SH AUTHOR
 John Brissette <xilcmd@gmail.com>

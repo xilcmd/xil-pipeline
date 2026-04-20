@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xil-pipeline"
-version = "0.1.7"
+version = "0.1.8"
 description = "Show-agnostic audio production pipeline: markdown script to podcast-ready MP3 via ElevenLabs"
 license = "AGPL-3.0-or-later"
 readme = "README.md"
@@ -37,6 +37,7 @@ Issues = "https://github.com/xilcmd/xil-pipeline/issues"
 google = ["google-genai>=1.60,<2"]
 tts-alt = ["gTTS>=2.5,<3", "pyttsx3>=2.99,<3"]
 ollama = ["ollama>=0.6,<1"]
+gui = ["gradio>=4.0,<6"]
 all = ["xil-pipeline[google,tts-alt,ollama]"]
 dev = [
     "pytest>=9.0,<10",
@@ -73,8 +74,10 @@ xil-sample     = "xil_pipeline.XILU004_sample_voices_T2S:main"
 xil-sfx-lib    = "xil_pipeline.XILU005_discover_SFX:main"
 xil-splice     = "xil_pipeline.XILU006_splice_parsed:main"
 xil-mp3-hash   = "xil_pipeline.XILU007_mp3_hash:main"
-xil-stem-log   = "xil_pipeline.XILU008_stem_log_report:main"
-xil-init       = "xil_pipeline.xil_init:main"
+xil-stem-log          = "xil_pipeline.XILU008_stem_log_report:main"
+xil-migrate-workspace = "xil_pipeline.XILU009_migrate_workspace:main"
+xil-init              = "xil_pipeline.xil_init:main"
+xil-gui               = "xil_pipeline.xil_gui:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/xil_pipeline"]

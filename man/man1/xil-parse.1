@@ -1,9 +1,9 @@
-.TH XIL\-PARSE "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.TH XIL\-PARSE "1" "2026\-04\-19" "xil\-pipeline 0.1.8" "User Commands"
 .SH NAME
 xil\-parse
 .SH SYNOPSIS
 .B xil\-parse
-[-h] [--episode EPISODE] [--show SHOW] [--output OUTPUT] [--preview PREVIEW] [--quiet] [--debug] [--stats] [--speakers SPEAKERS] script
+[-h] [--episode EPISODE | --tag TAG] [--show SHOW] [--output OUTPUT] [--preview PREVIEW] [--quiet] [--debug] [--stats] [--speakers SPEAKERS] script
 .SH DESCRIPTION
 Parse production script markdown into structured JSON
 
@@ -16,6 +16,11 @@ Path to the production script markdown file
 \fB\-\-episode\fR \fI\,EPISODE\/\fR
 Episode tag (e.g. S01E01) — validates header and auto\-generates absent
 cast/sfx configs
+
+.TP
+\fB\-\-tag\fR \fI\,TAG\/\fR
+Raw tag for non\-episodic content (e.g. V01C03, D01, CH003) — skips
+season/episode header validation
 
 .TP
 \fB\-\-show\fR \fI\,SHOW\/\fR
@@ -65,6 +70,7 @@ Path to speakers.json (default: auto\-detect from CWD, then built\-in)
 .BR xil-sfx-lib (1),
 .BR xil-splice (1),
 .BR xil-mp3-hash (1),
+.BR xil-migrate-workspace (1),
 .BR xil-init (1)
 .SH AUTHOR
 John Brissette <xilcmd@gmail.com>

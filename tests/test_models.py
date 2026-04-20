@@ -1007,28 +1007,49 @@ class TestDerivePaths:
     """Tests for the derive_paths() function."""
 
     def test_all_keys_present(self):
-        paths = models.derive_paths("the413", "S01E01")
+        paths = models.derive_paths("sample", "S01E01")
         expected_keys = {
             "cast", "sfx", "parsed", "parsed_csv", "annotated_csv",
             "master", "cues", "cues_manifest", "orig_parsed", "revised_script",
-            "stems",
+            "stems", "daw",
         }
         assert set(paths.keys()) == expected_keys
 
     def test_the413_paths_match_legacy(self):
-        paths = models.derive_paths("the413", "S01E01")
+        # derive_paths_legacy always returns pre-0.1.8 paths regardless of filesystem
+        paths = models.derive_paths_legacy("the413", "S01E01")
         assert paths["cast"] == "cast_the413_S01E01.json"
         assert paths["sfx"] == "sfx_the413_S01E01.json"
         assert paths["parsed"] == "parsed/parsed_the413_S01E01.json"
         assert paths["master"] == "the413_S01E01_master.mp3"
+        assert paths["daw"] == "daw/S01E01"
 
-    def test_different_show(self):
+    def test_new_layout_paths(self, tmp_path, monkeypatch):
+        # derive_paths returns new paths when no legacy files exist (clean dir)
+        monkeypatch.chdir(tmp_path)
         paths = models.derive_paths("nightowls", "S02E05")
-        assert paths["cast"] == "cast_nightowls_S02E05.json"
-        assert paths["sfx"] == "sfx_nightowls_S02E05.json"
-        assert paths["parsed"] == "parsed/parsed_nightowls_S02E05.json"
+        assert paths["cast"] == "configs/nightowls/cast_S02E05.json"
+        assert paths["sfx"] == "configs/nightowls/sfx_S02E05.json"
+        assert paths["parsed"] == "parsed/nightowls/parsed_S02E05.json"
+        assert paths["daw"] == "daw/nightowls/S02E05"
 
-    def test_cues_manifest_has_no_slug(self):
+    def test_different_show(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        paths = models.derive_paths("nightowls", "S02E05")
+        assert "nightowls" in paths["cast"]
+        assert "S02E05" in paths["cast"]
+
+    def test_cues_manifest_in_new_layout(self, tmp_path, monkeypatch):
+        # In a clean directory (no legacy files), new layout includes slug
+        monkeypatch.chdir(tmp_path)
+        paths = models.derive_paths("the413", "S01E01")
+        assert "the413" in paths["cues_manifest"]
+        assert "S01E01" in paths["cues_manifest"]
+
+    def test_cues_manifest_legacy_has_no_slug(self, tmp_path, monkeypatch):
+        # When legacy cast file exists, returns legacy path (no slug in filename)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "cast_the413_S01E01.json").write_text("{}", encoding="utf-8")
         paths = models.derive_paths("the413", "S01E01")
         assert paths["cues_manifest"] == "cues/cues_manifest_S01E01.json"
 

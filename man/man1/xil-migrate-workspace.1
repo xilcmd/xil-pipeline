@@ -1,24 +1,20 @@
-.TH XIL\-SCAN "1" "2026\-04\-19" "xil\-pipeline 0.1.8" "User Commands"
+.TH XIL\-MIGRATE\-WORKSPACE "1" "2026\-04\-19" "xil\-pipeline 0.1.8" "User Commands"
 .SH NAME
-xil\-scan
+xil\-migrate\-workspace
 .SH SYNOPSIS
-.B xil\-scan
-[-h] [--json] [--speakers SPEAKERS] path
+.B xil\-migrate\-workspace
+[-h] [--workspace WORKSPACE] [--dry-run]
 .SH DESCRIPTION
-Pre\-flight scanner: check a production script for unknown speakers/sections.
-
-.TP
-\fBpath\fR
-Path to the markdown production script
+Migrate a pre\-0.1.8 workspace to the normalized directory layout
 
 .SH OPTIONS
 .TP
-\fB\-\-json\fR
-Output machine\-readable JSON instead of the human report
+\fB\-\-workspace\fR \fI\,WORKSPACE\/\fR
+Workspace root directory (default: current directory)
 
 .TP
-\fB\-\-speakers\fR \fI\,SPEAKERS\/\fR
-Path to speakers.json (default: auto\-detect from CWD, then built\-in)
+\fB\-\-dry\-run\fR
+Preview moves without touching files (default: enabled for safety)
 
 .SH SEE ALSO
 .BR xil (1),

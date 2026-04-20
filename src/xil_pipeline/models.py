@@ -20,6 +20,14 @@ from pydantic import BaseModel, Field, model_validator
 # Hardcoded fallback when no project.json or --show is provided.
 DEFAULT_SLUG = "sample"
 
+# Per-type production defaults (gap_ms between dialogue stems, voice stability hint).
+TYPE_DEFAULTS: dict[str, dict] = {
+    "podcast":   {"gap_ms": 600, "stability": None},
+    "audiobook": {"gap_ms": 400, "stability": 0.75},
+    "drama":     {"gap_ms": 800, "stability": None},
+    "special":   {"gap_ms": 600, "stability": None},
+}
+
 
 def show_slug(show_name: str) -> str:
     """Convert a show title to a filesystem-safe slug.
@@ -35,15 +43,33 @@ def show_slug(show_name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", show_name.lower())
 
 
-def derive_paths(slug: str, tag: str) -> dict[str, str]:
-    """Derive all standard pipeline file paths from a show slug and episode tag.
+def _derive_paths_new(slug: str, tag: str) -> dict[str, str]:
+    """Normalized workspace layout paths (0.1.8+)."""
+    return {
+        "cast": f"configs/{slug}/cast_{tag}.json",
+        "sfx": f"configs/{slug}/sfx_{tag}.json",
+        "parsed": f"parsed/{slug}/parsed_{tag}.json",
+        "parsed_csv": f"parsed/{slug}/parsed_{tag}.csv",
+        "annotated_csv": f"parsed/{slug}/annotated_{tag}.csv",
+        "master": f"masters/{slug}/{tag}_master.mp3",
+        "cues": f"cues/{slug}/cues_{tag}.md",
+        "cues_manifest": f"cues/{slug}/cues_manifest_{tag}.json",
+        "orig_parsed": f"parsed/{slug}/orig_parsed_{tag}.json",
+        "revised_script": f"scripts/revised_{slug}_{tag}.md",
+        "stems": f"stems/{slug}/{tag}",
+        "daw": f"daw/{slug}/{tag}",
+    }
+
+
+def derive_paths_legacy(slug: str, tag: str) -> dict[str, str]:
+    """Legacy workspace layout paths (pre-0.1.8) — used by the migration tool.
 
     Args:
-        slug: Show slug (e.g., ``"nightowls"``).
+        slug: Show slug (e.g., ``"the413"``).
         tag: Episode tag (e.g., ``"S01E01"``).
 
     Returns:
-        Dictionary mapping logical names to relative file paths.
+        Dictionary mapping logical names to legacy relative file paths.
     """
     return {
         "cast": f"cast_{slug}_{tag}.json",
@@ -57,7 +83,29 @@ def derive_paths(slug: str, tag: str) -> dict[str, str]:
         "orig_parsed": f"parsed/orig_parsed_{slug}_{tag}.json",
         "revised_script": f"scripts/revised_{slug}_{tag}.md",
         "stems": f"stems/{slug}/{tag}",
+        "daw": f"daw/{tag}",
     }
+
+
+def derive_paths(slug: str, tag: str) -> dict[str, str]:
+    """Derive all standard pipeline file paths from a show slug and episode tag.
+
+    Auto-detects workspace layout: returns legacy paths when the cast config
+    exists at the legacy root location (pre-0.1.8 workspaces), and normalized
+    paths otherwise (new workspaces or post-migration).  Run ``xil migrate-workspace``
+    to move an existing workspace to the normalized layout.
+
+    Args:
+        slug: Show slug (e.g., ``"nightowls"``).
+        tag: Episode tag (e.g., ``"S01E01"``).
+
+    Returns:
+        Dictionary mapping logical names to relative file paths.
+    """
+    new = _derive_paths_new(slug, tag)
+    legacy = derive_paths_legacy(slug, tag)
+    use_legacy = os.path.exists(legacy["cast"]) and not os.path.exists(new["cast"])
+    return legacy if use_legacy else new
 
 
 def _read_project(project_path: str = "project.json") -> dict:
@@ -66,6 +114,67 @@ def _read_project(project_path: str = "project.json") -> dict:
         with open(project_path, encoding="utf-8") as f:
             return json.load(f)
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Project configuration model
+# ---------------------------------------------------------------------------
+
+
+class ProjectConfig(BaseModel):
+    """Typed view of ``project.json``.
+
+    All fields are optional with sensible defaults so that a minimal
+    ``{"show": "My Show"}`` project.json validates without change.
+
+    Attributes:
+        show: Human-readable show title.
+        type: Content type — ``"podcast"`` (default), ``"audiobook"``,
+            ``"drama"``, or ``"special"``.  Drives section maps, gap defaults,
+            and ``xil-init`` sample templates.
+        season: Season number, or ``None``.
+        season_title: Season arc title (e.g. ``"The Holiday Shift"``).
+        tag_format: Custom episode tag format string (e.g.
+            ``"V{volume:02d}C{chapter:02d}"`` for audiobooks).  ``None``
+            uses the standard ``S01E01`` / ``E01`` derivation.
+    """
+
+    show: str = Field(default="Sample Show", description="Show title")
+    type: Literal["podcast", "audiobook", "drama", "special"] = Field(
+        default="podcast", description="Content type"
+    )
+    season: int | None = Field(default=None, description="Season number")
+    season_title: str | None = Field(default=None, description="Season arc title")
+    tag_format: str | None = Field(
+        default=None,
+        description="Custom tag format (e.g. 'V{volume:02d}C{chapter:02d}')",
+    )
+
+
+def load_project_config(project_path: str = "project.json") -> ProjectConfig:
+    """Load and validate ``project.json``, returning a :class:`ProjectConfig`.
+
+    Args:
+        project_path: Path to the project config file.
+
+    Returns:
+        :class:`ProjectConfig` with all fields populated (defaults where absent).
+    """
+    data = _read_project(project_path)
+    return ProjectConfig(**data)
+
+
+def resolve_project_type(project_path: str = "project.json") -> str:
+    """Return the content type from ``project.json``, defaulting to ``"podcast"``.
+
+    Args:
+        project_path: Path to the project config file.
+
+    Returns:
+        One of ``"podcast"``, ``"audiobook"``, ``"drama"``, or ``"special"``.
+    """
+    data = _read_project(project_path)
+    return data.get("type", "podcast")
 
 
 def resolve_slug(show_arg: str | None = None, project_path: str = "project.json") -> str:

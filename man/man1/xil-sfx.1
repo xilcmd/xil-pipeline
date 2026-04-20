@@ -1,9 +1,9 @@
-.TH XIL\-SFX "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.TH XIL\-SFX "1" "2026\-04\-19" "xil\-pipeline 0.1.8" "User Commands"
 .SH NAME
 xil\-sfx
 .SH SYNOPSIS
 .B xil\-sfx
-[-h] --episode EPISODE [--show SHOW] [--script SCRIPT] [--dry-run] [--max-duration MAX_DURATION] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only]
+[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--max-duration MAX_DURATION] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only]
 .SH DESCRIPTION
 Generate SFX stems from an SFX config (standalone utility)
 
@@ -11,6 +11,10 @@ Generate SFX stems from an SFX config (standalone utility)
 .TP
 \fB\-\-episode\fR \fI\,EPISODE\/\fR
 Episode tag (e.g. S01E01) — derives cast and SFX config paths
+
+.TP
+\fB\-\-tag\fR \fI\,TAG\/\fR
+Raw tag for non\-episodic content (e.g. V01C03, D01)
 
 .TP
 \fB\-\-show\fR \fI\,SHOW\/\fR
@@ -68,6 +72,7 @@ Only place stems for effects already present in SFX/; skip API generation
 .BR xil-sfx-lib (1),
 .BR xil-splice (1),
 .BR xil-mp3-hash (1),
+.BR xil-migrate-workspace (1),
 .BR xil-init (1)
 .SH AUTHOR
 John Brissette <xilcmd@gmail.com>

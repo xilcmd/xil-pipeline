@@ -27,6 +27,7 @@ from xil_pipeline.models import (
     ScriptStats,
     derive_paths,
     episode_tag,
+    resolve_project_type,
     resolve_season,
     resolve_season_title,
     resolve_slug,
@@ -175,6 +176,100 @@ SECTION_MAP = {
     "PRODUCTION NOTES": "production-notes",     # S02E03 preamble
 }
 
+# ---------------------------------------------------------------------------
+# Per-type section maps
+# ---------------------------------------------------------------------------
+
+PODCAST_SECTIONS: dict[str, str] = {
+    "COLD OPEN": "cold-open",
+    "OPENING CREDITS": "opening-credits",
+    "ACT ONE": "act1",
+    "ACT 1": "act1",
+    "ACT TWO": "act2",
+    "ACT 2": "act2",
+    "ACT THREE": "act3",
+    "ACT 3": "act3",
+    "ACT FOUR": "act4",
+    "ACT 4": "act4",
+    "MID-EPISODE BREAK": "mid-break",
+    "CLOSING": "closing",
+    "POST-CREDITS SCENE": "post-credits",
+    "INTRO": "intro",
+    "OUTRO": "outro",
+}
+
+_AUDIOBOOK_CHAPTERS: dict[str, str] = {
+    f"CHAPTER {word.upper()}": f"chapter{num}"
+    for num, word in enumerate([
+        "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT",
+        "NINE", "TEN", "ELEVEN", "TWELVE", "THIRTEEN", "FOURTEEN", "FIFTEEN",
+        "SIXTEEN", "SEVENTEEN", "EIGHTEEN", "NINETEEN", "TWENTY",
+        "TWENTY-ONE", "TWENTY-TWO", "TWENTY-THREE", "TWENTY-FOUR", "TWENTY-FIVE",
+        "TWENTY-SIX", "TWENTY-SEVEN", "TWENTY-EIGHT", "TWENTY-NINE", "THIRTY",
+    ], start=1)
+}
+_AUDIOBOOK_CHAPTERS.update({f"CHAPTER {n}": f"chapter{n}" for n in range(1, 31)})
+
+AUDIOBOOK_SECTIONS: dict[str, str] = {
+    "PROLOGUE": "prologue",
+    "EPILOGUE": "epilogue",
+    "AUTHOR'S NOTE": "authors-note",
+    "AUTHOR\u2019S NOTE": "authors-note",
+    **_AUDIOBOOK_CHAPTERS,
+}
+
+DRAMA_SECTIONS: dict[str, str] = {
+    "PROLOGUE": "prologue",
+    "EPILOGUE": "epilogue",
+    "INTERMISSION": "intermission",
+    "ACT ONE": "act1",
+    "ACT 1": "act1",
+    "ACT TWO": "act2",
+    "ACT 2": "act2",
+    "ACT THREE": "act3",
+    "ACT 3": "act3",
+    "ACT FOUR": "act4",
+    "ACT 4": "act4",
+    "COLD OPEN": "cold-open",
+    "CLOSING": "closing",
+    "POST-CREDITS SCENE": "post-credits",
+}
+
+SPECIAL_SECTIONS: dict[str, str] = {
+    **PODCAST_SECTIONS,
+    **AUDIOBOOK_SECTIONS,
+    **DRAMA_SECTIONS,
+    **{f"SEGMENT {n}": f"segment{n}" for n in range(1, 16)},
+}
+
+
+def get_section_map(project_type: str = "podcast") -> dict[str, str]:
+    """Return the section-header-to-slug map for the given content type.
+
+    Falls back to the legacy :data:`SECTION_MAP` entries not covered by the
+    type-specific map so that existing show-specific section names continue
+    to parse correctly.
+
+    Args:
+        project_type: One of ``"podcast"``, ``"audiobook"``, ``"drama"``,
+            ``"special"``.  Unknown values fall back to the full legacy map.
+
+    Returns:
+        Combined section map for the parser to use.
+    """
+    type_maps: dict[str, dict[str, str]] = {
+        "podcast": PODCAST_SECTIONS,
+        "audiobook": AUDIOBOOK_SECTIONS,
+        "drama": DRAMA_SECTIONS,
+        "special": SPECIAL_SECTIONS,
+    }
+    base = type_maps.get(project_type, SECTION_MAP)
+    # Merge legacy entries not already in the type map (show-specific variants)
+    merged = dict(SECTION_MAP)
+    merged.update(base)
+    return merged
+
+
 # Direction subtypes
 DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT"]
 
@@ -319,16 +414,17 @@ def _parse_direction_hint(raw: str) -> tuple[str, str | None]:
     return raw.strip(), None
 
 
-def is_section_header(line: str) -> bool:
+def is_section_header(line: str, section_map: dict[str, str] | None = None) -> bool:
     """Check if a line matches a known section header.
 
     Args:
         line: A stripped line from the script.
+        section_map: Section map to check against.  Defaults to :data:`SECTION_MAP`.
 
     Returns:
-        ``True`` if the line matches a key in ``SECTION_MAP``.
+        ``True`` if the line matches a key in the section map.
     """
-    return line.strip() in SECTION_MAP
+    return line.strip() in (section_map if section_map is not None else SECTION_MAP)
 
 
 def is_scene_header(line: str) -> bool:
@@ -494,6 +590,7 @@ def parse_script(
     filepath: str,
     debug_output: str | None = None,
     speakers_path: str | None = None,
+    project_type: str | None = None,
 ) -> dict:
     """Parse a markdown production script into structured entries.
 
@@ -509,6 +606,10 @@ def parse_script(
             ``None`` (no CSV written).
         speakers_path: Path to a ``speakers.json`` file.  ``None`` uses
             the default resolution order (see :func:`load_speakers`).
+        project_type: Content type from ``project.json`` (``"podcast"``,
+            ``"audiobook"``, ``"drama"``, ``"special"``).  ``None`` reads
+            from ``project.json`` in the current directory, defaulting to
+            ``"podcast"`` when the file is absent.
 
     Returns:
         Dictionary with keys ``show``, ``season``, ``episode``, ``title``,
@@ -519,6 +620,9 @@ def parse_script(
     Raises:
         FileNotFoundError: If the script file does not exist.
     """
+    if project_type is None:
+        project_type = resolve_project_type()
+    active_section_map = get_section_map(project_type)
     known_speakers, speaker_keys = load_speakers(speakers_path)
 
     with open(filepath, encoding="utf-8") as f:
@@ -613,8 +717,8 @@ def parse_script(
             break
 
         # Section headers
-        if is_section_header(line):
-            current_section = SECTION_MAP[line.strip()]
+        if is_section_header(line, active_section_map):
+            current_section = active_section_map[line.strip()]
             current_scene = None
             seq += 1
             entries.append({
@@ -941,6 +1045,7 @@ def generate_cast_config(parsed: dict, cast_path: str, tag_override: str | None 
     if tag_override:
         config["tag_override"] = tag_override
 
+    os.makedirs(os.path.dirname(cast_path) or ".", exist_ok=True)
     with open(cast_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
@@ -1026,6 +1131,7 @@ def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = 
     if tag_override:
         config["tag_override"] = tag_override
 
+    os.makedirs(os.path.dirname(sfx_path) or ".", exist_ok=True)
     with open(sfx_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
@@ -1189,7 +1295,8 @@ def main() -> None:
             if args.show:
                 parsed["show"] = args.show
 
-        # Write JSON output
+        # Write JSON output (create parent dirs for new layout e.g. parsed/{slug}/)
+        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as f:
             json.dump(parsed, f, indent=2, ensure_ascii=False)
 

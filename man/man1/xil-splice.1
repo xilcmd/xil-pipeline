@@ -1,9 +1,9 @@
-.TH XIL\-SPLICE "1" "2026\-04\-05" "xil\-pipeline 0.1.3" "User Commands"
+.TH XIL\-SPLICE "1" "2026\-04\-19" "xil\-pipeline 0.1.8" "User Commands"
 .SH NAME
 xil\-splice
 .SH SYNOPSIS
 .B xil\-splice
-[-h] --episode EPISODE [--show SHOW] [--parsed PARSED] [--insert-after INSERT_AFTER] [--from-parsed FROM_PARSED] [--from-seq-range FROM_SEQ_RANGE] [--from-json FROM_JSON] [--section SECTION] [--scene SCENE] [--delete-seq-range DELETE_SEQ_RANGE] [--dry-run] [--no-backup] [--quiet]
+[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--parsed PARSED] [--insert-after INSERT_AFTER] [--from-parsed FROM_PARSED] [--from-seq-range FROM_SEQ_RANGE] [--from-json FROM_JSON] [--section SECTION] [--scene SCENE] [--delete-seq-range DELETE_SEQ_RANGE] [--dry-run] [--no-backup] [--quiet]
 .SH DESCRIPTION
 Splice Parsed JSON — insert/delete entries with automatic renumbering
 
@@ -11,6 +11,10 @@ Splice Parsed JSON — insert/delete entries with automatic renumbering
 .TP
 \fB\-\-episode\fR \fI\,EPISODE\/\fR
 Episode tag (e.g. S02E03) — derives target parsed JSON path
+
+.TP
+\fB\-\-tag\fR \fI\,TAG\/\fR
+Raw tag for non\-episodic content (e.g. V01C03, D01)
 
 .TP
 \fB\-\-show\fR \fI\,SHOW\/\fR
@@ -80,6 +84,7 @@ Summary only, no per\-entry detail
 .BR xil-sfx-lib (1),
 .BR xil-splice (1),
 .BR xil-mp3-hash (1),
+.BR xil-migrate-workspace (1),
 .BR xil-init (1)
 .SH AUTHOR
 John Brissette <xilcmd@gmail.com>

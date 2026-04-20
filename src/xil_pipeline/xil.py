@@ -90,6 +90,18 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(integrity / audit)",
     ),
+    "gui": CommandSpec(
+        "xil_pipeline.xil_gui",
+        "web dashboard (requires [gui] extra)",
+        _UTILITY,
+        "(pip install xil-pipeline[gui])",
+    ),
+    "migrate-workspace": CommandSpec(
+        "xil_pipeline.XILU009_migrate_workspace",
+        "migrate pre-0.1.8 workspace to normalized layout",
+        _UTILITY,
+        "(run once per workspace)",
+    ),
 }
 """Subcommand registry. Insertion order defines display order within each group."""
 
