@@ -566,7 +566,7 @@ def export_daw_layers(
             print(render_terminal_timeline(td))
         if timeline_html:
             html_path = os.path.join(output_dir, f"{tag}_timeline.html")
-            render_html_timeline(td, html_path)
+            render_html_timeline(td, html_path, stems_dir=stems_dir)
             logger.info(f"    Written: {html_path}")
 
     logger.info("")
@@ -698,7 +698,7 @@ def main() -> None:
                     print(render_terminal_timeline(td))
                 if args.timeline_html:
                     html_path = os.path.join(output_dir, f"{tag}_timeline.html")
-                    render_html_timeline(td, html_path)
+                    render_html_timeline(td, html_path, stems_dir=stems_dir)
                     logger.info(f"    Written: {html_path}")
             return
 

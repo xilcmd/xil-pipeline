@@ -275,6 +275,7 @@ _HTML_TEMPLATE = """\
   .layer-track {{ position: relative; flex: 1; height: 28px; background: #222238; border-radius: 3px; overflow: visible; }}
   .span {{ position: absolute; height: 100%; border-radius: 2px; cursor: pointer; min-width: 2px; opacity: 0.85; transition: opacity 0.15s; }}
   .span:hover {{ opacity: 1; z-index: 10; }}
+  .span.playing {{ outline: 2px solid rgba(255,255,255,0.9); opacity: 1; z-index: 11; }}
   #floattip {{ display: none; position: fixed; background: #333; color: #fff; padding: 6px 10px; border-radius: 4px;
     font-size: 12px; white-space: nowrap; z-index: 1000; pointer-events: none;
     box-shadow: 0 2px 8px rgba(0,0,0,0.5); line-height: 1.5; }}
@@ -292,6 +293,11 @@ _HTML_TEMPLATE = """\
   .controls button {{ background: #333; color: #ccc; border: 1px solid #555; padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }}
   .controls button:hover {{ background: #444; }}
   .zoom-info {{ font-size: 12px; color: #888; }}
+  #xil-player {{ position: fixed; bottom: 0; left: 0; right: 0; background: #111;
+    padding: 6px 12px; border-top: 1px solid #444; z-index: 100; display: none; }}
+  #xil-player.active {{ display: block; }}
+  #player-label {{ font-size: 11px; color: #aaa; margin-bottom: 3px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }}
 </style>
 </head>
 <body>
@@ -304,6 +310,10 @@ _HTML_TEMPLATE = """\
   <span class="zoom-info" id="zoom-info">100%</span>
 </div>
 <div id="floattip"></div>
+<div id="xil-player">
+  <div id="player-label"></div>
+  <audio id="audio-el" controls style="width:100%;height:36px;"></audio>
+</div>
 <div class="timeline-container" id="tc">
   <div class="timeline-inner" id="ti">
     <div class="ruler" id="ruler"></div>
@@ -312,12 +322,14 @@ _HTML_TEMPLATE = """\
 </div>
 <script>
 const DATA = {data_json};
+const CLIPS = {clips_json};
 const TOTAL = DATA.total_duration_s;
 const COLORS = {{dialogue:'c-dialogue', sfx:'c-sfx', music:'c-music', ambience:'c-ambience'}};
 const LABELS = {{dialogue:'Dialogue', sfx:'SFX', music:'Music', ambience:'Ambience'}};
 let zoom = 1;
 const BASE_WIDTH = Math.max(document.getElementById('tc').clientWidth - 100, 400);
 const tips = {{}};  // span index → tooltip HTML
+const tiToSeq = {{}};  // span index → seq number
 
 function fmtTime(s) {{
   const m = Math.floor(s/60), sec = Math.floor(s%60);
@@ -357,6 +369,7 @@ function render() {{
       const snippetLine = sp.snippet ? '<br><em style="opacity:0.75">'+sp.snippet.replace(/</g,'&lt;')+'\u2026</em>' : '';
       const seqPrefix = sp.seq != null ? '<span style="opacity:0.6">#'+String(sp.seq).padStart(3,'0')+'</span> ' : '';
       tips[ti] = seqPrefix+'<strong>'+sp.label.replace(/</g,'&lt;')+'</strong>'+snippetLine+'<br>'+fmtTime(sp.start_s)+' \u2192 '+fmtTime(sp.end_s)+' ('+dur+'s)'+tipExtra;
+      tiToSeq[ti] = sp.seq;
       lhtml += '<div class="span '+COLORS[key]+'" style="left:'+left+'%;width:'+w+'%" data-ti="'+ti+'">'+rampBadges+'</div>';
       ti++;
     }}
@@ -404,22 +417,61 @@ document.getElementById('tc').addEventListener('wheel', function(e) {{
 }}, {{passive: false}});
 
 render();
+
+document.getElementById('layers').addEventListener('click', function(e) {{
+  const el = e.target.closest('.span[data-ti]');
+  if (!el) return;
+  const ti = +el.dataset.ti;
+  const seq = tiToSeq[ti];
+  if (seq == null) return;
+  const fp = CLIPS[String(seq)];
+  if (!fp) return;
+  document.querySelectorAll('.span.playing').forEach(function(s) {{ s.classList.remove('playing'); }});
+  el.classList.add('playing');
+  const audioEl = document.getElementById('audio-el');
+  const rawLabel = (tips[ti] || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  document.getElementById('player-label').textContent = rawLabel;
+  audioEl.src = '/gradio_api/file=' + fp;
+  document.getElementById('xil-player').classList.add('active');
+  audioEl.play();
+}});
 </script>
 </body>
 </html>
 """
 
 
-def render_html_timeline(data: TimelineData, output_path: str) -> str:
+def render_html_timeline(
+    data: TimelineData,
+    output_path: str,
+    stems_dir: str | None = None,
+) -> str:
     """Write a self-contained HTML timeline file.
 
     Args:
         data: Timeline data from :func:`build_timeline_data`.
         output_path: Path to write the HTML file.
+        stems_dir: Directory of episode stem MP3 files. When provided, clicking
+            a timeline block plays the corresponding stem via an embedded audio
+            player (served by Gradio's ``/gradio_api/file=`` endpoint).
 
     Returns:
         The path written (same as *output_path*).
     """
+    # Build seq → absolute path mapping for click-to-play
+    import re as _re
+    _seq_re = _re.compile(r"^(n?)(\d+)_")
+    clips: dict[str, str] = {}
+    if stems_dir and os.path.isdir(stems_dir):
+        for fname in sorted(os.listdir(stems_dir)):
+            if not fname.endswith(".mp3"):
+                continue
+            m = _seq_re.match(fname)
+            if m:
+                seq = -int(m.group(2)) if m.group(1) == "n" else int(m.group(2))
+                clips[str(seq)] = os.path.abspath(os.path.join(stems_dir, fname))
+    clips_json = json.dumps(clips)
+
     # Build JSON-serializable structure
     json_data = {
         "tag": data.tag,
@@ -450,6 +502,7 @@ def render_html_timeline(data: TimelineData, output_path: str) -> str:
         duration_fmt=_format_time(data.total_duration_s),
         span_count=span_count,
         data_json=json.dumps(json_data),
+        clips_json=clips_json,
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
     )
 

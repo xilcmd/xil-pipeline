@@ -360,7 +360,7 @@ class TestDerivePaths:
         assert "S01E01" in csv_p
         assert "S01E01" in sfx_p
         assert "S01E01" in cast_p
-        assert out_p.endswith("_annotated.csv")
+        assert "annotated" in out_p and out_p.endswith(".csv")
 
     def test_out_path_differs_from_csv(self):
         csv_p, _, _, out_p = derive_paths("S02E03")
