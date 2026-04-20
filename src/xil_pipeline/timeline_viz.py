@@ -429,7 +429,7 @@ document.getElementById('layers').addEventListener('click', function(e) {{
   el.classList.add('playing');
   const audioEl = document.getElementById('audio-el');
   const ti = el.dataset.ti;
-  const rawLabel = ti != null ? (tips[ti] || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : seq;
+  const rawLabel = ti != null ? (tips[ti] || '').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim() : seq;
   document.getElementById('player-label').textContent = rawLabel;
   audioEl.src = '/gradio_api/file=' + fp;
   document.getElementById('xil-player').classList.add('active');

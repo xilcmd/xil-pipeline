@@ -7,12 +7,12 @@
 __version__ = "0.1.8"
 
 from xil_pipeline.models import (
+    TYPE_DEFAULTS,
     CastConfiguration,
     ParsedScript,
     ProjectConfig,
     ScriptEntry,
     SfxConfiguration,
-    TYPE_DEFAULTS,
     derive_paths,
     derive_paths_legacy,
     load_project_config,

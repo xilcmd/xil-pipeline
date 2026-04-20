@@ -35,7 +35,6 @@ import re
 import shutil
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import derive_paths_legacy, show_slug
 from xil_pipeline.sfx_common import run_banner
 
 logger = get_logger(__name__)
@@ -189,6 +188,7 @@ def _infer_slug_from_project(workspace: str) -> str | None:
         return None
     try:
         import json as _json
+
         from xil_pipeline.models import show_slug
         with open(project_path, encoding="utf-8") as f:
             data = _json.load(f)
