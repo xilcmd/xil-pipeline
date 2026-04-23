@@ -1281,9 +1281,77 @@ flowchart TD
 > Output filename includes the run date: `{TAG}_{slug}_{YYYY-MM-DD}.mp3`.
 
 
+## 20. XILP012 — Social Media Post Draft Generator
+
+Reads a parsed episode JSON, builds a structured episode summary (cold open excerpt, cast list, section arc, runtime), and calls the Claude API (Haiku) to produce three ready-to-edit post variants. Output is an editable markdown file the producer reviews and pastes.
+
+```bash
+xil publish --episode S04E01 --dry-run
+xil publish --episode S04E01
+xil publish --episode S04E01 --platform instagram
+xil publish --all
+```
+
+**Post variants per episode:**
+
+| Variant | Description |
+|---------|-------------|
+| **Hype** | New episode announcement, teaser tone, no spoilers past cold open. Mentions show name, episode title, and Berkshire Talking Chronicle. |
+| **Quote** | Pulls a memorable line from the cold open dialogue. Formatted as a blockquote with a tune-in call to action. |
+| **Spotlight** | Features one cast member. Cycles by `(episode_number − 1) % cast_count` so each episode highlights a different character. |
+
+### Data flow
+
+```mermaid
+flowchart TD
+    PARSED["`📄 parsed/the413/
+    parsed_S04E01.json
+    (show, title, entries, stats)`"]
+    CAST["`📋 configs/the413/
+    cast_S04E01.json
+    (full_name, role)`"]
+    MASTER["`🎧 masters/the413/
+    S04E01_master.mp3
+    (runtime, optional)`"]
+    EXTRACT["extract_episode_summary()
+    cold open · cast · section arc"]
+    PROMPT["build_user_message()
+    structured episode brief"]
+    CLAUDE["Claude API
+    claude-haiku-4-5-20251001
+    system prompt cached"]
+    POSTS["`📝 posts/the413/
+    S04E01_posts.md
+    3 variants: Hype · Quote · Spotlight`"]
+
+    PARSED --> EXTRACT
+    CAST --> EXTRACT
+    MASTER -.->|optional runtime| EXTRACT
+    EXTRACT --> PROMPT
+    PROMPT --> CLAUDE
+    CLAUDE --> POSTS
+```
+
+### CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--episode` / `--tag` | — | Episode tag (required unless `--all`) |
+| `--show` | `project.json` | Show name override |
+| `--platform` | `facebook` | `facebook` or `instagram` — affects prompt style |
+| `--dry-run` | off | Print prompt + token estimate; no API call, no file written |
+| `--all` | off | Batch-generate for every parsed episode under the current slug |
+| `--model` | `claude-haiku-4-5-20251001` | Override Claude model ID |
+
+> **`ANTHROPIC_API_KEY` required** for non-dry-run mode.
+> Install the optional dependency first: `pip install 'xil-pipeline[publish]'`
+> Prompt caching (`cache_control: ephemeral`) on the static system prompt reduces cost on `--all` batch runs.
+> Output path: `posts/{slug}/{tag}_posts.md`
+
+
 ## Man Pages
 
-All 21 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
+All 22 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
 
 ### Accessing man pages
 
