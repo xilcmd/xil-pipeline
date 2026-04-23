@@ -38,7 +38,8 @@ google = ["google-genai>=1.60,<2"]
 tts-alt = ["gTTS>=2.5,<3", "pyttsx3>=2.99,<3"]
 ollama = ["ollama>=0.6,<1"]
 gui = ["gradio>=4.0,<6"]
-all = ["xil-pipeline[google,tts-alt,ollama]"]
+publish = ["anthropic>=0.40"]
+all = ["xil-pipeline[google,tts-alt,ollama,publish]"]
 dev = [
     "pytest>=9.0,<10",
     "pytest-cov>=7.0,<8",
@@ -67,6 +68,7 @@ xil-cleanup    = "xil_pipeline.XILP008_stale_stem_cleanup:main"
 xil-regen      = "xil_pipeline.XILP009_script_regenerator:main"
 xil-import     = "xil_pipeline.XILP010_studio_import:main"
 xil-master     = "xil_pipeline.XILP011_master_export:main"
+xil-publish    = "xil_pipeline.XILP012_publish:main"
 xil-voices     = "xil_pipeline.XILU001_discover_voices_T2S:main"
 xil-sfx        = "xil_pipeline.XILU002_generate_SFX:main"
 xil-csv-join   = "xil_pipeline.XILU003_csv_sfx_join:main"

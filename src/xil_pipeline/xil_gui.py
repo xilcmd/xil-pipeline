@@ -32,16 +32,28 @@ import sys
 _TAG_RE = re.compile(r"^cast_(.+?)_([A-Z0-9]+)\.json$")
 _NEW_CAST_RE = re.compile(r"^cast_([A-Z0-9]+)\.json$")
 
-RUNNABLE_STAGES = ["assemble", "daw", "master", "produce", "parse"]
+RUNNABLE_STAGES = [
+    "1) scan",
+    "2) parse",
+    "3) produce",
+    "4) assemble",
+    "5) daw",
+    "6) master",
+]
 DRY_RUN_STAGES = {"produce", "daw", "master"}
 
 _STAGE_MODULES = {
+    "scan":     "xil_pipeline.XILP000_script_scanner",
     "parse":    "xil_pipeline.XILP001_script_parser",
     "produce":  "xil_pipeline.XILP002_producer",
     "assemble": "xil_pipeline.XILP003_audio_assembly",
     "daw":      "xil_pipeline.XILP005_daw_export",
     "master":   "xil_pipeline.XILP011_master_export",
 }
+
+def _stage_key(choice: str) -> str:
+    """'3) produce' → 'produce'"""
+    return re.sub(r"^\d+\)\s*", "", choice.strip())
 
 
 def _find_episodes() -> list[tuple[str, str]]:
@@ -182,13 +194,21 @@ def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str)
         yield f"Could not parse episode selection: {episode_choice!r}"
         return
 
-    module = _STAGE_MODULES.get(stage)
+    key = _stage_key(stage)
+    module = _STAGE_MODULES.get(key)
     if not module:
         yield f"Unknown stage: {stage!r}"
         return
 
-    cmd = [sys.executable, "-m", module, "--episode", tag]
-    if dry_run and stage in DRY_RUN_STAGES:
+    if key == "scan":
+        # scan takes a positional script path — put it in extra_flags
+        if not extra_flags.strip():
+            yield "scan requires a script path in Extra flags (e.g. scripts/sample_S01E01.md)"
+            return
+        cmd = [sys.executable, "-m", module, "--show", slug]
+    else:
+        cmd = [sys.executable, "-m", module, "--episode", tag]
+    if dry_run and key in DRY_RUN_STAGES:
         cmd.append("--dry-run")
     if extra_flags.strip():
         cmd.extend(extra_flags.strip().split())
@@ -430,7 +450,7 @@ def _build_app():
                 with gr.Row():
                     run_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices, scale=2)
                     run_stage_dd = gr.Dropdown(
-                        label="Stage", choices=RUNNABLE_STAGES, value="assemble", scale=2,
+                        label="Stage", choices=RUNNABLE_STAGES, value="4) assemble", scale=2,
                     )
                 with gr.Row():
                     dry_run_cb = gr.Checkbox(
@@ -439,14 +459,14 @@ def _build_app():
                         interactive=False,
                     )
                     extra_flags = gr.Textbox(
-                        label="Extra flags",
-                        placeholder="e.g. --gap-ms 300",
+                        label="Extra flags (scan: script path required here)",
+                        placeholder="e.g. --gap-ms 300  |  scan: scripts/sample_S01E01.md",
                         scale=3,
                     )
                 run_btn = gr.Button("▶ Run", variant="primary")
 
                 def on_stage_change(stage):
-                    supported = stage in DRY_RUN_STAGES
+                    supported = _stage_key(stage) in DRY_RUN_STAGES
                     return gr.update(
                         value=supported,
                         interactive=supported,

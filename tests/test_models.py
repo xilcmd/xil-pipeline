@@ -1011,7 +1011,7 @@ class TestDerivePaths:
         expected_keys = {
             "cast", "sfx", "parsed", "parsed_csv", "annotated_csv",
             "master", "cues", "cues_manifest", "orig_parsed", "revised_script",
-            "stems", "daw",
+            "stems", "daw", "posts",
         }
         assert set(paths.keys()) == expected_keys
 

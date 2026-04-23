@@ -48,6 +48,7 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
     "import": CommandSpec("xil_pipeline.XILP010_studio_import", "Studio export import", _PIPELINE),
     "regen": CommandSpec("xil_pipeline.XILP009_script_regenerator", "script regeneration", _PIPELINE),
     "master": CommandSpec("xil_pipeline.XILP011_master_export", "final master MP3 export", _PIPELINE),
+    "publish": CommandSpec("xil_pipeline.XILP012_publish", "social media post draft generator", _PIPELINE),
     "voices": CommandSpec(
         "xil_pipeline.XILU001_discover_voices_T2S",
         "voice discovery",

@@ -146,10 +146,10 @@ def main() -> None:
 
         slug = resolve_slug(args.show)
         tag = args.episode or args.tag
-        daw_dir = args.daw_dir or os.path.join(DAW_DIR, tag)
 
         # Load cast config for metadata (title, artist)
         p = derive_paths(slug, tag)
+        daw_dir = args.daw_dir or p["daw"]
         cast_path = p["cast"]
         show_name = None
         episode_title = None

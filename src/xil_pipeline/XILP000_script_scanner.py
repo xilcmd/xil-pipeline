@@ -247,6 +247,9 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--speakers", default=None,
                         help="Path to speakers.json (default: auto-detect from CWD, then built-in)")
+    parser.add_argument("--show", default=None, metavar="NAME",
+                        help="Show name override — selects configs/{slug}/speakers.json "
+                             "(default: from project.json)")
     return parser
 
 
@@ -259,8 +262,17 @@ def main():
             logger.error("File not found: %s", args.path)
             sys.exit(1)
 
+        # Resolve speakers path: --speakers wins, then --show-derived slug, then auto-detect
+        speakers_path = args.speakers
+        if speakers_path is None and args.show:
+            from xil_pipeline.models import show_slug
+            slug = show_slug(args.show)
+            candidate = os.path.join("configs", slug, "speakers.json")
+            if os.path.exists(candidate):
+                speakers_path = candidate
+
         # Load speakers
-        known_speakers, speaker_keys = load_speakers(args.speakers)
+        known_speakers, speaker_keys = load_speakers(speakers_path)
 
         lines = load_and_normalize(args.path)
 

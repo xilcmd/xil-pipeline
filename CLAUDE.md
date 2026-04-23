@@ -19,7 +19,7 @@ src/xil_pipeline/          # Python package (24 modules)
   sfx_common.py            # SFX library management, ID3 tagging
   timeline_viz.py          # Timeline visualization
   xil_init.py              # Project scaffolding (xil-init command, --type aware)
-  XILP000_*.py … XILP011_*.py   # Pipeline stages
+  XILP000_*.py … XILP012_*.py   # Pipeline stages
   XILU001_*.py … XILU009_*.py   # Utility scripts
 tests/                     # Pytest test suite
 docs/                      # MkDocs documentation
@@ -396,6 +396,30 @@ python XILP011_master_export.py --episode S02E03 --show "Night Owls"
 - Reads cast config for ID3 metadata (album, title, artist)
 - No ElevenLabs API key required — no API calls made
 
+### Stage 10: Social Media Post Draft Generator
+
+`XILP012_publish.py` — Reads a parsed episode JSON, builds a structured episode summary, and calls the Claude API (Haiku) to produce three ready-to-edit Facebook/Instagram post variants. Output is an editable markdown file.
+
+```bash
+xil publish --episode S04E01 --dry-run
+xil publish --episode S04E01
+xil publish --episode S04E01 --platform instagram
+xil publish --all
+```
+
+- `--episode` or `--tag` (one required unless `--all` is used) derives parsed JSON and cast config
+- `--show` overrides the show name (default: from `project.json`)
+- `--platform facebook|instagram` — affects post length/style guidance (default: `facebook`)
+- `--dry-run` — prints the Claude prompt and estimated token count; no API call, no file written
+- `--all` — generate posts for every parsed episode under the current show slug (retroactive batch)
+- `--model` — override the Claude model ID (default: `claude-haiku-4-5-20251001`)
+- Output: `posts/{slug}/{tag}_posts.md` — editable markdown with three variants
+- Three post variants: **Hype** (new episode teaser, no spoilers past cold open), **Quote** (pull quote from cold open + tune-in CTA), **Spotlight** (one cast member feature, cycles by episode number mod cast count)
+- Requires `ANTHROPIC_API_KEY` environment variable (only for non-dry-run mode)
+- Requires `[publish]` optional extra: `pip install 'xil-pipeline[publish]'` (installs `anthropic>=0.40`)
+- System prompt is tagged with `cache_control: ephemeral` to minimize cost on `--all` batch runs
+- No ElevenLabs API key required — no ElevenLabs calls made
+
 ## ElevenLabs API Cost Controls
 
 Every script that calls the API includes three guard functions (duplicated per file, not shared):
@@ -432,6 +456,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILP009_*` — reverse script generator (parsed JSON → production script markdown)
 - `XILP010_*` — Studio export importer (ElevenLabs Studio ZIP → pipeline stems)
 - `XILP011_*` — final master MP3 export (overlay 4 DAW layer WAVs → single stereo 48 kHz VBR MP3)
+- `XILP012_*` — social media post draft generator (parsed JSON + Claude Haiku → `posts/{slug}/{tag}_posts.md`; 3 variants: Hype, Quote, Spotlight; requires `[publish]` extra + `ANTHROPIC_API_KEY`)
 - `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.scene` (str|None): scene label from parsed JSON, used for scene-scoped vintage filter; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `volume_percentage`, `ramp_in_seconds`, and `ramp_out_seconds` each fall back to the global key when no category-specific key exists (e.g. SFX/MUSIC when `sfx_volume_percentage`/`music_ramp_in_seconds` are absent from the config defaults); `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing; `apply_vintage_filter()` applies a 1960s-era HF roll-off + 1 dB reduction; `_apply_speaker_filters(segment, filter_val)` resolves the cast config `filter` string and applies the named filter chain (`false`/`None` = none, `true`/`"phone"` = phone, `"vintage"` = vintage, `"vintage,phone"` = both)
 - `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency; HTML bar badges: `ri` (↑ ramp in, left), `ro` (↓ ramp out, right-top), `pd` (% play duration, center), `vb` (🔊 volume%, right-bottom, shown when `volume_pct != 100`); applies to music, ambience, and SFX spans

@@ -58,6 +58,7 @@ def _derive_paths_new(slug: str, tag: str) -> dict[str, str]:
         "revised_script": f"scripts/revised_{slug}_{tag}.md",
         "stems": f"stems/{slug}/{tag}",
         "daw": f"daw/{slug}/{tag}",
+        "posts": f"posts/{slug}/{tag}_posts.md",
     }
 
 
