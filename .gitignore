@@ -28,6 +28,8 @@ daw/
 # IDE / tool artifacts
 .qodo/
 .claude/
+.DS_Store
+**/.DS_Store
 
 # Secrets (never commit)
 .env
