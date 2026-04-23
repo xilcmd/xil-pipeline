@@ -8,8 +8,6 @@ import json
 import os
 import unittest.mock
 
-import pytest
-
 from xil_pipeline import XILP012_publish as mod
 
 # ---------------------------------------------------------------------------

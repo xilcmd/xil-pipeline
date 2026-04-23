@@ -34,7 +34,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import CastConfiguration, derive_paths, resolve_slug
+from xil_pipeline.models import derive_paths, resolve_slug
 from xil_pipeline.sfx_common import run_banner
 
 if TYPE_CHECKING:
@@ -224,7 +224,7 @@ def build_user_message(summary: dict, platform: str, spotlight_index: int) -> st
         "and Berkshire Talking Chronicle. No spoilers beyond the cold open setting.\n"
         "Quote: Pull a memorable line from the cold open excerpt above. Format as a blockquote "
         "or quoted text. Add a brief tune-in call to action.\n"
-        f"Spotlight: Feature the spotlight subject. Connect their character to the episode theme."
+        "Spotlight: Feature the spotlight subject. Connect their character to the episode theme."
     )
 
     return "\n".join(lines)
