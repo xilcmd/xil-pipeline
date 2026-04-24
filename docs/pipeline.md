@@ -253,7 +253,7 @@ sequenceDiagram
     participant FS as stems directory
     participant PJ as parsed JSON
 
-    User->>M: python XILP002_producer.py --episode S02E03 [--gen-sfx / --gen-music / --gen-ambience]
+    User->>M: xil produce --episode S02E03 [--gen-sfx / --gen-music / --gen-ambience]
     M->>LP: load cast_sample_S02E03.json + parsed script
     LP-->>M: config dict, dialogue_entries list
     M->>SFX: load sfx_sample_S02E03.json (always, for preamble)
@@ -741,65 +741,65 @@ flowchart LR
 
 ```bash
 # 1. Parse script and generate skeleton configs
-python XILP000_script_scanner.py "scripts/<script>.md"          # pre-flight: catch unknown speakers
-python XILP001_script_parser.py "scripts/<script>.md" --episode S02E03
+xil scan "scripts/<script>.md"          # pre-flight: catch unknown speakers
+xil parse "scripts/<script>.md" --episode S02E03
 
 # 1b. (Optional) Review full episode structure before any API spend
-python XILU003_csv_sfx_join.py --episode S02E03                 # annotated CSV: SFX + cast columns
+xil csv-join --episode S02E03                 # annotated CSV: SFX + cast columns
 
 # 2. Ingest cues sheet — enrich sfx config + audit (no API calls yet)
-python XILP006_cues_ingester.py --episode S02E03 \
+xil cues --episode S02E03 \
     --cues "cues/<cues-file>.md" --enrich-sfx-config
 
 # 3. Preview what needs generating
-python XILP006_cues_ingester.py --episode S02E03 \
+xil cues --episode S02E03 \
     --cues "cues/<cues-file>.md" --generate --dry-run
 
 # 4. Generate new SFX/music assets into SFX/ library
-python XILP006_cues_ingester.py --episode S02E03 \
+xil cues --episode S02E03 \
     --cues "cues/<cues-file>.md" --generate
 
 # 5. Generate voice stems (sfx config already enriched)
 #    Preamble: ensure sfx_<slug>_S02E03.json contains an "INTRO MUSIC" entry with a "source" path
 #    XILP002 will copy that file → n001_preamble_sfx.mp3 and inject seq -2/-1 into parsed JSON
-python XILP002_producer.py --episode S02E03 --dry-run
-python XILP002_producer.py --episode S02E03
+xil produce --episode S02E03 --dry-run
+xil produce --episode S02E03
 # Generate SFX/music/ambience stems by category (omit flags to generate all):
-python XILU002_generate_SFX.py --episode S02E03 --gen-sfx --dry-run
-python XILU002_generate_SFX.py --episode S02E03 --gen-music --dry-run
-python XILU002_generate_SFX.py --episode S02E03 --gen-ambience --dry-run
-python XILU002_generate_SFX.py --episode S02E03
+xil sfx --episode S02E03 --gen-sfx --dry-run
+xil sfx --episode S02E03 --gen-music --dry-run
+xil sfx --episode S02E03 --gen-ambience --dry-run
+xil sfx --episode S02E03
 
 # 6. Assemble master MP3 or export DAW layers
-python XILP003_audio_assembly.py --episode S02E03
-python XILP005_daw_export.py --episode S02E03 --macro
+xil assemble --episode S02E03
+xil daw --episode S02E03 --macro
 
 # 7. Inspect asset placement (no audio decode needed with --dry-run)
-python XILP005_daw_export.py --episode S02E03 --dry-run --timeline
-python XILP005_daw_export.py --episode S02E03 --timeline --timeline-html
+xil daw --episode S02E03 --dry-run --timeline
+xil daw --episode S02E03 --timeline --timeline-html
 ```
 
 ### 9f. Punch-in run order (script revised after full generation)
 
 ```bash
 # 1. Re-parse the revised script (preserves orig_ as the old reference)
-python XILP001_script_parser.py "scripts/<revised>.md" --episode S02E03
+xil parse "scripts/<revised>.md" --episode S02E03
 
 # 2. Migrate unchanged stems to new seq-numbered filenames
-python XILP007_stem_migrator.py --episode S02E03 --dry-run   # preview first
-python XILP007_stem_migrator.py --episode S02E03
+xil migrate --episode S02E03 --dry-run   # preview first
+xil migrate --episode S02E03
 
 # 2b. Clean up stale stems left behind by migration
-python XILP008_stale_stem_cleanup.py --episode S02E03 --dry-run  # preview first
-python XILP008_stale_stem_cleanup.py --episode S02E03
+xil cleanup --episode S02E03 --dry-run  # preview first
+xil cleanup --episode S02E03
 
 # 3. Generate only the gaps (XILP002 skips files already on disk)
-python XILP002_producer.py --episode S02E03 --dry-run
-python XILP002_producer.py --episode S02E03
+xil produce --episode S02E03 --dry-run
+xil produce --episode S02E03
 
 # 4. Reassemble
-python XILP003_audio_assembly.py --episode S02E03
-python XILP005_daw_export.py --episode S02E03 --macro
+xil assemble --episode S02E03
+xil daw --episode S02E03 --macro
 ```
 
 ---
@@ -928,17 +928,17 @@ afterwards — it skips stems already on disk, so only the gaps get API calls.
 
 ```
 # 1. Edit & re-parse the revised script
-python XILP001_script_parser.py "scripts/<revised>.md" --episode S02E03
+xil parse "scripts/<revised>.md" --episode S02E03
 
 # 2. Preview the migration plan (no file changes)
-python XILP007_stem_migrator.py --episode S02E03 --dry-run
+xil migrate --episode S02E03 --dry-run
 
 # 3. Copy unchanged stems into new seq-numbered filenames
-python XILP007_stem_migrator.py --episode S02E03
+xil migrate --episode S02E03
 
 # 4. Generate only the missing/changed/new stems
-python XILP002_producer.py --episode S02E03 --dry-run
-python XILP002_producer.py --episode S02E03
+xil produce --episode S02E03 --dry-run
+xil produce --episode S02E03
 ```
 
 ### Matching modes
@@ -974,8 +974,8 @@ config entries, all speakers are assigned voices, and reviewing the full episode
 committing to a TTS run.
 
 ```bash
-python XILU003_csv_sfx_join.py --episode S02E03
-python XILU003_csv_sfx_join.py --episode S02E03 --output review/S02E03_annotated.csv
+xil csv-join --episode S02E03
+xil csv-join --episode S02E03 --output review/S02E03_annotated.csv
 ```
 
 ### Inputs / outputs
@@ -1165,8 +1165,8 @@ for speaker display names.  Serves as a verification tool and produces a clean "
 version reflecting any post-parse edits.
 
 ```bash
-python XILP009_script_regenerator.py --episode S02E03
-python XILP009_script_regenerator.py --episode S02E03 --output scripts/revised_S02E03.md
+xil regen --episode S02E03
+xil regen --episode S02E03 --output scripts/revised_S02E03.md
 ```
 
 ### Flow
@@ -1212,9 +1212,9 @@ Extracts dialogue stems from an ElevenLabs Studio export ZIP and renames them to
 This provides an alternative to XILP002 voice generation: instead of calling the ElevenLabs TTS API per-line, an entire episode can be generated via ElevenLabs Studio (onboarded by XILP004), exported as a ZIP, and imported back into the pipeline with correct filenames.
 
 ```bash
-python XILP010_studio_import.py --episode S02E02 \
+xil import --episode S02E02 \
     --zip "ElevenLabs_exports/ElevenLabs_Working_with_Gen_S02E02_What_We_Carry_!.zip" --dry-run
-python XILP010_studio_import.py --episode S02E02 \
+xil import --episode S02E02 \
     --zip "ElevenLabs_exports/ElevenLabs_Working_with_Gen_S02E02_What_We_Carry_!.zip"
 ```
 
@@ -1249,9 +1249,9 @@ flowchart TD
 Overlays the four DAW layer WAV files produced by XILP005 into a single stereo MP3 file suitable for podcast distribution.
 
 ```bash
-python XILP011_master_export.py --episode S02E03 --dry-run
-python XILP011_master_export.py --episode S02E03
-python XILP011_master_export.py --episode S02E03 --show "Night Owls"
+xil master --episode S02E03 --dry-run
+xil master --episode S02E03
+xil master --episode S02E03 --show "Night Owls"
 ```
 
 ### Data flow

@@ -1,9 +1,9 @@
-.TH XIL\-SCAN "1" "2026\-04\-19" "xil\-pipeline 0.1.8" "User Commands"
+.TH XIL\-SCAN "1" "2026\-04\-24" "xil\-pipeline 0.1.8" "User Commands"
 .SH NAME
 xil\-scan
 .SH SYNOPSIS
 .B xil\-scan
-[-h] [--json] [--speakers SPEAKERS] path
+[-h] [--json] [--speakers SPEAKERS] [--show NAME] path
 .SH DESCRIPTION
 Pre\-flight scanner: check a production script for unknown speakers/sections.
 
@@ -20,6 +20,11 @@ Output machine\-readable JSON instead of the human report
 \fB\-\-speakers\fR \fI\,SPEAKERS\/\fR
 Path to speakers.json (default: auto\-detect from CWD, then built\-in)
 
+.TP
+\fB\-\-show\fR \fI\,NAME\/\fR
+Show name override — selects configs/{slug}/speakers.json (default: from
+project.json)
+
 .SH SEE ALSO
 .BR xil (1),
 .BR xil-scan (1),
@@ -27,6 +32,7 @@ Path to speakers.json (default: auto\-detect from CWD, then built\-in)
 .BR xil-cues (1),
 .BR xil-produce (1),
 .BR xil-assemble (1),
+.BR xil-studio-onboard (1),
 .BR xil-daw (1),
 .BR xil-migrate (1),
 .BR xil-cleanup (1),

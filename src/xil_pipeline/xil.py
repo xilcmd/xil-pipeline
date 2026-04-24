@@ -42,6 +42,7 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
     "cues": CommandSpec("xil_pipeline.XILP006_cues_ingester", "cues sheet ingestion", _PIPELINE),
     "produce": CommandSpec("xil_pipeline.XILP002_producer", "voice stem generation", _PIPELINE),
     "assemble": CommandSpec("xil_pipeline.XILP003_audio_assembly", "master audio assembly", _PIPELINE),
+    "studio-onboard": CommandSpec("xil_pipeline.XILP004_studio_onboard", "ElevenLabs Studio project onboarding", _PIPELINE),
     "daw": CommandSpec("xil_pipeline.XILP005_daw_export", "DAW layer export", _PIPELINE),
     "migrate": CommandSpec("xil_pipeline.XILP007_stem_migrator", "stem migration", _PIPELINE),
     "cleanup": CommandSpec("xil_pipeline.XILP008_stale_stem_cleanup", "stale stem cleanup", _PIPELINE),

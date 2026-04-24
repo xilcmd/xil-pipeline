@@ -267,33 +267,38 @@ def dry_run(chapters: list[dict], cast: dict) -> None:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="xil-studio-onboard",
+        description="Onboard an episode to an ElevenLabs Studio project.",
+    )
+    tag_group = parser.add_mutually_exclusive_group(required=True)
+    tag_group.add_argument("--episode", help="Episode tag (e.g. S01E02)")
+    tag_group.add_argument("--tag", help="Raw tag for non-episodic content (e.g. V01C03, D01)")
+    parser.add_argument(
+        "--show", default=None,
+        help="Show name override (default: from project.json)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Build and display content JSON without calling the API"
+    )
+    parser.add_argument(
+        "--quality", default="standard",
+        choices=["standard", "high", "ultra", "ultra_lossless"],
+        help="Quality preset (default: standard)"
+    )
+    parser.add_argument(
+        "--model", default="eleven_v3",
+        help="TTS model ID (default: eleven_v3)"
+    )
+    return parser
+
+
 def main():
     configure_logging()
     with run_banner():
-        parser = argparse.ArgumentParser(
-            description="Onboard an episode to an ElevenLabs Studio project."
-        )
-        tag_group = parser.add_mutually_exclusive_group(required=True)
-        tag_group.add_argument("--episode", help="Episode tag (e.g. S01E02)")
-        tag_group.add_argument("--tag", help="Raw tag for non-episodic content (e.g. V01C03, D01)")
-        parser.add_argument(
-            "--show", default=None,
-            help="Show name override (default: from project.json)"
-        )
-        parser.add_argument(
-            "--dry-run", action="store_true",
-            help="Build and display content JSON without calling the API"
-        )
-        parser.add_argument(
-            "--quality", default="standard",
-            choices=["standard", "high", "ultra", "ultra_lossless"],
-            help="Quality preset (default: standard)"
-        )
-        parser.add_argument(
-            "--model", default="eleven_v3",
-            help="TTS model ID (default: eleven_v3)"
-        )
-
+        parser = get_parser()
         args = parser.parse_args()
 
         if not args.dry_run and not os.environ.get("ELEVENLABS_API_KEY"):

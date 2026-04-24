@@ -138,8 +138,8 @@ Resolution order: `--speakers PATH` flag > `configs/{slug}/speakers.json` > `spe
 `XILP000_script_scanner.py` — Scans a raw markdown script and reports recognized/unrecognized speakers and sections **before** running XILP001. Use this whenever onboarding a new script to catch missing speakers or `SECTION_MAP` entries early.
 
 ```bash
-python XILP000_script_scanner.py "scripts/<script>.md"
-python XILP000_script_scanner.py "scripts/<script>.md" --json
+xil scan "scripts/<script>.md"
+xil scan "scripts/<script>.md" --json
 ```
 
 - No `--episode` flag required — reads only the script file, no side effects
@@ -155,7 +155,7 @@ python XILP000_script_scanner.py "scripts/<script>.md" --json
 `XILP001_script_parser.py` — Parses markdown production scripts into structured JSON.
 
 ```bash
-python XILP001_script_parser.py "scripts/<script>.md" --episode S01E01 --preview 10
+xil parse "scripts/<script>.md" --episode S01E01 --preview 10
 ```
 
 - Input: Markdown scripts in `scripts/` — supports both plain text (S01E01) and markdown-formatted (S01E02+) scripts transparently
@@ -183,10 +183,10 @@ python XILP001_script_parser.py "scripts/<script>.md" --episode S01E01 --preview
 `XILP006_cues_ingester.py` — Parses a sound cues & music prompts markdown file into a structured asset manifest, audits the shared SFX library, and optionally enriches the episode sfx config or generates new assets.
 
 ```bash
-python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md"
-python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --enrich-sfx-config
-python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --generate
-python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --generate --enrich-sfx-config
+xil cues --episode S02E03 --cues "cues/<file>.md"
+xil cues --episode S02E03 --cues "cues/<file>.md" --enrich-sfx-config
+xil cues --episode S02E03 --cues "cues/<file>.md" --generate
+xil cues --episode S02E03 --cues "cues/<file>.md" --generate --enrich-sfx-config
 ```
 
 - `--episode` or `--tag` (one required) derives the sfx config path (`sfx_<slug>_S02E03.json`)
@@ -205,7 +205,7 @@ python XILP006_cues_ingester.py --episode S02E03 --cues "cues/<file>.md" --gener
 `XILP002_producer.py` — Calls ElevenLabs API to generate voice stems.
 
 ```bash
-python XILP002_producer.py --episode S01E01 --dry-run
+xil produce --episode S01E01 --dry-run
 ```
 
 - `--episode` or `--tag` (one required) derives `cast_<slug>_S01E01.json` and `sfx_<slug>_S01E01.json`
@@ -231,8 +231,8 @@ python XILP002_producer.py --episode S01E01 --dry-run
 `XILP003_audio_assembly.py` — Two-pass multi-track mix into a final master MP3.
 
 ```bash
-python XILP003_audio_assembly.py --episode S01E01
-python XILP003_audio_assembly.py --episode S01E01 --parsed parsed/parsed_<slug>_S01E01.json
+xil assemble --episode S01E01
+xil assemble --episode S01E01 --parsed parsed/parsed_<slug>_S01E01.json
 ```
 
 - When a parsed script JSON is available (auto-derived or via `--parsed`), runs a two-pass multi-track mix:
@@ -254,9 +254,9 @@ python XILP003_audio_assembly.py --episode S01E01 --parsed parsed/parsed_<slug>_
 `XILP004_studio_onboard.py` — Creates an ElevenLabs Studio project from parsed episode data.
 
 ```bash
-python XILP004_studio_onboard.py --episode S01E02 --dry-run
-python XILP004_studio_onboard.py --episode S01E02
-python XILP004_studio_onboard.py --episode S01E02 --quality high
+xil studio-onboard --episode S01E02 --dry-run
+xil studio-onboard --episode S01E02
+xil studio-onboard --episode S01E02 --quality high
 ```
 
 - `--episode` or `--tag` (one required) derives `parsed_<slug>_S01E02.json` and `cast_<slug>_S01E02.json`
@@ -275,12 +275,12 @@ python XILP004_studio_onboard.py --episode S01E02 --quality high
 `XILP005_daw_export.py` — Exports four isolated, full-length WAV layers for human mixing in Audacity.
 
 ```bash
-python XILP005_daw_export.py --episode S01E01 --dry-run
-python XILP005_daw_export.py --episode S01E01
-python XILP005_daw_export.py --episode S01E01 --macro
-python XILP005_daw_export.py --episode S01E01 --output-dir exports/S01E01/
-python XILP005_daw_export.py --episode S01E01 --dry-run --timeline
-python XILP005_daw_export.py --episode S01E01 --timeline --timeline-html
+xil daw --episode S01E01 --dry-run
+xil daw --episode S01E01
+xil daw --episode S01E01 --macro
+xil daw --episode S01E01 --output-dir exports/S01E01/
+xil daw --episode S01E01 --dry-run --timeline
+xil daw --episode S01E01 --timeline --timeline-html
 ```
 
 - `--episode` or `--tag` (one required) derives `cast_<slug>_S01E01.json` and `parsed/parsed_<slug>_S01E01.json`
@@ -308,9 +308,9 @@ python XILP005_daw_export.py --episode S01E01 --timeline --timeline-html
 `XILP007_stem_migrator.py` — Migrates episode stems when a parsed script is revised. Compares an old and new parsed JSON, copies unchanged stems to their new seq-numbered filenames, and reports which entries need fresh TTS/SFX generation. Run XILP002 afterwards to fill only the gaps.
 
 ```bash
-python XILP007_stem_migrator.py --episode S02E03 --dry-run
-python XILP007_stem_migrator.py --episode S02E03
-python XILP007_stem_migrator.py \
+xil migrate --episode S02E03 --dry-run
+xil migrate --episode S02E03
+xil migrate \
     --old parsed/orig_parsed_<slug>_S02E03.json \
     --new parsed/parsed_<slug>_S02E03.json \
     --stems stems/S02E03 [--dry-run] [--strict]
@@ -332,9 +332,9 @@ python XILP007_stem_migrator.py \
 `XILP008_stale_stem_cleanup.py` — Removes stale stems left behind after a parsed script revision and stem migration. After XILP007 copies unchanged stems to new seq-numbered filenames, old stems whose seq numbers now map to a different entry type remain on disk. This script finds and deletes them.
 
 ```bash
-python XILP008_stale_stem_cleanup.py --episode S02E03 --dry-run
-python XILP008_stale_stem_cleanup.py --episode S02E03
-python XILP008_stale_stem_cleanup.py \
+xil cleanup --episode S02E03 --dry-run
+xil cleanup --episode S02E03
+xil cleanup \
     --parsed parsed/parsed_<slug>_S02E03.json \
     --stems stems/S02E03 [--dry-run]
 ```
@@ -353,10 +353,10 @@ python XILP008_stale_stem_cleanup.py \
 `XILP010_studio_import.py` — Extracts dialogue and direction stems from an ElevenLabs Studio export ZIP and renames them to the pipeline's stem naming convention.
 
 ```bash
-python XILP010_studio_import.py --episode S02E02 --zip "ElevenLabs_exports/export.zip" --dry-run
-python XILP010_studio_import.py --episode S02E02 --zip "ElevenLabs_exports/export.zip"
-python XILP010_studio_import.py --episode S02E02 --zip "ElevenLabs_exports/export.zip" --gen-sfx --gen-music --gen-beats
-python XILP010_studio_import.py --episode S02E02 --zip "ElevenLabs_exports/export.zip" --all --force
+xil import --episode S02E02 --zip "ElevenLabs_exports/export.zip" --dry-run
+xil import --episode S02E02 --zip "ElevenLabs_exports/export.zip"
+xil import --episode S02E02 --zip "ElevenLabs_exports/export.zip" --gen-sfx --gen-music --gen-beats
+xil import --episode S02E02 --zip "ElevenLabs_exports/export.zip" --all --force
 ```
 
 - `--episode TAG` (required) derives parsed JSON path and stems output directory
@@ -380,9 +380,9 @@ python XILP010_studio_import.py --episode S02E02 --zip "ElevenLabs_exports/expor
 `XILP011_master_export.py` — Overlays the four DAW layer WAVs from XILP005 into a single podcast-ready MP3.
 
 ```bash
-python XILP011_master_export.py --episode S02E03 --dry-run
-python XILP011_master_export.py --episode S02E03
-python XILP011_master_export.py --episode S02E03 --show "Night Owls"
+xil master --episode S02E03 --dry-run
+xil master --episode S02E03
+xil master --episode S02E03 --show "Night Owls"
 ```
 
 - `--episode` or `--tag` (one required) derives DAW layer paths and cast config
@@ -549,13 +549,13 @@ Each unique sound effect is generated **once** into the `SFX/` directory as a sh
 `XILU002_generate_SFX.py` — Generates SFX stems independently of XILP002 voice generation.
 
 ```bash
-python XILU002_generate_SFX.py --episode S01E01 --dry-run
-python XILU002_generate_SFX.py --episode S01E01 --gen-sfx
-python XILU002_generate_SFX.py --episode S01E01 --gen-music
-python XILU002_generate_SFX.py --episode S01E01 --gen-ambience
-python XILU002_generate_SFX.py --episode S01E01 --max-duration 5.0
-python XILU002_generate_SFX.py --episode S01E01 --local-only
-python XILU002_generate_SFX.py --episode S01E01
+xil sfx --episode S01E01 --dry-run
+xil sfx --episode S01E01 --gen-sfx
+xil sfx --episode S01E01 --gen-music
+xil sfx --episode S01E01 --gen-ambience
+xil sfx --episode S01E01 --max-duration 5.0
+xil sfx --episode S01E01 --local-only
+xil sfx --episode S01E01
 ```
 
 - `--episode` or `--tag` (one required) derives `cast_<slug>_S01E01.json` and `sfx_<slug>_S01E01.json`
@@ -575,8 +575,8 @@ python XILU002_generate_SFX.py --episode S01E01
 `XILU003_csv_sfx_join.py` — Joins a parsed episode CSV with the SFX JSON and cast JSON, producing an annotated review CSV with SFX prompt, duration, and cast metadata columns appended alongside each dialogue and direction entry.
 
 ```bash
-python XILU003_csv_sfx_join.py --episode S02E03
-python XILU003_csv_sfx_join.py --episode S02E03 --output my_review.csv
+xil csv-join --episode S02E03
+xil csv-join --episode S02E03 --output my_review.csv
 ```
 
 - `--episode` or `--tag` (one required) derives `parsed/parsed_<slug>_{TAG}.csv`, `sfx_<slug>_{TAG}.json`, and `cast_<slug>_{TAG}.json`
@@ -590,11 +590,11 @@ python XILU003_csv_sfx_join.py --episode S02E03 --output my_review.csv
 `XILU004_sample_voices_T2S.py` — Generates a short TTS sample for each cast member to audition voice assignments.
 
 ```bash
-python XILU004_sample_voices_T2S.py --episode S02E03 --dry-run
-python XILU004_sample_voices_T2S.py --episode S02E03
-python XILU004_sample_voices_T2S.py --episode S02E03 --backend chatterbox
-python XILU004_sample_voices_T2S.py --episode S02E03 --backend gtts
-python XILU004_sample_voices_T2S.py --episode S02E03 --force
+xil sample --episode S02E03 --dry-run
+xil sample --episode S02E03
+xil sample --episode S02E03 --backend chatterbox
+xil sample --episode S02E03 --backend gtts
+xil sample --episode S02E03 --force
 ```
 
 - `--episode` or `--tag` (one required) or `--cast PATH` to specify the cast config
@@ -611,13 +611,13 @@ python XILU004_sample_voices_T2S.py --episode S02E03 --force
 `XILU005_discover_SFX.py` — Lists and searches the local shared SFX asset library.
 
 ```bash
-python XILU005_discover_SFX.py                    # local scan (default)
-python XILU005_discover_SFX.py --local            # explicit local scan
-python XILU005_discover_SFX.py --sfx-dir SFX/    # override local scan directory
-python XILU005_discover_SFX.py --search "diner"   # filter by keyword
-python XILU005_discover_SFX.py --json             # machine-readable output
-python XILU005_discover_SFX.py --api              # attempt API history (not publicly accessible)
-python XILU005_discover_SFX.py --api --all        # paginate full API history (default: most recent 100)
+xil sfx-lib                    # local scan (default)
+xil sfx-lib --local            # explicit local scan
+xil sfx-lib --sfx-dir SFX/    # override local scan directory
+xil sfx-lib --search "diner"   # filter by keyword
+xil sfx-lib --json             # machine-readable output
+xil sfx-lib --api              # attempt API history (not publicly accessible)
+xil sfx-lib --api --all        # paginate full API history (default: most recent 100)
 ```
 
 - Default mode: scans `SFX/` directory (equivalent to `--local`) and reports all assets with duration and file size
@@ -635,11 +635,11 @@ python XILU005_discover_SFX.py --api --all        # paginate full API history (d
 `XILU006_splice_parsed.py` — Inserts entries into or deletes entries from a parsed episode JSON with automatic seq renumbering.
 
 ```bash
-python XILU006_splice_parsed.py --episode S02E03 --insert-after 322 \
+xil splice --episode S02E03 --insert-after 322 \
     --from-parsed parsed/parsed_the413_S02E02.json --from-seq-range 232-233 \
     --section post-interview --dry-run
-python XILU006_splice_parsed.py --episode S02E03 --delete-seq-range 100-105 --dry-run
-python XILU006_splice_parsed.py --episode S02E03 --insert-after 322 \
+xil splice --episode S02E03 --delete-seq-range 100-105 --dry-run
+xil splice --episode S02E03 --insert-after 322 \
     --from-json new_entries.json
 ```
 
