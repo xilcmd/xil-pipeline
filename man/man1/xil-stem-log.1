@@ -1,9 +1,9 @@
-.TH XIL\-STEM\-LOG "1" "2026\-04\-19" "xil\-pipeline 0.1.8" "User Commands"
+.TH XIL\-STEM\-LOG "1" "2026\-04\-24" "xil\-pipeline 0.1.8" "User Commands"
 .SH NAME
 xil\-stem\-log
 .SH SYNOPSIS
 .B xil\-stem\-log
-[-h] [--logs-dir DIR] [--output PATH] [--since YYYY-MM-DD] [--show]
+[-h] [--logs-dir DIR] [--output PATH] [--since YYYY-MM-DD] [--episode TAG] [--slug SLUG] [--show]
 .SH DESCRIPTION
 Parse xil\-pipeline logs into a stem generation chronology CSV.
 
@@ -19,6 +19,14 @@ Output CSV path (default: stem_log_report.csv); use \- for stdout
 .TP
 \fB\-\-since\fR \fI\,YYYY\-MM\-DD\/\fR
 Only include log files on or after this date
+
+.TP
+\fB\-\-episode\fR \fI\,TAG\/\fR, \fB\-\-tag\fR \fI\,TAG\/\fR
+Filter records to a specific episode tag (e.g. S03E03)
+
+.TP
+\fB\-\-slug\fR \fI\,SLUG\/\fR
+Filter records to a specific show slug (e.g. the413)
 
 .TP
 \fB\-\-show\fR

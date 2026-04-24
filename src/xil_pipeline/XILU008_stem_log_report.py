@@ -10,11 +10,14 @@ its backend, SHA-256 hash, and approximate creation context.
 
 Usage::
 
-    xil-stem-log                          # scan logs/ in CWD → stem_log_report.csv
-    xil-stem-log --logs-dir logs/         # explicit log directory
-    xil-stem-log --output report.csv      # override output path
-    xil-stem-log --since 2026-04-01       # only logs on or after this date
-    xil-stem-log --show                   # print CSV to stdout instead of file
+    xil-stem-log                              # scan logs/ in CWD → stem_log_report.csv
+    xil-stem-log --logs-dir logs/             # explicit log directory
+    xil-stem-log --output report.csv          # override output path
+    xil-stem-log --since 2026-04-01           # only logs on or after this date
+    xil-stem-log --episode S03E03             # filter to one episode tag
+    xil-stem-log --episode S03E03 --since 2026-04-01
+    xil-stem-log --slug the413                # filter to one show slug
+    xil-stem-log --show                       # print CSV to stdout instead of file
 
 CSV columns
 -----------
@@ -167,6 +170,17 @@ def get_parser() -> argparse.ArgumentParser:
         help="Only include log files on or after this date",
     )
     parser.add_argument(
+        "--episode", "--tag",
+        metavar="TAG",
+        dest="episode",
+        help="Filter records to a specific episode tag (e.g. S03E03)",
+    )
+    parser.add_argument(
+        "--slug",
+        metavar="SLUG",
+        help="Filter records to a specific show slug (e.g. the413)",
+    )
+    parser.add_argument(
         "--show",
         action="store_true",
         help="Print CSV to stdout (equivalent to --output -)",
@@ -195,6 +209,13 @@ def main() -> None:
         records = _parse_log(lf)
         all_records.extend(records)
         print(f"  {lf.name}: {len(records)} stems", file=sys.stderr)
+
+    if args.episode:
+        tag = args.episode.upper()
+        all_records = [r for r in all_records if r.get("stem_path") and tag in (r["stem_path"].upper())]
+    if args.slug:
+        slug = args.slug.lower()
+        all_records = [r for r in all_records if r.get("stem_path") and slug in (r["stem_path"].lower())]
 
     print(f"Total: {len(all_records)} stem records", file=sys.stderr)
 

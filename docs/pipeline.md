@@ -1067,6 +1067,7 @@ Useful for auditing what was generated, when, with which backend, and confirming
 ```bash
 xil-stem-log --episode S03E03
 xil-stem-log --episode S03E03 --since 2026-04-01 --output stem_log.csv
+xil-stem-log --slug the413
 xil-stem-log --logs-dir /path/to/logs
 ```
 
@@ -1083,16 +1084,21 @@ flowchart TD
     generation line → saved → SHA256`"]
     RUNIDX["`run_index
     increments per 'Phase 1' marker`"]
+    FILTER["`Optional filters:
+    --episode TAG · --slug SLUG
+    --since DATE`"]
     RECORDS["`Records:
-    date · run_index · seq · speaker
-    backend · model · sha256
-    approx_time · out_path`"]
+    log_date · run_index · seq · speaker
+    backend · char_count · sha256
+    stem_path · stem_filename`"]
     CSV["`📊 stem_log_report.csv
     Chronological stem history`"]
 
-    LOGS --> PARSE --> STATE --> RUNIDX --> RECORDS --> CSV
+    LOGS --> PARSE --> STATE --> RUNIDX --> FILTER --> RECORDS --> CSV
 ```
 
+> **`--episode TAG`** filters records to a specific episode tag (e.g. `S03E03`).
+> **`--slug SLUG`** filters records to a specific show slug (e.g. `the413`).
 > **`--since DATE`** filters to logs on or after the given date (YYYY-MM-DD format).
 > **No API key required** — reads local log files only.
 

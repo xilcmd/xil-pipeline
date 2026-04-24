@@ -666,17 +666,20 @@ python XILU006_splice_parsed.py --episode S02E03 --insert-after 322 \
 ```bash
 xil-stem-log --episode S03E03
 xil-stem-log --episode S03E03 --since 2026-04-01
+xil-stem-log --slug the413
 xil-stem-log --logs-dir logs/ --output stem_log_report.csv
 ```
 
-- `--episode` or `--show` (optional) filters log entries to a specific episode tag or show slug
+- `--episode TAG` (optional) filters records to a specific episode tag (e.g. `S03E03`); matched against `stem_path`
+- `--slug SLUG` (optional) filters records to a specific show slug (e.g. `the413`); matched against `stem_path`
 - `--logs-dir DIR` path to log directory (default: `logs/`)
-- `--output PATH` output CSV path (default: `stem_log_report.csv`)
+- `--output PATH` output CSV path (default: `stem_log_report.csv`); use `-` for stdout
 - `--since DATE` filter to logs on or after the given date (YYYY-MM-DD)
+- `--show` print CSV to stdout (equivalent to `--output -`)
 - Parses `logs/xil_YYYY-MM-DD.log` files; three regex patterns match ElevenLabs, gTTS, and Chatterbox generation lines
 - State machine: generation line → saved line → SHA256 line → emits one record
 - `run_index` counter increments per `Phase 1: Generating` marker, grouping stems by production run
-- Output columns: `date`, `run_index`, `seq`, `speaker`, `backend`, `model`, `sha256`, `approx_time`, `out_path`
+- Output columns: `log_date`, `log_file`, `run_index`, `log_line`, `seq`, `speaker`, `backend`, `char_count`, `stem_path`, `stem_filename`, `sha256`
 - No ElevenLabs API key required — reads local log files only
 
 ### Web Dashboard
