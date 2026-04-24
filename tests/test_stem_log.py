@@ -10,7 +10,6 @@ import pytest
 
 from xil_pipeline.XILU008_stem_log_report import _parse_log, get_parser, main
 
-
 # ── fixtures ─────────────────────────────────────────────────────────────────
 
 ELEVEN_LOG = """\
