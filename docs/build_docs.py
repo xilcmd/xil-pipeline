@@ -88,7 +88,8 @@ def should_document_file(file: Path, code_root: Path) -> bool:
     # Skip specific problematic directories
     skip_dirs = {'data', 'output', '.ruff_cache', '.venv', 'venv', '.git', 'tests', 'docs',
                  'site'}
-    if any(part in skip_dirs or part.endswith('_files') for part in relative_parts):
+    if any(part in skip_dirs or part.endswith('_files') or part.startswith('venv')
+           for part in relative_parts):
         return False
 
     return True
@@ -121,7 +122,8 @@ def should_copy_markdown_file(file: Path) -> bool:
     skip_dirs = {'data', 'output', '.ruff_cache', '.venv', 'venv', '.git', 'site',
                  'docs', '.pytest_cache', 'scripts'}
     parent_parts = file.parent.parts
-    if any(part in skip_dirs or part.endswith('_files') for part in parent_parts):
+    if any(part in skip_dirs or part.endswith('_files') or part.startswith('venv')
+           for part in parent_parts):
         return False
 
     # Skip files with spaces (can cause issues)
