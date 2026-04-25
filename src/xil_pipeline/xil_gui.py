@@ -23,6 +23,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 
@@ -183,6 +184,29 @@ def _load_stems(slug: str, tag: str, filter_type: str = "all") -> list[tuple[str
 
 # ── Stage runner ───────────────────────────────────────────────────────────
 
+# Characters that have special meaning to a Unix shell; reject any token
+# containing them so user-supplied extra_flags cannot escape the subprocess
+# argument list or chain additional commands.
+_SHELL_UNSAFE_RE = re.compile(r'[;|&$`()\[\]<>!\\\n\r]')
+
+
+def _sanitize_extra_flags(flags: str) -> list[str]:
+    """Parse and validate extra CLI flags supplied by the GUI user.
+
+    Uses shlex.split so quoted paths-with-spaces work correctly.
+    Raises ValueError if the input contains shell metacharacters or
+    unbalanced quotes.
+    """
+    try:
+        tokens = shlex.split(flags.strip())
+    except ValueError as exc:
+        raise ValueError(f"Invalid flag syntax: {exc}") from exc
+    for tok in tokens:
+        if _SHELL_UNSAFE_RE.search(tok):
+            raise ValueError(f"Unsafe character in flag argument: {tok!r}")
+    return tokens
+
+
 def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str):
     """Generator: launch a pipeline stage, yield accumulated stdout."""
     if not episode_choice or not stage:
@@ -211,7 +235,11 @@ def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str)
     if dry_run and key in DRY_RUN_STAGES:
         cmd.append("--dry-run")
     if extra_flags.strip():
-        cmd.extend(extra_flags.strip().split())
+        try:
+            cmd.extend(_sanitize_extra_flags(extra_flags))
+        except ValueError as exc:
+            yield f"Error in Extra flags: {exc}"
+            return
 
     header = "$ " + " ".join(cmd) + "\n\n"
     yield header
