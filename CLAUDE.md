@@ -766,11 +766,11 @@ Unix man pages for all 21 CLI commands are pre-generated and committed to `man/m
 
 ```bash
 pip install -e ".[dev]"      # includes argparse-manpage
-python scripts/build_man.py  # regenerate all 20 argparse-based pages
+python docs/build_man.py  # regenerate all 20 argparse-based pages
 # xil.1 is hand-crafted — edit man/man1/xil.1 directly when the dispatcher changes
 ```
 
-Regenerate a single page: `python scripts/build_man.py xil-parse`
+Regenerate a single page: `python docs/build_man.py xil-parse`
 
 Always commit the regenerated `.1` files alongside any CLI flag change. The `get_parser()` function in each module (extracted from `main()`) is what `build_man.py` calls to obtain the parser — keep it in sync with any `add_argument` changes.
 

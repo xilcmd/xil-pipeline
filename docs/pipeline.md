@@ -1383,7 +1383,7 @@ Man pages are pre-generated from each command's `get_parser()` function and comm
 
 ```bash
 pip install -e ".[dev]"      # includes argparse-manpage
-python scripts/build_man.py  # regenerate all 18 argparse-based pages
+python docs/build_man.py  # regenerate all 20 argparse-based pages
 ```
 
 The `xil.1` dispatcher page (`man/man1/xil.1`) is hand-crafted and must be updated manually when the dispatcher's command list changes.

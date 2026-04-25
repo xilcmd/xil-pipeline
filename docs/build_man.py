@@ -11,9 +11,9 @@ hand-crafted (man/man1/xil.1) and is never overwritten by this script.
 
 Usage::
 
-    python scripts/build_man.py               # regenerate all 20 pages
-    python scripts/build_man.py xil-parse     # regenerate one page
-    python scripts/build_man.py --check       # exit 1 if any file is stale
+    python docs/build_man.py               # regenerate all 20 pages
+    python docs/build_man.py xil-parse     # regenerate one page
+    python docs/build_man.py --check       # exit 1 if any file is stale
 
 Requirements::
 
@@ -171,7 +171,7 @@ def build(target: str | None, check: bool) -> int:
         return 1
     if check and stale:
         print(f"\n{len(stale)} stale page(s): {', '.join(stale)}", file=sys.stderr)
-        print("Run:  python scripts/build_man.py", file=sys.stderr)
+        print("Run:  python docs/build_man.py", file=sys.stderr)
         return 1
     return 0
 
