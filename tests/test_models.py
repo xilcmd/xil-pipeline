@@ -5,6 +5,7 @@
 """Tests for Pydantic data models (TDD — tests written before models)."""
 
 import json
+import os
 
 import pytest
 from pydantic import ValidationError
@@ -1023,18 +1024,18 @@ class TestDerivePaths:
         paths = models.derive_paths_legacy("the413", "S01E01")
         assert paths["cast"].endswith("cast_the413_S01E01.json")
         assert paths["sfx"].endswith("sfx_the413_S01E01.json")
-        assert paths["parsed"].endswith("parsed/parsed_the413_S01E01.json")
+        assert paths["parsed"].endswith(os.path.join("parsed", "parsed_the413_S01E01.json"))
         assert paths["master"].endswith("the413_S01E01_master.mp3")
-        assert paths["daw"].endswith("daw/S01E01")
+        assert paths["daw"].endswith(os.path.join("daw", "S01E01"))
 
     def test_new_layout_paths(self, tmp_path, monkeypatch):
         # derive_paths returns new paths anchored to workspace root (CWD here)
         monkeypatch.chdir(tmp_path)
         paths = models.derive_paths("nightowls", "S02E05")
-        assert paths["cast"].endswith("configs/nightowls/cast_S02E05.json")
-        assert paths["sfx"].endswith("configs/nightowls/sfx_S02E05.json")
-        assert paths["parsed"].endswith("parsed/nightowls/parsed_S02E05.json")
-        assert paths["daw"].endswith("daw/nightowls/S02E05")
+        assert paths["cast"].endswith(os.path.join("configs", "nightowls", "cast_S02E05.json"))
+        assert paths["sfx"].endswith(os.path.join("configs", "nightowls", "sfx_S02E05.json"))
+        assert paths["parsed"].endswith(os.path.join("parsed", "nightowls", "parsed_S02E05.json"))
+        assert paths["daw"].endswith(os.path.join("daw", "nightowls", "S02E05"))
 
     def test_different_show(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -1054,7 +1055,7 @@ class TestDerivePaths:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "cast_the413_S01E01.json").write_text("{}", encoding="utf-8")
         paths = models.derive_paths("the413", "S01E01")
-        assert paths["cues_manifest"].endswith("cues/cues_manifest_S01E01.json")
+        assert paths["cues_manifest"].endswith(os.path.join("cues", "cues_manifest_S01E01.json"))
 
 
 class TestResolveSlug:
