@@ -1019,22 +1019,22 @@ class TestDerivePaths:
         assert set(paths.keys()) == expected_keys
 
     def test_the413_paths_match_legacy(self):
-        # derive_paths_legacy always returns pre-0.1.8 paths regardless of filesystem
+        # derive_paths_legacy returns pre-0.1.8 paths anchored to workspace root
         paths = models.derive_paths_legacy("the413", "S01E01")
-        assert paths["cast"] == "cast_the413_S01E01.json"
-        assert paths["sfx"] == "sfx_the413_S01E01.json"
-        assert paths["parsed"] == "parsed/parsed_the413_S01E01.json"
-        assert paths["master"] == "the413_S01E01_master.mp3"
-        assert paths["daw"] == "daw/S01E01"
+        assert paths["cast"].endswith("cast_the413_S01E01.json")
+        assert paths["sfx"].endswith("sfx_the413_S01E01.json")
+        assert paths["parsed"].endswith("parsed/parsed_the413_S01E01.json")
+        assert paths["master"].endswith("the413_S01E01_master.mp3")
+        assert paths["daw"].endswith("daw/S01E01")
 
     def test_new_layout_paths(self, tmp_path, monkeypatch):
-        # derive_paths returns new paths when no legacy files exist (clean dir)
+        # derive_paths returns new paths anchored to workspace root (CWD here)
         monkeypatch.chdir(tmp_path)
         paths = models.derive_paths("nightowls", "S02E05")
-        assert paths["cast"] == "configs/nightowls/cast_S02E05.json"
-        assert paths["sfx"] == "configs/nightowls/sfx_S02E05.json"
-        assert paths["parsed"] == "parsed/nightowls/parsed_S02E05.json"
-        assert paths["daw"] == "daw/nightowls/S02E05"
+        assert paths["cast"].endswith("configs/nightowls/cast_S02E05.json")
+        assert paths["sfx"].endswith("configs/nightowls/sfx_S02E05.json")
+        assert paths["parsed"].endswith("parsed/nightowls/parsed_S02E05.json")
+        assert paths["daw"].endswith("daw/nightowls/S02E05")
 
     def test_different_show(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -1054,7 +1054,7 @@ class TestDerivePaths:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "cast_the413_S01E01.json").write_text("{}", encoding="utf-8")
         paths = models.derive_paths("the413", "S01E01")
-        assert paths["cues_manifest"] == "cues/cues_manifest_S01E01.json"
+        assert paths["cues_manifest"].endswith("cues/cues_manifest_S01E01.json")
 
 
 class TestResolveSlug:

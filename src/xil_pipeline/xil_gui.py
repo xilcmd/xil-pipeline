@@ -27,6 +27,8 @@ import shlex
 import subprocess
 import sys
 
+from xil_pipeline.models import get_workspace_root
+
 # ── Episode detection ──────────────────────────────────────────────────────
 
 # Matches both legacy root cast files and the new configs/{slug}/cast_{tag}.json layout
@@ -289,7 +291,7 @@ def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str)
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            cwd=os.getcwd(),
+            cwd=str(get_workspace_root()),
         )
         output = header
         for line in iter(proc.stdout.readline, ""):
@@ -312,7 +314,7 @@ def _build_app():
             "Gradio is not installed.\nRun: pip install 'xil-pipeline[gui]'"
         )
 
-    workspace = os.getcwd()
+    workspace = str(get_workspace_root())
     ep_choices = _episode_choices()
 
     # Pre-load stem list for the first episode at startup
@@ -403,7 +405,7 @@ def _build_app():
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                cwd=os.getcwd(),
+                cwd=str(get_workspace_root()),
             )
             output = "$ " + " ".join(cmd) + "\n\n"
             for line in iter(proc.stdout.readline, ""):
@@ -830,7 +832,7 @@ def main() -> None:
         server_name=args.host,
         server_port=args.port,
         share=args.share,
-        allowed_paths=[os.getcwd()],
+        allowed_paths=[str(get_workspace_root())],
     )
 
 

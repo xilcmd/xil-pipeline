@@ -44,9 +44,28 @@ All internal imports use the package namespace: `from xil_pipeline.models import
 - ElevenLabs API key via `ELEVENLABS_API_KEY` env var
 - Audio playback via `mpg123` in WSL
 
+## Workspace Root (`XIL_PROJECTROOT`)
+
+All pipeline commands resolve content paths relative to the **workspace root**. By default this is the current working directory (existing behaviour). Set `XIL_PROJECTROOT` to point at a content directory from anywhere:
+
+```bash
+export XIL_PROJECTROOT=/path/to/xil-content
+xil produce --episode S04E02   # works from any directory
+xil-gui                        # GUI shows correct workspace
+```
+
+Resolution order for `get_workspace_root()` (in `models.py`):
+
+1. `XIL_PROJECTROOT` environment variable (absolute path, tilde-expanded)
+2. `Path.cwd()` — current working directory (no env var set)
+
+`xil-init` with no directory argument scaffolds into `XIL_PROJECTROOT` when set, otherwise into the current directory.
+
+`logs/`, `configs/`, `parsed/`, `stems/`, `SFX/`, `daw/`, `masters/`, `cues/`, `scripts/`, `posts/` all resolve under the workspace root. This enables a clean separation of the installed software from user content — install `xil-pipeline` once via `pip`, point `XIL_PROJECTROOT` at a content-only directory.
+
 ## Project Configuration
 
-`project.json` at the repo root declares the show name and optional season title used across the pipeline:
+`project.json` at the workspace root declares the show name and optional season title used across the pipeline:
 
 ```json
 {
@@ -460,7 +479,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.scene` (str|None): scene label from parsed JSON, used for scene-scoped vintage filter; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `volume_percentage`, `ramp_in_seconds`, and `ramp_out_seconds` each fall back to the global key when no category-specific key exists (e.g. SFX/MUSIC when `sfx_volume_percentage`/`music_ramp_in_seconds` are absent from the config defaults); `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing; `apply_vintage_filter()` applies a 1960s-era HF roll-off + 1 dB reduction; `_apply_speaker_filters(segment, filter_val)` resolves the cast config `filter` string and applies the named filter chain (`false`/`None` = none, `true`/`"phone"` = phone, `"vintage"` = vintage, `"vintage,phone"` = both)
 - `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency; HTML bar badges: `ri` (↑ ramp in, left), `ro` (↓ ramp out, right-top), `pd` (% play duration, center), `vb` (🔊 volume%, right-bottom, shown when `volume_pct != 100`); applies to music, ambience, and SFX spans
-- `models.py` — Pydantic data models plus `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "sample"` fallback; `ProjectConfig` model with `type`/`tag_format` fields; `TYPE_DEFAULTS` dict with gap_ms and stability per content type; `derive_paths_legacy()` returns pre-0.1.8 paths (used by migration tool); `derive_paths()` auto-detects layout (legacy if root cast config exists, normalized otherwise); `load_project_config()` / `resolve_project_type()` helpers
+- `models.py` — Pydantic data models plus `get_workspace_root()` (respects `XIL_PROJECTROOT` env var), `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "sample"` fallback; `ProjectConfig` model with `type`/`tag_format` fields; `TYPE_DEFAULTS` dict with gap_ms and stability per content type; `derive_paths_legacy()` returns pre-0.1.8 paths anchored to workspace root (used by migration tool); `derive_paths()` auto-detects layout (legacy if root cast config exists, normalized otherwise); `load_project_config()` / `resolve_project_type()` helpers
 - `xil.py` — unified dispatcher that maps subcommands (`scan`, `parse`, `produce`, etc.) to existing module `main()` entry points; prints command list on `xil --help`; `xil-*` commands remain supported
 - `xil_init.py` — project scaffolding; `--type podcast|audiobook|drama|special` selects sample script, speakers.json, and project.json `type` field; creates new normalized workspace layout (`configs/{slug}/`)
 

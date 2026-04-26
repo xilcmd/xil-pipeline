@@ -13,12 +13,26 @@ type annotations that render as rich API documentation via mkdocstrings.
 import json
 import os
 import re
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 # Hardcoded fallback when no project.json or --show is provided.
 DEFAULT_SLUG = "sample"
+
+
+def get_workspace_root() -> Path:
+    """Return the active workspace root.
+
+    Resolves in priority order:
+    1. ``XIL_PROJECTROOT`` environment variable (absolute path).
+    2. Current working directory (existing behaviour).
+    """
+    env_val = os.environ.get("XIL_PROJECTROOT")
+    if env_val:
+        return Path(env_val).expanduser().resolve()
+    return Path.cwd()
 
 # Per-type production defaults (gap_ms between dialogue stems, voice stability hint).
 TYPE_DEFAULTS: dict[str, dict] = {
@@ -45,20 +59,21 @@ def show_slug(show_name: str) -> str:
 
 def _derive_paths_new(slug: str, tag: str) -> dict[str, str]:
     """Normalized workspace layout paths (0.1.8+)."""
+    root = str(get_workspace_root())
     return {
-        "cast": f"configs/{slug}/cast_{tag}.json",
-        "sfx": f"configs/{slug}/sfx_{tag}.json",
-        "parsed": f"parsed/{slug}/parsed_{tag}.json",
-        "parsed_csv": f"parsed/{slug}/parsed_{tag}.csv",
-        "annotated_csv": f"parsed/{slug}/annotated_{tag}.csv",
-        "master": f"masters/{slug}/{tag}_master.mp3",
-        "cues": f"cues/{slug}/cues_{tag}.md",
-        "cues_manifest": f"cues/{slug}/cues_manifest_{tag}.json",
-        "orig_parsed": f"parsed/{slug}/orig_parsed_{tag}.json",
-        "revised_script": f"scripts/revised_{slug}_{tag}.md",
-        "stems": f"stems/{slug}/{tag}",
-        "daw": f"daw/{slug}/{tag}",
-        "posts": f"posts/{slug}/{tag}_posts.md",
+        "cast": os.path.join(root, "configs", slug, f"cast_{tag}.json"),
+        "sfx": os.path.join(root, "configs", slug, f"sfx_{tag}.json"),
+        "parsed": os.path.join(root, "parsed", slug, f"parsed_{tag}.json"),
+        "parsed_csv": os.path.join(root, "parsed", slug, f"parsed_{tag}.csv"),
+        "annotated_csv": os.path.join(root, "parsed", slug, f"annotated_{tag}.csv"),
+        "master": os.path.join(root, "masters", slug, f"{tag}_master.mp3"),
+        "cues": os.path.join(root, "cues", slug, f"cues_{tag}.md"),
+        "cues_manifest": os.path.join(root, "cues", slug, f"cues_manifest_{tag}.json"),
+        "orig_parsed": os.path.join(root, "parsed", slug, f"orig_parsed_{tag}.json"),
+        "revised_script": os.path.join(root, "scripts", f"revised_{slug}_{tag}.md"),
+        "stems": os.path.join(root, "stems", slug, tag),
+        "daw": os.path.join(root, "daw", slug, tag),
+        "posts": os.path.join(root, "posts", slug, f"{tag}_posts.md"),
     }
 
 
@@ -70,21 +85,22 @@ def derive_paths_legacy(slug: str, tag: str) -> dict[str, str]:
         tag: Episode tag (e.g., ``"S01E01"``).
 
     Returns:
-        Dictionary mapping logical names to legacy relative file paths.
+        Dictionary mapping logical names to legacy absolute file paths.
     """
+    root = str(get_workspace_root())
     return {
-        "cast": f"cast_{slug}_{tag}.json",
-        "sfx": f"sfx_{slug}_{tag}.json",
-        "parsed": f"parsed/parsed_{slug}_{tag}.json",
-        "parsed_csv": f"parsed/parsed_{slug}_{tag}.csv",
-        "annotated_csv": f"parsed/parsed_{slug}_{tag}_annotated.csv",
-        "master": f"{slug}_{tag}_master.mp3",
-        "cues": f"cues/cues_{slug}_{tag}.md",
-        "cues_manifest": f"cues/cues_manifest_{tag}.json",
-        "orig_parsed": f"parsed/orig_parsed_{slug}_{tag}.json",
-        "revised_script": f"scripts/revised_{slug}_{tag}.md",
-        "stems": f"stems/{slug}/{tag}",
-        "daw": f"daw/{tag}",
+        "cast": os.path.join(root, f"cast_{slug}_{tag}.json"),
+        "sfx": os.path.join(root, f"sfx_{slug}_{tag}.json"),
+        "parsed": os.path.join(root, "parsed", f"parsed_{slug}_{tag}.json"),
+        "parsed_csv": os.path.join(root, "parsed", f"parsed_{slug}_{tag}.csv"),
+        "annotated_csv": os.path.join(root, "parsed", f"parsed_{slug}_{tag}_annotated.csv"),
+        "master": os.path.join(root, f"{slug}_{tag}_master.mp3"),
+        "cues": os.path.join(root, "cues", f"cues_{slug}_{tag}.md"),
+        "cues_manifest": os.path.join(root, "cues", f"cues_manifest_{tag}.json"),
+        "orig_parsed": os.path.join(root, "parsed", f"orig_parsed_{slug}_{tag}.json"),
+        "revised_script": os.path.join(root, "scripts", f"revised_{slug}_{tag}.md"),
+        "stems": os.path.join(root, "stems", slug, tag),
+        "daw": os.path.join(root, "daw", tag),
     }
 
 
@@ -111,6 +127,8 @@ def derive_paths(slug: str, tag: str) -> dict[str, str]:
 
 def _read_project(project_path: str = "project.json") -> dict:
     """Return the parsed contents of *project_path*, or ``{}`` if absent."""
+    if not os.path.isabs(project_path):
+        project_path = str(get_workspace_root() / project_path)
     if os.path.exists(project_path):
         with open(project_path, encoding="utf-8") as f:
             return json.load(f)

@@ -154,9 +154,9 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--logs-dir",
-        default="logs",
+        default=None,
         metavar="DIR",
-        help="Directory containing xil_YYYY-MM-DD.log files (default: logs/)",
+        help="Directory containing xil_YYYY-MM-DD.log files (default: <workspace>/logs/)",
     )
     parser.add_argument(
         "--output", "-o",
@@ -191,6 +191,9 @@ def get_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = get_parser().parse_args()
 
+    if args.logs_dir is None:
+        from xil_pipeline.models import get_workspace_root
+        args.logs_dir = str(get_workspace_root() / "logs")
     logs_dir = Path(args.logs_dir)
     if not logs_dir.is_dir():
         print(f"[ERROR] Logs directory not found: {logs_dir}", file=sys.stderr)

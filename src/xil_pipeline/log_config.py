@@ -72,7 +72,8 @@ def configure_logging(level: int = logging.INFO) -> None:
         handler.setFormatter(_CliFormatter())
         root.addHandler(handler)
 
-        log_dir = Path("logs")
+        from xil_pipeline.models import get_workspace_root
+        log_dir = get_workspace_root() / "logs"
         log_dir.mkdir(exist_ok=True)
         log_path = log_dir / f"xil_{date.today().isoformat()}.log"
         fh = logging.FileHandler(log_path, encoding="utf-8")

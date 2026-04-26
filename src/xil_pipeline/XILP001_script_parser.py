@@ -128,14 +128,16 @@ def load_speakers(
             from xil_pipeline.models import load_project_config, show_slug
             cfg = load_project_config()
             slug = show_slug(cfg.show)
-            normalized = os.path.join(os.getcwd(), "configs", slug, "speakers.json")
+            from xil_pipeline.models import get_workspace_root
+            normalized = str(get_workspace_root() / "configs" / slug / "speakers.json")
             if os.path.exists(normalized):
                 speakers_file = normalized
         except Exception:
             pass
     if speakers_file is None:
         # 2b. speakers.json at workspace root (legacy fallback)
-        cwd_file = os.path.join(os.getcwd(), "speakers.json")
+        from xil_pipeline.models import get_workspace_root
+        cwd_file = str(get_workspace_root() / "speakers.json")
         if os.path.exists(cwd_file):
             speakers_file = cwd_file
 

@@ -518,8 +518,8 @@ def get_parser() -> argparse.ArgumentParser:
         description="Scaffold a new xil-pipeline project workspace",
     )
     parser.add_argument(
-        "directory", nargs="?", default=".",
-        help="Target directory (default: current directory)",
+        "directory", nargs="?", default=None,
+        help="Target directory (default: XIL_PROJECTROOT if set, else current directory)",
     )
     parser.add_argument(
         "--show", default="Sample Show",
@@ -547,7 +547,14 @@ def main() -> None:
     configure_logging()
     args = get_parser().parse_args()
 
-    directory = os.path.abspath(args.directory)
+    if args.directory is None:
+        if os.environ.get("XIL_PROJECTROOT"):
+            from xil_pipeline.models import get_workspace_root
+            directory = str(get_workspace_root())
+        else:
+            directory = os.path.abspath(".")
+    else:
+        directory = os.path.abspath(args.directory)
     show_name = args.show
     content_type = args.content_type
 

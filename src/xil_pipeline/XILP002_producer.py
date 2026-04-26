@@ -1060,10 +1060,10 @@ def get_parser() -> argparse.ArgumentParser:
                             "(default: auto-detect ./venv-chatterbox/bin/python3). "
                             "Used only with --backend chatterbox."
                         ))
-    parser.add_argument("--voice-refs", default="voice_refs", metavar="DIR",
+    parser.add_argument("--voice-refs", default=None, metavar="DIR",
                         help=(
                             "Directory of <speaker_key>.wav reference clips for Chatterbox "
-                            "zero-shot voice cloning (default: voice_refs/). "
+                            "zero-shot voice cloning (default: <workspace>/voice_refs/). "
                             "Missing refs fall back to Chatterbox's default voice."
                         ))
     parser.add_argument("--exaggeration", type=float, default=0.5, metavar="FLOAT",
@@ -1182,6 +1182,10 @@ def main() -> None:
             postamble_music_stem = os.path.join(stems_dir, f"{_max_seq + 1:03d}_postamble_sfx.mp3")
             postamble_voice_stem = os.path.join(stems_dir, f"{_max_seq + 2:03d}_postamble_{spk_post}.mp3")
 
+        if args.voice_refs is None:
+            from xil_pipeline.models import get_workspace_root
+            args.voice_refs = str(get_workspace_root() / "voice_refs")
+
         if args.backend == "chatterbox":
             _print_voice_refs_table(config, args.voice_refs)
 
@@ -1220,7 +1224,8 @@ def main() -> None:
                 cb_python = args.chatterbox_python
                 if cb_python is None:
                     # Auto-detect: look for venv-chatterbox adjacent to CWD
-                    cb_default = os.path.join(os.getcwd(), "venv-chatterbox", "bin", "python3")
+                    from xil_pipeline.models import get_workspace_root
+                    cb_default = str(get_workspace_root() / "venv-chatterbox" / "bin" / "python3")
                     if os.path.exists(cb_default):
                         cb_python = cb_default
                     else:
