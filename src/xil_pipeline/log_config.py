@@ -33,7 +33,6 @@ Call ``configure_logging(logging.DEBUG)`` to enable verbose output.
 import logging
 import sys
 from datetime import date
-from pathlib import Path
 
 
 class _CliFormatter(logging.Formatter):
