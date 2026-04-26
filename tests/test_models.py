@@ -344,9 +344,12 @@ class TestCastMember:
         with pytest.raises(ValidationError):
             self._make(pan=-1.5)
 
-    def test_voice_id_non_empty(self):
-        with pytest.raises(ValidationError):
-            self._make(voice_id="")
+    def test_voice_id_empty_allowed(self):
+        # Empty voice_id is permitted so non-ElevenLabs backends (gTTS, Chatterbox)
+        # can load cast configs without a voice_id assigned. The producer enforces
+        # the ElevenLabs-only check at runtime.
+        cm = self._make(voice_id="")
+        assert cm.voice_id == ""
 
     def test_voice_id_tbd_accepted(self):
         cm = self._make(voice_id="TBD")
