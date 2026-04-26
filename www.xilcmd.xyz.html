@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>xil-pipeline — AI-Powered Podcast & Audiobook Production Pipeline</title>
-  <meta name="description" content="xil-pipeline is an AGPL-3.0 open source pipeline that transforms AI-generated scripts into fully produced podcasts and audiobooks using ElevenLabs TTS, sound effects, music, and ambient audio.">
-  <meta name="keywords" content="xil-pipeline, podcast automation, audiobook generator, ElevenLabs TTS, AI script, open source audio pipeline, text to speech">
+  <meta name="description" content="xil-pipeline is an AGPL-3.0 open source pipeline that transforms AI-generated scripts into fully produced podcasts and audiobooks. No API key required — use free gTTS, local Chatterbox TTS, or premium ElevenLabs voices.">
+  <meta name="keywords" content="xil-pipeline, podcast automation, audiobook generator, ElevenLabs TTS, gTTS, Chatterbox TTS, open source TTS, AI script, open source audio pipeline, text to speech, Gradio, xil-gui">
   <meta name="robots" content="index, follow">
 
   <!-- Open Graph -->
   <meta property="og:title" content="xil-pipeline — AI-Powered Audio Production Pipeline">
-  <meta property="og:description" content="Transform AI-generated scripts into fully produced podcasts and audiobooks. Open source. ElevenLabs powered.">
+  <meta property="og:description" content="Transform AI-generated scripts into fully produced podcasts and audiobooks. No API key required — free gTTS, local Chatterbox, or ElevenLabs. Open source.">
   <meta property="og:image" content="https://placehold.co/1200x630/0a1a0a/39ff14?text=xil-pipeline">
   <meta property="og:url" content="https://xilcmd.xyz">
   <meta property="og:type" content="website">
@@ -18,7 +18,7 @@
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="xil-pipeline — AI-Powered Audio Production Pipeline">
-  <meta name="twitter:description" content="Transform AI-generated scripts into fully produced podcasts and audiobooks. Open source. ElevenLabs powered.">
+  <meta name="twitter:description" content="Transform AI-generated scripts into fully produced podcasts and audiobooks. No API key required — free gTTS, local Chatterbox, or ElevenLabs. Open source.">
   <meta name="twitter:image" content="https://placehold.co/1200x630/0a1a0a/39ff14?text=xil-pipeline">
 
   <!-- Favicon -->
@@ -737,9 +737,10 @@
         Fully automated.
       </p>
       <p class="hero-desc">
-        Transform AI-generated scripts into fully produced podcasts and audiobooks.
-        Multi-voice TTS via ElevenLabs, layered sound effects, music beds, and ambient audio —
-        all orchestrated from a single structured script format.
+        Start for free with gTTS or local Chatterbox TTS — no API key required.
+        When you're ready for production quality, plug in ElevenLabs voices with layered
+        sound effects, music beds, and ambient audio — all orchestrated from a single
+        structured script format.
       </p>
       <div class="hero-actions">
         <a href="getting-started.html" class="btn btn-primary">⚡ Get Started</a>
@@ -769,6 +770,9 @@
         <span class="t-prompt">$ </span><span class="t-cmd">xil-parse scripts/sample_S01E01.md <span class="t-copper">--episode S01E01</span></span><br>
         <span class="t-prompt">$ </span><span class="t-cmd">xil-produce --episode S01E01 <span class="t-copper">--dry-run</span></span><br>
         <span class="t-prompt">$ </span><span class="t-cmd">xil-produce --episode S01E01</span><br>
+        <span class="t-blank"></span>
+        <span class="t-comment"># Or produce for free — no API key needed</span><br>
+        <span class="t-prompt">$ </span><span class="t-cmd">xil-produce --episode S01E01 <span class="t-copper">--backend gtts</span></span><br>
         <span class="t-blank"></span>
         <span class="t-comment"># Mix &amp; master</span><br>
         <span class="t-prompt">$ </span><span class="t-cmd">xil-daw --episode S01E01</span><br>
@@ -804,7 +808,7 @@
       <div class="pipe-step">
         <span class="pipe-icon">🎙</span>
         <div class="pipe-label">TTS Render</div>
-        <div class="pipe-desc">ElevenLabs synthesizes each voice track in parallel</div>
+        <div class="pipe-desc">ElevenLabs, gTTS, or local Chatterbox — choose your TTS backend</div>
       </div>
       <div class="pipe-arrow">→</div>
       <div class="pipe-step">
@@ -818,6 +822,54 @@
         <div class="pipe-label">Export</div>
         <div class="pipe-desc">Output MP3, WAV, or chapter-split audiobook files</div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- TTS BACKENDS -->
+<section style="border-top: 1px solid var(--border);">
+  <div class="section-inner">
+    <p class="section-label">// tts backends</p>
+    <h2 class="section-title">No API Key Required to Get Started</h2>
+    <p class="section-sub">Three backends, one flag. Swap at any time — stems are compatible across all three.</p>
+    <div class="features-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+
+      <div class="feature-card" style="border-color: rgba(255,183,0,0.4);">
+        <div class="feature-icon" style="background: rgba(255,183,0,0.08); border-color: rgba(255,183,0,0.4);">🆓</div>
+        <div class="feature-title" style="color: var(--amber);">Free · Google TTS (gTTS)</div>
+        <div class="feature-desc">
+          No API key. No credits. Flat single voice — ideal for drafting, timing checks, and cost-free iteration.<br><br>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--text-muted);">Install:</span>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--amber);">pip install xil-pipeline</span><br>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--text-muted);">Usage: </span>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--text);">xil-produce --backend gtts</span>
+        </div>
+      </div>
+
+      <div class="feature-card" style="border-color: rgba(184,115,51,0.5);">
+        <div class="feature-icon" style="background: rgba(184,115,51,0.08); border-color: rgba(184,115,51,0.4);">🖥</div>
+        <div class="feature-title" style="color: var(--copper-light);">Local · Chatterbox TTS</div>
+        <div class="feature-desc">
+          No API key. GPU-accelerated zero-shot voice cloning from a 10-second reference clip. Near-production quality, fully private.<br><br>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--text-muted);">Install:</span>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--copper-light);">pip install 'xil-pipeline[chatterbox]'</span><br>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--text-muted);">Usage: </span>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--text);">xil-produce --backend chatterbox</span>
+        </div>
+      </div>
+
+      <div class="feature-card" style="border-color: var(--green-dim);">
+        <div class="feature-icon">🎙</div>
+        <div class="feature-title">Premium · ElevenLabs</div>
+        <div class="feature-desc">
+          Highest quality multi-voice TTS. Per-character voice IDs, stability tuning, and eleven_v3 audio tags. Default backend for production.<br><br>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--text-muted);">Requires:</span>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--green);">ELEVENLABS_API_KEY</span><br>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--text-muted);">Usage: </span>
+          <span style="font-family:var(--mono); font-size:12px; color:var(--text);">xil-produce --backend elevenlabs</span>
+        </div>
+      </div>
+
     </div>
   </div>
 </section>
@@ -950,7 +1002,10 @@
 <span class="cm"># 5. Preview TTS character cost (no API calls)</span>
 <span class="t-prompt" style="color:var(--green)">$</span> xil-produce --episode S01E01 --dry-run
 
-<span class="cm"># 6. Generate voice and SFX stems (requires ELEVENLABS_API_KEY)</span>
+<span class="cm"># 6a. Generate voice stems for free — no API key needed</span>
+<span class="t-prompt" style="color:var(--green)">$</span> xil-produce --episode S01E01 --backend <span class="str">gtts</span>
+
+<span class="cm"># 6b. Or with ElevenLabs for production quality (requires API key)</span>
 <span class="t-prompt" style="color:var(--green)">$</span> <span class="kw">export</span> ELEVENLABS_API_KEY=<span class="str">"your_key_here"</span>
 <span class="t-prompt" style="color:var(--green)">$</span> xil-produce --episode S01E01
 
@@ -1006,6 +1061,11 @@
         <div class="doc-card-title">API &amp; Plugins</div>
         <div class="doc-card-desc">Extend xil-pipeline with custom TTS providers, audio processors, and script generators via the plugin API.</div>
       </a>
+      <a href="gui.html" class="doc-card">
+        <span class="doc-card-icon">🖥</span>
+        <div class="doc-card-title">xil-gui Dashboard</div>
+        <div class="doc-card-desc">Browser UI powered by Gradio. Browse episodes, preview stems, run pipeline stages with live log streaming, and view the interactive timeline.</div>
+      </a>
     </div>
   </div>
 </section>
@@ -1024,8 +1084,8 @@
       </div>
       <div class="feature-card">
         <div class="feature-icon">🎙</div>
-        <div class="feature-title">Multi-Voice TTS</div>
-        <div class="feature-desc">Assign unique ElevenLabs voices to each character or narrator. Parallel rendering keeps production fast even for long-form content.</div>
+        <div class="feature-title">Multi-Voice TTS · 3 Backends</div>
+        <div class="feature-desc">ElevenLabs (premium), gTTS (free, no key), or local Chatterbox (GPU zero-shot cloning). Swap backends with <code>--backend gtts|chatterbox|elevenlabs</code>.</div>
       </div>
       <div class="feature-card">
         <div class="feature-icon">🎵</div>
@@ -1038,9 +1098,9 @@
         <div class="feature-desc">Output to MP3, WAV, or FLAC. Audiobook mode splits by chapter markers. Podcast mode embeds ID3 metadata automatically.</div>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🔌</div>
-        <div class="feature-title">Plugin Architecture</div>
-        <div class="feature-desc">Swap in alternative TTS providers, custom audio processors, or your own script generators via a clean plugin interface.</div>
+        <div class="feature-icon">🖥</div>
+        <div class="feature-title">xil-gui · Gradio Dashboard</div>
+        <div class="feature-desc">Optional browser UI with five tabs: Episodes, Audio Preview, Run Stage, Setup, and Timeline. Launch with <code>xil-gui</code> after <code>pip install 'xil-pipeline[gui]'</code>. Share via ngrok for partner access. <span class="tag tag-amber" style="font-size:11px;">optional extra</span></div>
       </div>
       <div class="feature-card">
         <div class="feature-icon">⚡</div>
@@ -1146,10 +1206,12 @@
           <div class="logo-icon">|&gt;</div>
           <span class="logo-text">xil-pipeline</span>
         </a>
-        <p>An AGPL-3.0 open source audio production pipeline. Transform AI-generated scripts into fully produced podcasts and audiobooks using ElevenLabs TTS.</p>
+        <p>An AGPL-3.0 open source audio production pipeline. Transform AI-generated scripts into fully produced podcasts and audiobooks using ElevenLabs TTS, gTTS, or local Chatterbox — no API key required to get started.</p>
         <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
           <span class="badge badge-copper">AGPL-3.0</span>
-          <span class="badge badge-amber">ElevenLabs Powered</span>
+          <span class="badge badge-green">ElevenLabs</span>
+          <span class="badge badge-amber">gTTS</span>
+          <span class="badge badge-copper">Chatterbox</span>
           <span class="badge badge-green">xilcmd.xyz · Web2</span>
           <span class="badge badge-copper">xilcmd.hub · Web3</span>
         </div>
@@ -1180,7 +1242,7 @@
     </div>
     <div class="footer-bottom">
       <p>© 2025 xil-pipeline · <a href="https://xilcmd.xyz" style="color:var(--green-dim)">xilcmd.xyz</a> (Web2) · <span style="color:var(--copper-light)" title="Web3 Unstoppable Domain">xilcmd.hub ⬡</span> (Web3) · AGPL-3.0</p>
-      <p style="color: var(--text-muted);">Built with <span style="color:var(--green)">♥</span> by the community · Powered by ElevenLabs TTS</p>
+      <p style="color: var(--text-muted);">Built with <span style="color:var(--green)">♥</span> by the community · ElevenLabs · gTTS · Chatterbox TTS backends</p>
     </div>
   </div>
 </footer>

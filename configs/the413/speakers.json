@@ -1,37 +1,154 @@
 [
-  { "display": "FILM AUDIO (MARGARET'S VOICE)", "key": "film_audio" },
-  { "display": "STRANGER (MALE VOICE, FLAT)", "key": "stranger" },
-  { "display": "MARGARET (V.O.)", "key": "margaret" },
-  { "display": "MR. PATTERSON", "key": "mr_patterson" },
-  { "display": "FILM AUDIO", "key": "film_audio" },
-  { "display": "STRANGER", "key": "stranger" },
-  { "display": "MARGARET", "key": "margaret" },
-  { "display": "VICTOR", "key": "victor" },
-  { "display": "MARTHA", "key": "martha" },
-  { "display": "GERALD", "key": "gerald" },
-  { "display": "KAREN", "key": "karen" },
-  { "display": "SARAH", "key": "sarah" },
-  { "display": "ELENA", "key": "elena" },
-  { "display": "CLERK", "key": "clerk" },
-  { "display": "ADAM", "key": "adam" },
-  { "display": "DEZ", "key": "dez" },
-  { "display": "MAYA", "key": "maya" },
-  { "display": "AVA", "key": "ava" },
-  { "display": "RÍAN", "key": "rian" },
-  { "display": "RÍÁN", "key": "rian" },
-  { "display": "FRANK", "key": "frank" },
-  { "display": "TINA", "key": "tina" },
-  { "display": "HOST", "key": "host" },
-  { "display": "CALLER", "key": "caller" },
-  { "display": "TOBY", "key": "toby" },
-  { "display": "GUEST", "key": "guest" },
-  { "display": "DARIUS", "key": "darius" },
-  { "display": "NARRATOR", "key": "narrator" },
-  { "display": "ELARA", "key": "elara" },
-  { "display": "EVE", "key": "eve" },
-  { "display": "JAMES", "key": "james" },
-  { "display": "A.I. VOICE 1", "key": "aivoice1" },
-  { "display": "A.I. VOICE 2", "key": "aivoice2" },
-  { "display": "Collin", "key": "collin" },
-  { "display": "Ray", "key": "ray" }
+  {
+    "display": "FILM AUDIO (MARGARET'S VOICE)",
+    "key": "film_audio"
+  },
+  {
+    "display": "STRANGER (MALE VOICE, FLAT)",
+    "key": "stranger"
+  },
+  {
+    "display": "MARGARET (V.O.)",
+    "key": "margaret"
+  },
+  {
+    "display": "MR. PATTERSON",
+    "key": "mr_patterson"
+  },
+  {
+    "display": "FILM AUDIO",
+    "key": "film_audio"
+  },
+  {
+    "display": "STRANGER",
+    "key": "stranger"
+  },
+  {
+    "display": "MARGARET",
+    "key": "margaret"
+  },
+  {
+    "display": "VICTOR",
+    "key": "victor"
+  },
+  {
+    "display": "MARTHA",
+    "key": "martha"
+  },
+  {
+    "display": "GERALD",
+    "key": "gerald"
+  },
+  {
+    "display": "KAREN",
+    "key": "karen"
+  },
+  {
+    "display": "SARAH",
+    "key": "sarah"
+  },
+  {
+    "display": "ELENA",
+    "key": "elena"
+  },
+  {
+    "display": "CLERK",
+    "key": "clerk"
+  },
+  {
+    "display": "ADAM",
+    "key": "adam"
+  },
+  {
+    "display": "DEZ",
+    "key": "dez"
+  },
+  {
+    "display": "MAYA",
+    "key": "maya"
+  },
+  {
+    "display": "AVA",
+    "key": "ava"
+  },
+  {
+    "display": "R\u00cdAN",
+    "key": "rian"
+  },
+  {
+    "display": "R\u00cd\u00c1N",
+    "key": "rian"
+  },
+  {
+    "display": "FRANK",
+    "key": "frank"
+  },
+  {
+    "display": "TINA",
+    "key": "tina"
+  },
+  {
+    "display": "HOST",
+    "key": "host"
+  },
+  {
+    "display": "CALLER",
+    "key": "caller"
+  },
+  {
+    "display": "TOBY",
+    "key": "toby"
+  },
+  {
+    "display": "GUEST",
+    "key": "guest"
+  },
+  {
+    "display": "NARRATOR",
+    "key": "narrator"
+  },
+  {
+    "display": "ELARA",
+    "key": "elara"
+  },
+  {
+    "display": "EVE",
+    "key": "eve"
+  },
+  {
+    "display": "JAMES",
+    "key": "james"
+  },
+  {
+    "display": "A.I. VOICE 1",
+    "key": "aivoice1"
+  },
+  {
+    "display": "A.I. VOICE 2",
+    "key": "aivoice2"
+  },
+  {
+    "display": "Collin",
+    "key": "collin"
+  },
+  {
+    "display": "RAY",
+    "key": "ray"
+  },
+  {
+    "display": "HOST CHET",
+    "key": "host_chet"
+  },
+  {
+    "display": "CALLER ONE",
+    "key": "caller_one"
+  },
+  {
+    "display": "CALLER TWO",
+    "key": "caller_two"
+  },
+  {
+    "display": "MRS. HALE",
+    "key": "mrs_hale"
+  }
 ]

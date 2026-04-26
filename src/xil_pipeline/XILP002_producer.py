@@ -903,6 +903,32 @@ def _tts_segment(text: str, out_path: str, voice_id: str, speed: float | None,
                 os.unlink(tmp_path)
 
 
+def _print_voice_refs_table(config: dict[str, dict], voice_refs_dir: str) -> None:
+    """Print a voice_refs coverage table for the chatterbox backend."""
+    speakers = sorted(config.keys())
+    has_ref = {}
+    for spk in speakers:
+        wav = os.path.join(voice_refs_dir, f"{spk}.wav")
+        conds = os.path.join(voice_refs_dir, f"{spk}.conds.pt")
+        has_ref[spk] = os.path.exists(wav) or os.path.exists(conds)
+
+    missing = [s for s in speakers if not has_ref[s]]
+    found   = [s for s in speakers if has_ref[s]]
+
+    logger.info("VOICE REFS  (%s)", voice_refs_dir)
+    logger.info("  %-18s  %s", "Speaker", "Ref")
+    logger.info("  %s", "-" * 30)
+    for spk in speakers:
+        mark = "✓" if has_ref[spk] else "✗  (fallback to default voice)"
+        logger.info("  %-18s  %s", spk, mark)
+    logger.info("  %s", "-" * 30)
+    logger.info("  %d / %d have voice refs", len(found), len(speakers))
+    if missing:
+        logger.warning("  Missing refs: %s", ", ".join(missing))
+        logger.warning("  Add <key>.wav to %s to use a reference voice.", voice_refs_dir)
+    logger.info("")
+
+
 def _dry_run_voice_block(block, cast_cfg, stem_path: str, label: str) -> None:
     """Print dry-run summary for a preamble or postamble voice stem."""
     spk = block.speaker
@@ -1155,6 +1181,9 @@ def main() -> None:
             # music (max+1) precedes voice (max+2)
             postamble_music_stem = os.path.join(stems_dir, f"{_max_seq + 1:03d}_postamble_sfx.mp3")
             postamble_voice_stem = os.path.join(stems_dir, f"{_max_seq + 2:03d}_postamble_{spk_post}.mp3")
+
+        if args.backend == "chatterbox":
+            _print_voice_refs_table(config, args.voice_refs)
 
         if args.dry_run:
             if cast_cfg.preamble:

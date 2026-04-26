@@ -1326,6 +1326,12 @@ def main() -> None:
 
         # Auto-generate cast/sfx configs if --episode or --tag provided and files absent
         trigger_tag = args.tag or args.episode
+        if not trigger_tag:
+            logger.warning(
+                "No --episode tag given — cast and SFX skeleton configs were NOT created. "
+                "Re-run with --episode %s to generate them.",
+                tag,
+            )
         if trigger_tag:
             cast_path = paths["cast"]
             sfx_path = paths["sfx"]

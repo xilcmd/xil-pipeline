@@ -385,7 +385,7 @@ class CastMember(BaseModel):
     """
 
     full_name: str = Field(..., description="Character display name")
-    voice_id: str = Field(..., min_length=1, description="ElevenLabs voice ID")
+    voice_id: str = Field(..., description="ElevenLabs voice ID, 'TBD' if unassigned, or '' for non-ElevenLabs backends")
     pan: float = Field(..., ge=-1.0, le=1.0, description="Stereo pan position")
     filter: str | bool | None = Field(..., description="Audio filter chain (false/phone/vintage/vintage,phone)")
     role: str = Field(..., description="Character role description")

@@ -93,6 +93,45 @@ def _episode_choices() -> list[str]:
     return [_ep_choice(slug, tag) for slug, tag in _find_episodes()]
 
 
+def _find_speakers_configs() -> list[str]:
+    """Return relative paths to all speakers.json files, sorted by slug."""
+    paths: list[str] = []
+    for p in sorted(glob.glob(os.path.join("configs", "*", "speakers.json"))):
+        paths.append(p)
+    if os.path.exists("speakers.json"):
+        paths.append("speakers.json")
+    return paths
+
+
+def _find_cast_configs() -> list[str]:
+    """Return relative paths to all cast JSON configs, sorted by slug then tag."""
+    paths: list[str] = []
+    # Normalized layout: configs/{slug}/cast_{tag}.json
+    for p in sorted(glob.glob(os.path.join("configs", "*", "cast_*.json"))):
+        paths.append(p)
+    # Legacy root layout: cast_{slug}_{tag}.json
+    for p in sorted(glob.glob("cast_*.json")):
+        if _TAG_RE.match(os.path.basename(p)):
+            paths.append(p)
+    return paths
+
+
+_LEGACY_SFX_RE = re.compile(r"^sfx_(.+?)_([A-Z0-9]+)\.json$")
+
+
+def _find_sfx_configs() -> list[str]:
+    """Return relative paths to all SFX JSON configs, sorted by slug then tag."""
+    paths: list[str] = []
+    # Normalized layout: configs/{slug}/sfx_{tag}.json
+    for p in sorted(glob.glob(os.path.join("configs", "*", "sfx_*.json"))):
+        paths.append(p)
+    # Legacy root layout: sfx_{slug}_{tag}.json
+    for p in sorted(glob.glob("sfx_*.json")):
+        if _LEGACY_SFX_RE.match(os.path.basename(p)):
+            paths.append(p)
+    return paths
+
+
 def _parse_choice(choice: str) -> tuple[str, str]:
     """'the413  S03E03' → ('the413', 'S03E03')"""
     parts = choice.strip().split()
@@ -394,6 +433,78 @@ def _build_app():
             f.write("\n")
         return f"Saved {_PROJECT_JSON_PATH}"
 
+    def cast_config_choices() -> list[str]:
+        return _find_cast_configs()
+
+    def load_cast_config(path: str) -> str:
+        if not path:
+            return ""
+        if not os.path.exists(path):
+            return f"// File not found: {path}"
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def save_cast_config(path: str, text: str) -> str:
+        if not path:
+            return "No file selected."
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            return f"Invalid JSON — not saved: {exc}"
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        return f"Saved {path}"
+
+    def speakers_config_choices() -> list[str]:
+        return _find_speakers_configs()
+
+    def load_speakers_config(path: str) -> str:
+        if not path:
+            return ""
+        if not os.path.exists(path):
+            return f"// File not found: {path}"
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def save_speakers_config(path: str, text: str) -> str:
+        if not path:
+            return "No file selected."
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            return f"Invalid JSON — not saved: {exc}"
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        return f"Saved {path}"
+
+    def sfx_config_choices() -> list[str]:
+        return _find_sfx_configs()
+
+    def load_sfx_config(path: str) -> str:
+        if not path:
+            return ""
+        if not os.path.exists(path):
+            return f"// File not found: {path}"
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def save_sfx_config(path: str, text: str) -> str:
+        if not path:
+            return "No file selected."
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            return f"Invalid JSON — not saved: {exc}"
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        return f"Saved {path}"
+
     # ── layout ────────────────────────────────────────────────────────────
 
     with gr.Blocks(title="xil-pipeline", theme=gr.themes.Soft()) as demo:
@@ -421,7 +532,118 @@ def _build_app():
                 proj_reload_btn.click(fn=load_project_json, inputs=[], outputs=proj_editor)
                 proj_save_btn.click(fn=save_project_json, inputs=proj_editor, outputs=proj_status)
 
-            # ── Tab 1: Episodes ──────────────────────────────────────
+            # ── Tab 1: Speakers ──────────────────────────────────────
+            with gr.Tab("Speakers"):
+                _initial_spk = speakers_config_choices()
+                _initial_spk_val = _initial_spk[0] if _initial_spk else None
+                spk_file_dd = gr.Dropdown(
+                    label="Speakers file",
+                    choices=_initial_spk,
+                    value=_initial_spk_val,
+                    interactive=True,
+                )
+                spk_editor = gr.Code(
+                    value=load_speakers_config(_initial_spk_val) if _initial_spk_val else "",
+                    language="json",
+                    lines=20,
+                    label="speakers.json",
+                )
+                with gr.Row():
+                    spk_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
+                    spk_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
+                spk_status = gr.Textbox(label="Status", lines=1, interactive=False)
+
+                spk_file_dd.change(
+                    fn=load_speakers_config,
+                    inputs=spk_file_dd,
+                    outputs=spk_editor,
+                )
+                spk_reload_btn.click(
+                    fn=load_speakers_config,
+                    inputs=spk_file_dd,
+                    outputs=spk_editor,
+                )
+                spk_save_btn.click(
+                    fn=save_speakers_config,
+                    inputs=[spk_file_dd, spk_editor],
+                    outputs=spk_status,
+                )
+
+            # ── Tab 2: Cast Config ──────────────────────────────────
+            with gr.Tab("Cast Config"):
+                _initial_casts = cast_config_choices()
+                _initial_cast_val = _initial_casts[0] if _initial_casts else None
+                cast_file_dd = gr.Dropdown(
+                    label="Cast config file",
+                    choices=_initial_casts,
+                    value=_initial_cast_val,
+                    interactive=True,
+                )
+                cast_editor = gr.Code(
+                    value=load_cast_config(_initial_cast_val) if _initial_cast_val else "",
+                    language="json",
+                    lines=30,
+                    label="cast config",
+                )
+                with gr.Row():
+                    cast_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
+                    cast_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
+                cast_status = gr.Textbox(label="Status", lines=1, interactive=False)
+
+                cast_file_dd.change(
+                    fn=load_cast_config,
+                    inputs=cast_file_dd,
+                    outputs=cast_editor,
+                )
+                cast_reload_btn.click(
+                    fn=load_cast_config,
+                    inputs=cast_file_dd,
+                    outputs=cast_editor,
+                )
+                cast_save_btn.click(
+                    fn=save_cast_config,
+                    inputs=[cast_file_dd, cast_editor],
+                    outputs=cast_status,
+                )
+
+            # ── Tab 3: SFX Config ────────────────────────────────────
+            with gr.Tab("SFX Config"):
+                _initial_sfx = sfx_config_choices()
+                _initial_sfx_val = _initial_sfx[0] if _initial_sfx else None
+                sfx_file_dd = gr.Dropdown(
+                    label="SFX config file",
+                    choices=_initial_sfx,
+                    value=_initial_sfx_val,
+                    interactive=True,
+                )
+                sfx_editor = gr.Code(
+                    value=load_sfx_config(_initial_sfx_val) if _initial_sfx_val else "",
+                    language="json",
+                    lines=30,
+                    label="sfx config",
+                )
+                with gr.Row():
+                    sfx_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
+                    sfx_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
+                sfx_status = gr.Textbox(label="Status", lines=1, interactive=False)
+
+                sfx_file_dd.change(
+                    fn=load_sfx_config,
+                    inputs=sfx_file_dd,
+                    outputs=sfx_editor,
+                )
+                sfx_reload_btn.click(
+                    fn=load_sfx_config,
+                    inputs=sfx_file_dd,
+                    outputs=sfx_editor,
+                )
+                sfx_save_btn.click(
+                    fn=save_sfx_config,
+                    inputs=[sfx_file_dd, sfx_editor],
+                    outputs=sfx_status,
+                )
+
+            # ── Tab 4: Episodes ─────────────────────────────────────
             with gr.Tab("Episodes"):
                 ep_table = gr.Dataframe(
                     headers=["Tag", "Slug", "Parse", "Stems", "DAW", "Master"],
@@ -430,7 +652,7 @@ def _build_app():
                     wrap=True,
                 )
 
-            # ── Tab 2: Audio Preview ─────────────────────────────────
+            # ── Tab 5: Audio Preview ─────────────────────────────────
             with gr.Tab("Audio Preview"):
                 with gr.Row():
                     audio_ep_dd = gr.Dropdown(
@@ -469,7 +691,7 @@ def _build_app():
                     outputs=audio_player,
                 )
 
-            # ── Tab 3: Run Stage ─────────────────────────────────────
+            # ── Tab 6: Run Stage ─────────────────────────────────────
             with gr.Tab("Run Stage"):
                 gr.Markdown(
                     "Run pipeline stages against an episode. "
@@ -511,7 +733,7 @@ def _build_app():
                     outputs=log_box,
                 )
 
-            # ── Tab 4: Setup ─────────────────────────────────────────
+            # ── Tab 7: Setup ─────────────────────────────────────────
             with gr.Tab("Setup"):
                 gr.Markdown("### Initialize a new show workspace")
                 gr.Markdown(
@@ -557,7 +779,7 @@ def _build_app():
                     outputs=init_log,
                 )
 
-            # ── Tab 5: Timeline ──────────────────────────────────────
+            # ── Tab 8: Timeline ──────────────────────────────────────
             with gr.Tab("Timeline"):
                 tl_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices)
                 tl_html = gr.HTML("<p>Select an episode above.</p>")

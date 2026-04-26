@@ -24,10 +24,12 @@ xil-init my-show --show "My Podcast"
 cd my-show
 
 # Scan the sample script (pre-flight check)
-xil-scan scripts/sample_S01E01.md
+# Always run scan before parse when onboarding a new episode — it will catch
+# unrecognized speakers before they silently disappear from the parsed output.
+xil-scan scripts/sample_S01E01.md --speakers configs/my-show/speakers.json
 
 # Parse into structured JSON
-xil-parse scripts/sample_S01E01.md --episode S01E01
+xil-parse scripts/sample_S01E01.md --episode S01E01 --speakers configs/my-show/speakers.json
 
 # Preview TTS character cost (no API calls)
 xil-produce --episode S01E01 --dry-run
