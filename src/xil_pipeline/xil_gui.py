@@ -100,6 +100,19 @@ def _script_choices() -> list[str]:
     return sorted(glob.glob(os.path.join(str(get_workspace_root()), "scripts", "*.md")))
 
 
+def _default_chatterbox_python() -> str:
+    """Return the first existing venv-chatterbox python3, or an empty string."""
+    from pathlib import Path
+    candidates = [
+        get_workspace_root() / "venv-chatterbox" / "bin" / "python3",
+        Path(sys.executable).parent.parent.parent / "venv-chatterbox" / "bin" / "python3",
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return ""
+
+
 def _find_speakers_configs() -> list[str]:
     """Return relative paths to all speakers.json files, sorted by slug."""
     paths: list[str] = []
@@ -371,7 +384,7 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
                  gen_sfx: bool, gen_music: bool, gen_ambience: bool,
                  local_only: bool, terse: bool,
                  start_from: int | None, stop_at: int | None,
-                 exaggeration: float) -> list[str]:
+                 exaggeration: float, cb_python: str = "") -> list[str]:
     module = _STAGE_MODULES["produce"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
     if dry_run:
@@ -392,8 +405,11 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
         cmd += ["--start-from", str(int(start_from))]
     if stop_at is not None and stop_at > 0:
         cmd += ["--stop-at", str(int(stop_at))]
-    if backend == "chatterbox" and exaggeration != 0.5:
-        cmd += ["--exaggeration", f"{exaggeration:.2f}"]
+    if backend == "chatterbox":
+        if exaggeration != 0.5:
+            cmd += ["--exaggeration", f"{exaggeration:.2f}"]
+        if cb_python and cb_python.strip():
+            cmd += ["--chatterbox-python", cb_python.strip()]
     return cmd
 
 
@@ -911,6 +927,10 @@ def _build_app():
                             label="--exaggeration  (Chatterbox only, 0.0–1.0)",
                             minimum=0.0, maximum=1.0, step=0.05, value=0.5,
                         )
+                        prod_cb_python = gr.Textbox(
+                            label="--chatterbox-python  (blank = auto-detect venv-chatterbox/)",
+                            placeholder=_default_chatterbox_python(),
+                        )
                         prod_btn = gr.Button("▶ Run Produce", variant="primary")
 
                     # ── Assemble ──────────────────────────────────────
@@ -997,7 +1017,8 @@ def _build_app():
                     yield from _execute_cmd(cmd)
 
                 def run_produce(ep, dry_run, backend, gen_sfx, gen_music, gen_amb,
-                                local_only, terse, start_from, stop_at, exaggeration):
+                                local_only, terse, start_from, stop_at, exaggeration,
+                                cb_python):
                     if not ep:
                         yield "Select an episode first."
                         return
@@ -1006,7 +1027,7 @@ def _build_app():
                                        local_only, terse,
                                        int(start_from) if start_from else None,
                                        int(stop_at) if stop_at else None,
-                                       exaggeration)
+                                       exaggeration, cb_python or "")
                     yield from _execute_cmd(cmd)
 
                 def run_assemble(ep, gap_ms, parsed_path, output):
@@ -1052,7 +1073,8 @@ def _build_app():
                     inputs=[run_ep_dd, prod_dry_run_cb, prod_backend_dd,
                              prod_gen_sfx_cb, prod_gen_music_cb, prod_gen_amb_cb,
                              prod_local_only_cb, prod_terse_cb,
-                             prod_start_from, prod_stop_at, prod_exaggeration],
+                             prod_start_from, prod_stop_at, prod_exaggeration,
+                             prod_cb_python],
                     outputs=log_box,
                 )
                 asm_btn.click(

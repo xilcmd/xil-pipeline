@@ -1223,12 +1223,18 @@ def main() -> None:
             if args.backend == "chatterbox":
                 cb_python = args.chatterbox_python
                 if cb_python is None:
-                    # Auto-detect: look for venv-chatterbox adjacent to CWD
+                    # Auto-detect: workspace root first, then repo root next to running venv
+                    from pathlib import Path as _Path
                     from xil_pipeline.models import get_workspace_root
-                    cb_default = str(get_workspace_root() / "venv-chatterbox" / "bin" / "python3")
-                    if os.path.exists(cb_default):
-                        cb_python = cb_default
-                    else:
+                    _candidates = [
+                        get_workspace_root() / "venv-chatterbox" / "bin" / "python3",
+                        _Path(sys.executable).parent.parent.parent / "venv-chatterbox" / "bin" / "python3",
+                    ]
+                    for _c in _candidates:
+                        if _c.exists():
+                            cb_python = str(_c)
+                            break
+                    if cb_python is None:
                         logger.error(
                             "Cannot find chatterbox venv Python. "
                             "Pass --chatterbox-python PATH or create venv-chatterbox/ in the project root."
