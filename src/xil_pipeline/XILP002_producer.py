@@ -1225,7 +1225,6 @@ def main() -> None:
                 if cb_python is None:
                     # Auto-detect: workspace root first, then repo root next to running venv
                     from pathlib import Path as _Path
-                    from xil_pipeline.models import get_workspace_root
                     _candidates = [
                         get_workspace_root() / "venv-chatterbox" / "bin" / "python3",
                         _Path(sys.executable).parent.parent.parent / "venv-chatterbox" / "bin" / "python3",
