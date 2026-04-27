@@ -95,6 +95,11 @@ def _episode_choices() -> list[str]:
     return [_ep_choice(slug, tag) for slug, tag in _find_episodes()]
 
 
+def _script_choices() -> list[str]:
+    """Return relative paths to all scripts/*.md files, sorted."""
+    return sorted(glob.glob(os.path.join(str(get_workspace_root()), "scripts", "*.md")))
+
+
 def _find_speakers_configs() -> list[str]:
     """Return relative paths to all speakers.json files, sorted by slug."""
     paths: list[str] = []
@@ -302,6 +307,142 @@ def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str)
         yield output
     except Exception as exc:
         yield f"{header}\nError: {exc}"
+
+
+def _execute_cmd(cmd: list[str]):
+    """Generator: run cmd, yield accumulated stdout to a log box."""
+    header = "$ " + " ".join(cmd) + "\n\n"
+    yield header
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=str(get_workspace_root()),
+        )
+        buf = header
+        for line in iter(proc.stdout.readline, ""):
+            buf += line
+            yield buf
+        proc.wait()
+        buf += f"\n[exit {proc.returncode}]"
+        yield buf
+    except Exception as exc:
+        yield header + f"\n[ERROR] {exc}\n"
+
+
+def _cmd_scan(slug: str, tag: str, script_path: str | None, speakers: str, as_json: bool) -> list[str]:
+    if not script_path or not str(script_path).strip():
+        raise ValueError("Scan requires a script — select one from the dropdown.")
+    module = _STAGE_MODULES["scan"]
+    cmd = [sys.executable, "-m", module, "--show", slug, str(script_path).strip()]
+    if speakers.strip():
+        cmd += ["--speakers", speakers.strip()]
+    if as_json:
+        cmd.append("--json")
+    return cmd
+
+
+def _cmd_parse(slug: str, tag: str, script_path: str | None, preview: int | None,
+               quiet: bool, debug: bool, speakers: str) -> list[str]:
+    module = _STAGE_MODULES["parse"]
+    if script_path and str(script_path).strip():
+        cmd = [sys.executable, "-m", module, str(script_path).strip(), "--episode", tag]
+    else:
+        import glob as _glob
+        candidates = sorted(_glob.glob(os.path.join(str(get_workspace_root()), "scripts", "*.md")))
+        if not candidates:
+            raise ValueError("No script path given and no .md files found in scripts/")
+        script = candidates[0]
+        cmd = [sys.executable, "-m", module, script, "--episode", tag]
+    if preview is not None and preview > 0:
+        cmd += ["--preview", str(int(preview))]
+    if quiet:
+        cmd.append("--quiet")
+    if debug:
+        cmd.append("--debug")
+    if speakers.strip():
+        cmd += ["--speakers", speakers.strip()]
+    return cmd
+
+
+def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
+                 gen_sfx: bool, gen_music: bool, gen_ambience: bool,
+                 local_only: bool, terse: bool,
+                 start_from: int | None, stop_at: int | None,
+                 exaggeration: float) -> list[str]:
+    module = _STAGE_MODULES["produce"]
+    cmd = [sys.executable, "-m", module, "--episode", tag]
+    if dry_run:
+        cmd.append("--dry-run")
+    if backend and backend != "elevenlabs":
+        cmd += ["--backend", backend]
+    if gen_sfx:
+        cmd.append("--gen-sfx")
+    if gen_music:
+        cmd.append("--gen-music")
+    if gen_ambience:
+        cmd.append("--gen-ambience")
+    if local_only:
+        cmd.append("--local-only")
+    if terse:
+        cmd.append("--terse")
+    if start_from is not None and start_from > 0:
+        cmd += ["--start-from", str(int(start_from))]
+    if stop_at is not None and stop_at > 0:
+        cmd += ["--stop-at", str(int(stop_at))]
+    if backend == "chatterbox" and exaggeration != 0.5:
+        cmd += ["--exaggeration", f"{exaggeration:.2f}"]
+    return cmd
+
+
+def _cmd_assemble(slug: str, tag: str, gap_ms: int,
+                  parsed_path: str, output: str) -> list[str]:
+    module = _STAGE_MODULES["assemble"]
+    cmd = [sys.executable, "-m", module, "--episode", tag]
+    if gap_ms != 600:
+        cmd += ["--gap-ms", str(int(gap_ms))]
+    if parsed_path.strip():
+        cmd += ["--parsed", parsed_path.strip()]
+    if output.strip():
+        cmd += ["--output", output.strip()]
+    return cmd
+
+
+def _cmd_daw(slug: str, tag: str, dry_run: bool, gap_ms: int,
+             timeline: bool, timeline_html: bool,
+             macro: bool, save_aup3: bool, output_dir: str) -> list[str]:
+    module = _STAGE_MODULES["daw"]
+    cmd = [sys.executable, "-m", module, "--episode", tag]
+    if dry_run:
+        cmd.append("--dry-run")
+    if gap_ms != 600:
+        cmd += ["--gap-ms", str(int(gap_ms))]
+    if timeline:
+        cmd.append("--timeline")
+    if timeline_html:
+        cmd.append("--timeline-html")
+    if macro:
+        cmd.append("--macro")
+    if save_aup3:
+        cmd.append("--save-aup3")
+    if output_dir.strip():
+        cmd += ["--output-dir", output_dir.strip()]
+    return cmd
+
+
+def _cmd_master(slug: str, tag: str, dry_run: bool,
+                output: str, daw_dir: str) -> list[str]:
+    module = _STAGE_MODULES["master"]
+    cmd = [sys.executable, "-m", module, "--episode", tag]
+    if dry_run:
+        cmd.append("--dry-run")
+    if output.strip():
+        cmd += ["--output", output.strip()]
+    if daw_dir.strip():
+        cmd += ["--daw-dir", daw_dir.strip()]
+    return cmd
 
 
 # ── Gradio app ─────────────────────────────────────────────────────────────
@@ -699,39 +840,236 @@ def _build_app():
                     "Run pipeline stages against an episode. "
                     "**Dry-run is on by default** — uncheck to write output files."
                 )
-                with gr.Row():
-                    run_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices, scale=2)
-                    run_stage_dd = gr.Dropdown(
-                        label="Stage", choices=RUNNABLE_STAGES, value="4) assemble", scale=2,
-                    )
-                with gr.Row():
-                    dry_run_cb = gr.Checkbox(
-                        label="--dry-run (not supported by this stage)",
-                        value=False,
-                        interactive=False,
-                    )
-                    extra_flags = gr.Textbox(
-                        label="Extra flags (scan: script path required here)",
-                        placeholder="e.g. --gap-ms 300  |  scan: scripts/sample_S01E01.md",
-                        scale=3,
-                    )
-                run_btn = gr.Button("▶ Run", variant="primary")
+                run_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices)
 
-                def on_stage_change(stage):
-                    supported = _stage_key(stage) in DRY_RUN_STAGES
-                    return gr.update(
-                        value=supported,
-                        interactive=supported,
-                        label="--dry-run" if supported else "--dry-run (not supported by this stage)",
-                    )
+                with gr.Tabs():
+                    # ── Scan ──────────────────────────────────────────
+                    with gr.Tab("Scan"):
+                        with gr.Row():
+                            scan_script = gr.Dropdown(
+                                label="Script *",
+                                choices=_script_choices(),
+                                allow_custom_value=True,
+                                scale=3,
+                            )
+                            scan_speakers = gr.Textbox(
+                                label="--speakers (optional override)",
+                                placeholder="configs/the413/speakers.json",
+                                scale=2,
+                            )
+                        scan_json_cb = gr.Checkbox(label="--json  (machine-readable output)")
+                        scan_btn = gr.Button("▶ Run Scan", variant="primary")
 
-                run_stage_dd.change(fn=on_stage_change, inputs=run_stage_dd, outputs=dry_run_cb)
+                    # ── Parse ─────────────────────────────────────────
+                    with gr.Tab("Parse"):
+                        with gr.Row():
+                            parse_script = gr.Dropdown(
+                                label="Script (blank = auto-detect first .md in scripts/)",
+                                choices=_script_choices(),
+                                allow_custom_value=True,
+                                scale=3,
+                            )
+                            parse_speakers = gr.Textbox(
+                                label="--speakers (optional override)",
+                                placeholder="configs/the413/speakers.json",
+                                scale=2,
+                            )
+                        with gr.Row():
+                            parse_preview = gr.Number(
+                                label="--preview  (show first N entries, 0 = all)",
+                                value=0, minimum=0, precision=0,
+                            )
+                            parse_quiet_cb = gr.Checkbox(label="--quiet  (JSON only, skip summary)")
+                            parse_debug_cb = gr.Checkbox(label="--debug  (write diagnostic CSV)", value=True)
+                        parse_btn = gr.Button("▶ Run Parse", variant="primary")
+
+                    # ── Produce ───────────────────────────────────────
+                    with gr.Tab("Produce"):
+                        with gr.Row():
+                            prod_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
+                            prod_backend_dd = gr.Dropdown(
+                                label="--backend",
+                                choices=["elevenlabs", "gtts", "chatterbox"],
+                                value="chatterbox",
+                            )
+                        with gr.Row():
+                            prod_gen_sfx_cb    = gr.Checkbox(label="--gen-sfx")
+                            prod_gen_music_cb  = gr.Checkbox(label="--gen-music")
+                            prod_gen_amb_cb    = gr.Checkbox(label="--gen-ambience")
+                            prod_local_only_cb = gr.Checkbox(label="--local-only", value=True)
+                            prod_terse_cb      = gr.Checkbox(label="--terse")
+                        with gr.Row():
+                            prod_start_from = gr.Number(
+                                label="--start-from  (seq, 0 = beginning)",
+                                value=0, minimum=0, precision=0,
+                            )
+                            prod_stop_at = gr.Number(
+                                label="--stop-at  (seq, 0 = all)",
+                                value=0, minimum=0, precision=0,
+                            )
+                        prod_exaggeration = gr.Slider(
+                            label="--exaggeration  (Chatterbox only, 0.0–1.0)",
+                            minimum=0.0, maximum=1.0, step=0.05, value=0.5,
+                        )
+                        prod_btn = gr.Button("▶ Run Produce", variant="primary")
+
+                    # ── Assemble ──────────────────────────────────────
+                    with gr.Tab("Assemble"):
+                        with gr.Row():
+                            asm_gap_ms = gr.Number(
+                                label="--gap-ms  (silence between stems, ms)",
+                                value=600, minimum=0, precision=0,
+                            )
+                        with gr.Row():
+                            asm_parsed = gr.Textbox(
+                                label="--parsed  (override parsed JSON path, blank = auto)",
+                                placeholder="parsed/the413/parsed_S01E01.json",
+                                scale=2,
+                            )
+                            asm_output = gr.Textbox(
+                                label="--output  (override master MP3 path, blank = auto)",
+                                placeholder="masters/S01E01_the413_master.mp3",
+                                scale=2,
+                            )
+                        asm_btn = gr.Button("▶ Run Assemble", variant="primary")
+
+                    # ── DAW ───────────────────────────────────────────
+                    with gr.Tab("DAW"):
+                        with gr.Row():
+                            daw_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
+                            daw_gap_ms = gr.Number(
+                                label="--gap-ms  (ms)",
+                                value=600, minimum=0, precision=0,
+                            )
+                        with gr.Row():
+                            daw_timeline_cb      = gr.Checkbox(label="--timeline  (ASCII)")
+                            daw_timeline_html_cb = gr.Checkbox(label="--timeline-html", value=True)
+                            daw_macro_cb         = gr.Checkbox(label="--macro  (Audacity)", value=True)
+                        daw_output_dir = gr.Textbox(
+                            label="--output-dir  (blank = auto)",
+                            placeholder="daw/S01E01/",
+                        )
+                        daw_btn = gr.Button("▶ Run DAW", variant="primary")
+
+                    # ── Master ────────────────────────────────────────
+                    with gr.Tab("Master"):
+                        master_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
+                        with gr.Row():
+                            master_output = gr.Textbox(
+                                label="--output  (blank = auto)",
+                                placeholder="masters/S01E01_the413_2026-04-26.mp3",
+                                scale=2,
+                            )
+                            master_daw_dir = gr.Textbox(
+                                label="--daw-dir  (blank = auto)",
+                                placeholder="daw/S01E01/",
+                                scale=2,
+                            )
+                        master_btn = gr.Button("▶ Run Master", variant="primary")
+
                 log_box = gr.Textbox(
                     label="Output", lines=24, max_lines=24, autoscroll=True, interactive=False,
                 )
-                run_btn.click(
-                    fn=_run_stage,
-                    inputs=[run_ep_dd, run_stage_dd, dry_run_cb, extra_flags],
+
+                # ── Button handlers ───────────────────────────────────
+                def run_scan(ep, script, speakers, as_json):
+                    if not ep:
+                        yield "Select an episode first."
+                        return
+                    slug, tag = _parse_choice(ep)
+                    try:
+                        cmd = _cmd_scan(slug, tag, script, speakers, as_json)
+                    except ValueError as exc:
+                        yield str(exc)
+                        return
+                    yield from _execute_cmd(cmd)
+
+                def run_parse(ep, script, preview, quiet, debug, speakers):
+                    if not ep:
+                        yield "Select an episode first."
+                        return
+                    slug, tag = _parse_choice(ep)
+                    try:
+                        cmd = _cmd_parse(slug, tag, script, preview or None, quiet, debug, speakers)
+                    except ValueError as exc:
+                        yield str(exc)
+                        return
+                    yield from _execute_cmd(cmd)
+
+                def run_produce(ep, dry_run, backend, gen_sfx, gen_music, gen_amb,
+                                local_only, terse, start_from, stop_at, exaggeration):
+                    if not ep:
+                        yield "Select an episode first."
+                        return
+                    slug, tag = _parse_choice(ep)
+                    cmd = _cmd_produce(slug, tag, dry_run, backend, gen_sfx, gen_music, gen_amb,
+                                       local_only, terse,
+                                       int(start_from) if start_from else None,
+                                       int(stop_at) if stop_at else None,
+                                       exaggeration)
+                    yield from _execute_cmd(cmd)
+
+                def run_assemble(ep, gap_ms, parsed_path, output):
+                    if not ep:
+                        yield "Select an episode first."
+                        return
+                    slug, tag = _parse_choice(ep)
+                    cmd = _cmd_assemble(slug, tag, int(gap_ms) if gap_ms else 600,
+                                        parsed_path, output)
+                    yield from _execute_cmd(cmd)
+
+                def run_daw(ep, dry_run, gap_ms, timeline, timeline_html,
+                            macro, output_dir):
+                    if not ep:
+                        yield "Select an episode first."
+                        return
+                    slug, tag = _parse_choice(ep)
+                    cmd = _cmd_daw(slug, tag, dry_run, int(gap_ms) if gap_ms else 600,
+                                   timeline, timeline_html, macro, False, output_dir)
+                    yield from _execute_cmd(cmd)
+
+                def run_master(ep, dry_run, output, daw_dir):
+                    if not ep:
+                        yield "Select an episode first."
+                        return
+                    slug, tag = _parse_choice(ep)
+                    cmd = _cmd_master(slug, tag, dry_run, output, daw_dir)
+                    yield from _execute_cmd(cmd)
+
+                scan_btn.click(
+                    fn=run_scan,
+                    inputs=[run_ep_dd, scan_script, scan_speakers, scan_json_cb],
+                    outputs=log_box,
+                )
+                parse_btn.click(
+                    fn=run_parse,
+                    inputs=[run_ep_dd, parse_script, parse_preview,
+                             parse_quiet_cb, parse_debug_cb, parse_speakers],
+                    outputs=log_box,
+                )
+                prod_btn.click(
+                    fn=run_produce,
+                    inputs=[run_ep_dd, prod_dry_run_cb, prod_backend_dd,
+                             prod_gen_sfx_cb, prod_gen_music_cb, prod_gen_amb_cb,
+                             prod_local_only_cb, prod_terse_cb,
+                             prod_start_from, prod_stop_at, prod_exaggeration],
+                    outputs=log_box,
+                )
+                asm_btn.click(
+                    fn=run_assemble,
+                    inputs=[run_ep_dd, asm_gap_ms, asm_parsed, asm_output],
+                    outputs=log_box,
+                )
+                daw_btn.click(
+                    fn=run_daw,
+                    inputs=[run_ep_dd, daw_dry_run_cb, daw_gap_ms,
+                             daw_timeline_cb, daw_timeline_html_cb,
+                             daw_macro_cb, daw_output_dir],
+                    outputs=log_box,
+                )
+                master_btn.click(
+                    fn=run_master,
+                    inputs=[run_ep_dd, master_dry_run_cb, master_output, master_daw_dir],
                     outputs=log_box,
                 )
 
