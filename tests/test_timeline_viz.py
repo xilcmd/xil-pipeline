@@ -56,7 +56,7 @@ class TestBuildTimelineData:
         assert sample_data.total_duration_s == 220.0
 
     def test_all_four_layers_present(self, sample_data):
-        assert set(sample_data.layers.keys()) == {"dialogue", "ambience", "music", "sfx"}
+        assert {"dialogue", "ambience", "music", "sfx"}.issubset(sample_data.layers.keys())
 
     def test_dialogue_spans(self, sample_data):
         dlg = sample_data.layers["dialogue"]

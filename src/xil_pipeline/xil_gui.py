@@ -63,9 +63,10 @@ def _find_episodes() -> list[tuple[str, str]]:
     """Return [(slug, tag), ...] sorted newest tag first, checking both layouts."""
     seen: set[tuple[str, str]] = set()
     results = []
+    root = str(get_workspace_root())
 
     # Legacy root layout: cast_{slug}_{tag}.json
-    for path in glob.glob("cast_*.json"):
+    for path in glob.glob(os.path.join(root, "cast_*.json")):
         m = _TAG_RE.match(os.path.basename(path))
         if m:
             pair = (m.group(1), m.group(2))
@@ -74,7 +75,7 @@ def _find_episodes() -> list[tuple[str, str]]:
                 results.append(pair)
 
     # Normalized layout: configs/{slug}/cast_{tag}.json
-    for path in glob.glob(os.path.join("configs", "*", "cast_*.json")):
+    for path in glob.glob(os.path.join(root, "configs", "*", "cast_*.json")):
         slug = os.path.basename(os.path.dirname(path))
         m = _NEW_CAST_RE.match(os.path.basename(path))
         if m:
@@ -116,21 +117,24 @@ def _default_chatterbox_python() -> str:
 def _find_speakers_configs() -> list[str]:
     """Return relative paths to all speakers.json files, sorted by slug."""
     paths: list[str] = []
-    for p in sorted(glob.glob(os.path.join("configs", "*", "speakers.json"))):
+    root = str(get_workspace_root())
+    for p in sorted(glob.glob(os.path.join(root, "configs", "*", "speakers.json"))):
         paths.append(p)
-    if os.path.exists("speakers.json"):
-        paths.append("speakers.json")
+    legacy = os.path.join(root, "speakers.json")
+    if os.path.exists(legacy):
+        paths.append(legacy)
     return paths
 
 
 def _find_cast_configs() -> list[str]:
     """Return relative paths to all cast JSON configs, sorted by slug then tag."""
     paths: list[str] = []
+    root = str(get_workspace_root())
     # Normalized layout: configs/{slug}/cast_{tag}.json
-    for p in sorted(glob.glob(os.path.join("configs", "*", "cast_*.json"))):
+    for p in sorted(glob.glob(os.path.join(root, "configs", "*", "cast_*.json"))):
         paths.append(p)
     # Legacy root layout: cast_{slug}_{tag}.json
-    for p in sorted(glob.glob("cast_*.json")):
+    for p in sorted(glob.glob(os.path.join(root, "cast_*.json"))):
         if _TAG_RE.match(os.path.basename(p)):
             paths.append(p)
     return paths
@@ -142,11 +146,12 @@ _LEGACY_SFX_RE = re.compile(r"^sfx_(.+?)_([A-Z0-9]+)\.json$")
 def _find_sfx_configs() -> list[str]:
     """Return relative paths to all SFX JSON configs, sorted by slug then tag."""
     paths: list[str] = []
+    root = str(get_workspace_root())
     # Normalized layout: configs/{slug}/sfx_{tag}.json
-    for p in sorted(glob.glob(os.path.join("configs", "*", "sfx_*.json"))):
+    for p in sorted(glob.glob(os.path.join(root, "configs", "*", "sfx_*.json"))):
         paths.append(p)
     # Legacy root layout: sfx_{slug}_{tag}.json
-    for p in sorted(glob.glob("sfx_*.json")):
+    for p in sorted(glob.glob(os.path.join(root, "sfx_*.json"))):
         if _LEGACY_SFX_RE.match(os.path.basename(p)):
             paths.append(p)
     return paths
@@ -168,10 +173,11 @@ def _stage_status(slug: str, tag: str) -> dict[str, str]:
     daw_dir = p["daw"]
     has_daw = os.path.exists(os.path.join(daw_dir, f"{tag}_layer_dialogue.wav"))
     # Master: check new layout, then legacy locations
+    root = str(get_workspace_root())
     has_master = (
         os.path.exists(p["master"])
-        or bool(glob.glob(os.path.join("masters", f"*{tag}*master*.mp3")))
-        or bool(glob.glob(f"{slug}_{tag}_master.mp3"))
+        or bool(glob.glob(os.path.join(root, "masters", f"*{tag}*master*.mp3")))
+        or bool(glob.glob(os.path.join(root, f"{slug}_{tag}_master.mp3")))
     )
     return {
         "parse":    "✓" if os.path.exists(p["parsed"]) else "○",
@@ -868,6 +874,7 @@ def _build_app():
                                 allow_custom_value=True,
                                 scale=3,
                             )
+                            scan_refresh_btn = gr.Button("⟳", size="sm", scale=0)
                             scan_speakers = gr.Textbox(
                                 label="--speakers (optional override)",
                                 placeholder="configs/the413/speakers.json",
@@ -885,6 +892,7 @@ def _build_app():
                                 allow_custom_value=True,
                                 scale=3,
                             )
+                            parse_refresh_btn = gr.Button("⟳", size="sm", scale=0)
                             parse_speakers = gr.Textbox(
                                 label="--speakers (optional override)",
                                 placeholder="configs/the413/speakers.json",
@@ -1057,6 +1065,14 @@ def _build_app():
                     cmd = _cmd_master(slug, tag, dry_run, output, daw_dir)
                     yield from _execute_cmd(cmd)
 
+                scan_refresh_btn.click(
+                    fn=lambda: gr.update(choices=_script_choices()),
+                    outputs=scan_script,
+                )
+                parse_refresh_btn.click(
+                    fn=lambda: gr.update(choices=_script_choices()),
+                    outputs=parse_script,
+                )
                 scan_btn.click(
                     fn=run_scan,
                     inputs=[run_ep_dd, scan_script, scan_speakers, scan_json_cb],

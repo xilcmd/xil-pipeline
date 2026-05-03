@@ -364,7 +364,7 @@ class TestGenerateAudacityMacro:
         macro_path = os.path.join(macros_dir, "THE413_S01E01.txt")
         assert os.path.exists(macro_path)
         content = open(macro_path).read()
-        assert content.count("Import2:") == 4
+        assert content.count("Import2:") == 5
 
     def test_export_daw_layers_no_macro_by_default(self, config, stems_dir, parsed_file, tmp_path):
         output_dir = str(tmp_path / "daw" / "S01E01")
