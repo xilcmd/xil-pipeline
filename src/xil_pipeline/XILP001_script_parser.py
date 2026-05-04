@@ -91,6 +91,31 @@ KNOWN_SPEAKERS = list(_BUILTIN_KNOWN_SPEAKERS)
 SPEAKER_KEYS = dict(_BUILTIN_SPEAKER_KEYS)
 
 
+def _resolve_speakers_file(path: str | None = None) -> str | None:
+    """Resolve which speakers JSON file to load, without reading it.
+
+    Resolution order:
+    1. Explicit *path* argument
+    2. ``configs/{slug}/speakers.json`` (normalized layout)
+    3. ``speakers.json`` at the workspace root (legacy fallback)
+    4. Returns ``None`` — caller falls back to built-in defaults
+    """
+    if path is not None:
+        return path
+    try:
+        from xil_pipeline.models import get_workspace_root, load_project_config, show_slug
+        cfg = load_project_config()
+        slug = show_slug(cfg.show)
+        normalized = str(get_workspace_root() / "configs" / slug / "speakers.json")
+        if os.path.exists(normalized):
+            return normalized
+    except Exception:
+        pass
+    from xil_pipeline.models import get_workspace_root
+    cwd_file = str(get_workspace_root() / "speakers.json")
+    return cwd_file if os.path.exists(cwd_file) else None
+
+
 def load_speakers(
     path: str | None = None,
 ) -> tuple[list[str], dict[str, str]]:
@@ -120,27 +145,7 @@ def load_speakers(
     Returns:
         A tuple of ``(known_speakers_list, speaker_keys_dict)``.
     """
-    # Determine which file to load
-    speakers_file = path
-    if speakers_file is None:
-        # 2a. configs/{slug}/speakers.json (normalized layout)
-        try:
-            from xil_pipeline.models import load_project_config, show_slug
-            cfg = load_project_config()
-            slug = show_slug(cfg.show)
-            from xil_pipeline.models import get_workspace_root
-            normalized = str(get_workspace_root() / "configs" / slug / "speakers.json")
-            if os.path.exists(normalized):
-                speakers_file = normalized
-        except Exception:
-            pass
-    if speakers_file is None:
-        # 2b. speakers.json at workspace root (legacy fallback)
-        from xil_pipeline.models import get_workspace_root
-        cwd_file = str(get_workspace_root() / "speakers.json")
-        if os.path.exists(cwd_file):
-            speakers_file = cwd_file
-
+    speakers_file = _resolve_speakers_file(path)
     if speakers_file is None:
         return list(_BUILTIN_KNOWN_SPEAKERS), dict(_BUILTIN_SPEAKER_KEYS)
 
@@ -159,6 +164,32 @@ def load_speakers(
     known.sort(key=len, reverse=True)
 
     return known, keys
+
+
+def load_speakers_registry(path: str | None = None) -> dict[str, dict]:
+    """Load the full speaker registry from speakers.json, keyed by speaker key.
+
+    Returns the raw entry dicts, which may include optional per-character
+    attributes (``voice_id``, ``pan``, ``filter``, ``role``, etc.) in addition
+    to the required ``display``/``key`` fields.  Used by
+    :func:`generate_cast_config` to pre-populate cast skeletons.
+
+    Returns an empty dict when no speakers file is found (built-in defaults
+    have no registry data).
+
+    Args:
+        path: Explicit path to a speakers JSON file.  ``None`` triggers
+            auto-detection (same resolution order as :func:`load_speakers`).
+
+    Returns:
+        Dict mapping speaker key → full entry dict.
+    """
+    speakers_file = _resolve_speakers_file(path)
+    if speakers_file is None or not os.path.exists(speakers_file):
+        return {}
+    with open(speakers_file, encoding="utf-8") as f:
+        data = json.load(f)
+    return {entry["key"]: entry for entry in data}
 
 # Section detection
 SECTION_MAP = {
@@ -1016,12 +1047,21 @@ def print_dialogue_preview(parsed: dict, limit: int | None = None) -> None:
         logger.info("")
 
 
-def generate_cast_config(parsed: dict, cast_path: str, tag_override: str | None = None) -> None:
+def generate_cast_config(
+    parsed: dict,
+    cast_path: str,
+    tag_override: str | None = None,
+    speakers_registry: dict[str, dict] | None = None,
+) -> None:
     """Generate a skeleton cast config JSON from parsed script data.
 
-    Creates a cast config with all speakers found in the parsed script,
-    using ``voice_id="TBD"`` and sensible defaults for pan, filter, and role.
-    The user must fill in voice IDs via ``XILU001_discover_voices_T2S.py``.
+    Creates a cast config with all speakers found in the parsed script.
+    When *speakers_registry* is provided (loaded via
+    :func:`load_speakers_registry`), any per-character attributes stored
+    in ``speakers.json`` (``voice_id``, ``pan``, ``filter``, ``role``,
+    ``stability``, ``similarity_boost``, ``style``, ``use_speaker_boost``,
+    ``language_code``) are pre-populated from the registry instead of
+    defaulting to ``TBD``.
 
     Args:
         parsed: Parsed script dict from :func:`parse_script`.
@@ -1029,7 +1069,11 @@ def generate_cast_config(parsed: dict, cast_path: str, tag_override: str | None 
         tag_override: Raw non-episodic tag (e.g. ``"V01C03"``); when set,
             ``season``/``episode`` are written as ``null`` and ``tag_override``
             is added to the config.
+        speakers_registry: Optional dict mapping speaker key → full speakers.json
+            entry dict (from :func:`load_speakers_registry`).
     """
+    registry = speakers_registry or {}
+
     # Build reverse mapping: speaker_key -> display name (first entry per key wins)
     key_to_display: dict[str, str] = {}
     for display, key in SPEAKER_KEYS.items():
@@ -1039,15 +1083,21 @@ def generate_cast_config(parsed: dict, cast_path: str, tag_override: str | None 
     speakers = parsed["stats"]["speakers"]
     cast = {}
     for speaker_key in speakers:
+        reg_entry = registry.get(speaker_key, {})
         display = key_to_display.get(speaker_key, speaker_key)
-        full_name = display.replace("_", " ").title()
-        cast[speaker_key] = {
-            "full_name": full_name,
-            "voice_id": "TBD",
-            "pan": 0.0,
-            "filter": False,
-            "role": "TBD",
+        default_name = display.replace("_", " ").title()
+        member: dict = {
+            "full_name": reg_entry.get("full_name") or default_name,
+            "voice_id":  reg_entry.get("voice_id") or "TBD",
+            "pan":       reg_entry.get("pan", 0.0),
+            "filter":    reg_entry.get("filter", False),
+            "role":      reg_entry.get("role") or "TBD",
         }
+        for field in ("stability", "similarity_boost", "style",
+                      "use_speaker_boost", "language_code"):
+            if reg_entry.get(field) is not None:
+                member[field] = reg_entry[field]
+        cast[speaker_key] = member
 
     config = {
         "show": parsed.get("show", "Unknown Show"),
@@ -1338,7 +1388,9 @@ def main() -> None:
             cast_path = paths["cast"]
             sfx_path = paths["sfx"]
             if not os.path.exists(cast_path):
-                generate_cast_config(parsed, cast_path, tag_override=args.tag)
+                registry = load_speakers_registry(args.speakers)
+                generate_cast_config(parsed, cast_path, tag_override=args.tag,
+                                     speakers_registry=registry)
             if not os.path.exists(sfx_path):
                 generate_sfx_config(parsed, sfx_path, tag_override=args.tag)
             else:

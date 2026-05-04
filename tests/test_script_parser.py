@@ -869,6 +869,82 @@ class TestGenerateCastConfig:
         assert data == {"existing": True}
 
 
+    def test_registry_pre_populates_voice_id(self, tmp_path):
+        parsed = {
+            "show": "THE 413", "season": 1, "episode": 1, "title": "T",
+            "season_title": None,
+            "stats": {"speakers": {"adam": 1, "dez": 2}}, "entries": [],
+        }
+        registry = {
+            "adam": {"display": "ADAM", "key": "adam", "voice_id": "v_adam_123",
+                     "pan": 0.2, "filter": "phone", "role": "Host"},
+        }
+        cast_path = str(tmp_path / "cast.json")
+        parser.generate_cast_config(parsed, cast_path, speakers_registry=registry)
+        with open(cast_path, encoding="utf-8") as f:
+            config = json.load(f)
+        adam = config["cast"]["adam"]
+        assert adam["voice_id"] == "v_adam_123"
+        assert adam["pan"] == 0.2
+        assert adam["filter"] == "phone"
+        assert adam["role"] == "Host"
+        # Speaker absent from registry still gets defaults
+        dez = config["cast"]["dez"]
+        assert dez["voice_id"] == "TBD"
+        assert dez["pan"] == 0.0
+        assert dez["filter"] is False
+
+    def test_registry_optional_voice_fields(self, tmp_path):
+        parsed = {
+            "show": "S", "season": 1, "episode": 1, "title": "T",
+            "season_title": None,
+            "stats": {"speakers": {"host": 1}}, "entries": [],
+        }
+        registry = {
+            "host": {"display": "HOST", "key": "host", "voice_id": "v1",
+                     "stability": 0.7, "language_code": "en"},
+        }
+        cast_path = str(tmp_path / "cast.json")
+        parser.generate_cast_config(parsed, cast_path, speakers_registry=registry)
+        with open(cast_path, encoding="utf-8") as f:
+            config = json.load(f)
+        member = config["cast"]["host"]
+        assert member["stability"] == 0.7
+        assert member["language_code"] == "en"
+        assert "similarity_boost" not in member  # null fields omitted
+
+    def test_registry_full_name_override(self, tmp_path):
+        parsed = {
+            "show": "S", "season": 1, "episode": 1, "title": "T",
+            "season_title": None,
+            "stats": {"speakers": {"mr_patterson": 1}}, "entries": [],
+        }
+        registry = {
+            "mr_patterson": {"display": "MR. PATTERSON", "key": "mr_patterson",
+                             "full_name": "Mr. Gerald Patterson"},
+        }
+        cast_path = str(tmp_path / "cast.json")
+        parser.generate_cast_config(parsed, cast_path, speakers_registry=registry)
+        with open(cast_path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert config["cast"]["mr_patterson"]["full_name"] == "Mr. Gerald Patterson"
+
+    def test_load_speakers_registry_returns_keyed_dict(self, tmp_path):
+        speakers_file = tmp_path / "speakers.json"
+        speakers_file.write_text(json.dumps([
+            {"display": "HOST", "key": "host", "voice_id": "v1", "pan": 0.1},
+            {"display": "CALLER", "key": "caller"},
+        ]), encoding="utf-8")
+        registry = parser.load_speakers_registry(str(speakers_file))
+        assert registry["host"]["voice_id"] == "v1"
+        assert registry["host"]["pan"] == 0.1
+        assert registry["caller"]["display"] == "CALLER"
+
+    def test_load_speakers_registry_no_file_returns_empty(self, tmp_path):
+        registry = parser.load_speakers_registry(str(tmp_path / "nonexistent.json"))
+        assert registry == {}
+
+
 # ─── Tests: generate_sfx_config ───
 
 class TestGenerateSfxConfig:
