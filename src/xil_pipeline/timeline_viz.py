@@ -74,8 +74,9 @@ def build_timeline_data(
     amb_labels: list,
     mus_labels: list,
     sfx_labels: list,
+    vf_labels: list | None = None,
 ) -> TimelineData:
-    """Wrap the four label lists into a :class:`TimelineData` object.
+    """Wrap the layer label lists into a :class:`TimelineData` object.
 
     Label tuples may be 3-element ``(start_s, end_s, text)``,
     5-element ``(start_s, end_s, text, ramp_in_s, ramp_out_s)``,
@@ -89,6 +90,7 @@ def build_timeline_data(
         amb_labels: Ambience label tuples (may carry ramp data).
         mus_labels: Music label tuples (may carry ramp data).
         sfx_labels: SFX label tuples.
+        vf_labels: Vintage filter label tuples (may carry ramp data).
 
     Returns:
         A populated :class:`TimelineData` instance.
@@ -106,16 +108,14 @@ def build_timeline_data(
             spans.append(LayerSpan(s, e, t, ri, ro, pd, sn, vp, sq))
         return spans
 
-    return TimelineData(
-        tag=tag,
-        total_duration_s=total_s,
-        layers={
-            "dialogue": to_spans(dlg_labels),
-            "ambience": to_spans(amb_labels),
-            "music": to_spans(mus_labels),
-            "sfx": to_spans(sfx_labels),
-        },
-    )
+    layers = {
+        "dialogue":       to_spans(dlg_labels),
+        "ambience":       to_spans(amb_labels),
+        "music":          to_spans(mus_labels),
+        "sfx":            to_spans(sfx_labels),
+        "vintage_filter": to_spans(vf_labels or []),
+    }
+    return TimelineData(tag=tag, total_duration_s=total_s, layers=layers)
 
 
 def _format_time(seconds: float) -> str:
@@ -198,10 +198,11 @@ def render_terminal_timeline(data: TimelineData, width: int | None = None) -> st
 
     # ── Layer rendering ──
     layer_config = [
-        ("dialogue", "DIALOGUE", "█"),
-        ("ambience", "AMBIENCE", "▓"),
-        ("music", "MUSIC", "█"),
-        ("sfx", "SFX", "█"),
+        ("dialogue",       "DIALOGUE",       "█"),
+        ("ambience",       "AMBIENCE",       "▓"),
+        ("music",          "MUSIC",          "█"),
+        ("sfx",            "SFX",            "█"),
+        ("vintage_filter", "VTG FILTER",     "▒"),
     ]
 
     for layer_key, layer_name, fill_char in layer_config:
@@ -283,6 +284,7 @@ _HTML_TEMPLATE = """\
   .c-ambience {{ background: #4caf50; }}
   .c-music {{ background: #ffc107; }}
   .c-sfx {{ background: #ef5350; }}
+  .c-vintage-filter {{ background: #ab7edb; }}
   .ramp-badge {{ position: absolute; top: 1px; font-size: 9px; font-weight: bold; color: rgba(0,0,0,0.65);
     line-height: 1; pointer-events: none; z-index: 5; }}
   .ramp-badge.ri {{ left: 2px; }}
@@ -306,7 +308,7 @@ _HTML_TEMPLATE = """\
   <audio id="audio-el" controls style="width:100%;height:36px;"></audio>
 </div>
 <h1>Timeline: {tag}</h1>
-<p class="subtitle">Duration: {duration_fmt} &middot; {span_count} assets across 4 layers &middot; Generated {generated_at}</p>
+<p class="subtitle">Duration: {duration_fmt} &middot; {span_count} assets across 5 layers &middot; Generated {generated_at}</p>
 <div class="controls">
   <button onclick="zoomIn()">Zoom +</button>
   <button onclick="zoomOut()">Zoom &minus;</button>
@@ -324,8 +326,8 @@ _HTML_TEMPLATE = """\
 const DATA = {data_json};
 const CLIPS = {clips_json};
 const TOTAL = DATA.total_duration_s;
-const COLORS = {{dialogue:'c-dialogue', sfx:'c-sfx', music:'c-music', ambience:'c-ambience'}};
-const LABELS = {{dialogue:'Dialogue', sfx:'SFX', music:'Music', ambience:'Ambience'}};
+const COLORS = {{dialogue:'c-dialogue', sfx:'c-sfx', music:'c-music', ambience:'c-ambience', vintage_filter:'c-vintage-filter'}};
+const LABELS = {{dialogue:'Dialogue', sfx:'SFX', music:'Music', ambience:'Ambience', vintage_filter:'Vtg Filter'}};
 let zoom = 1;
 const BASE_WIDTH = Math.max(document.getElementById('tc').clientWidth - 100, 400);
 const tips = {{}};  // span index → tooltip HTML
@@ -351,7 +353,7 @@ function render() {{
   // Layers
   let lhtml = '';
   let ti = 0;
-  for (const key of ['dialogue','sfx','music','ambience']) {{
+  for (const key of ['dialogue','sfx','music','ambience','vintage_filter']) {{
     const spans = DATA.layers[key] || [];
     lhtml += '<div class="layer"><div class="layer-label">' + LABELS[key] + '</div><div class="layer-track" style="width:'+W+'px">';
     for (const sp of spans) {{
@@ -362,7 +364,7 @@ function render() {{
       let rampTip = '';
       if (sp.ramp_in_s) {{ rampBadges += '<span class="ramp-badge ri">\u2191</span>'; rampTip += '\u2191 ramp in: '+sp.ramp_in_s+'s  '; }}
       if (sp.ramp_out_s) {{ rampBadges += '<span class="ramp-badge ro">\u2193</span>'; rampTip += '\u2193 ramp out: '+sp.ramp_out_s+'s  '; }}
-      if (sp.play_duration != null) {{ rampBadges += '<span class="ramp-badge pd">%</span>'; rampTip += '% play: '+sp.play_duration+'%  '; }}
+      if (sp.play_duration != null) {{ rampBadges += '<span class="ramp-badge pd">%</span>'; rampTip += '% play: '+sp.play_duration.toFixed(2)+'  '; }}
       if (sp.volume_pct != null && sp.volume_pct !== 100) {{ rampBadges += '<span class="ramp-badge vb">\U0001f50a'+sp.volume_pct+'%</span>'; rampTip += '\U0001f50a vol: '+sp.volume_pct+'%  '; }}
       else if (sp.volume_pct != null) {{ rampTip += '\U0001f50a vol: '+sp.volume_pct+'%  '; }}
       const tipExtra = rampTip ? '<br><span style="opacity:0.8">'+rampTip.trim()+'</span>' : '';

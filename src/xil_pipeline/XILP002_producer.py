@@ -1137,6 +1137,7 @@ def main() -> None:
                 direction_types.add("MUSIC")
             if gen_ambience:
                 direction_types.add("AMBIENCE")
+                direction_types.add("VINTAGE FILTER")
             sfx_entries = load_sfx_entries(args.script, sfx_path,
                                            direction_types=direction_types,
                                            local_only=args.local_only)

@@ -40,7 +40,7 @@ logger = get_logger(__name__)
 
 # Background direction types — excluded from the foreground timeline,
 # overlaid at their cue positions in a separate background pass.
-BACKGROUND_DIRECTION_TYPES: frozenset[str] = frozenset({"AMBIENCE", "MUSIC"})
+BACKGROUND_DIRECTION_TYPES: frozenset[str] = frozenset({"AMBIENCE", "MUSIC", "VINTAGE FILTER"})
 
 # Default level adjustments for the automated mixed master (Option A).
 # Use 0 for DAW export layers so the producer controls levels in-DAW.
@@ -220,6 +220,7 @@ def _resolve_audio_params(
         "AMBIENCE": "ambience",
         "SFX": "sfx",
         "BEAT": "sfx",
+        "VINTAGE FILTER": "vintage_filter",
     }
     prefix = prefix_map.get(plan.direction_type)
     if prefix is None:
@@ -241,9 +242,9 @@ def _resolve_audio_params(
         if entry and entry.ramp_out_seconds is not None
         else defaults.get(f"{prefix}_ramp_out_seconds", defaults.get("ramp_out_seconds"))
     )
-    # play_duration applies to MUSIC only (looped ambience has no meaningful truncation)
+    # play_duration applies to MUSIC and one-shot SFX/BEAT; not to looped AMBIENCE/VINTAGE FILTER
     pd = None
-    if plan.direction_type == "MUSIC" and entry and entry.play_duration is not None:
+    if plan.direction_type in ("MUSIC", "SFX", "BEAT") and entry and entry.play_duration is not None:
         pd = entry.play_duration
     return vol, ri, ro, pd
 
@@ -333,11 +334,8 @@ def collect_stem_plans(
         plan.ramp_out_seconds = ro
 
         plan.play_duration = pd
-        # Source-based stems are pre-trimmed by XILP002; don't trim again at mix time
         src_entry = _find_effect_entry(sfx_config, plan.text) if sfx_config else None
         if src_entry is not None:
-            if src_entry.source is not None and pd is not None:
-                plan.pre_trimmed = True
             if src_entry.loop is False:
                 plan.loop = False
             # Derive play_duration from duration_seconds for source-based clips.
@@ -385,6 +383,14 @@ def collect_stem_plans(
                 seq=seq,
                 filepath="",  # sentinel: no audio — skip in layer builders
                 direction_type="AMBIENCE",
+                entry_type=entry.get("type"),
+                text=text,
+            ))
+        if entry.get("direction_type") == "VINTAGE FILTER" and "DISENGAGES" in text:
+            plans.append(StemPlan(
+                seq=seq,
+                filepath="",  # sentinel: no audio — boundary only
+                direction_type="VINTAGE FILTER",
                 entry_type=entry.get("type"),
                 text=text,
             ))
@@ -502,6 +508,11 @@ def build_foreground(
 
         segment = AudioSegment.from_file(plan.filepath)
 
+        # Trim SFX/BEAT stems to play_duration before advancing the timeline
+        # so dialogue placement reflects the shortened clip, not the full file.
+        if plan.play_duration is not None and not plan.pre_trimmed:
+            segment = segment[:max(1, int(len(segment) * plan.play_duration / 100.0))]
+
         # Apply volume_percentage to SFX/BEAT stems in the foreground.
         if plan.direction_type in ("SFX", "BEAT") and plan.volume_percentage is not None:
             segment = segment + _volume_pct_to_db(plan.volume_percentage)
@@ -618,6 +629,86 @@ def build_ambience_layer(
         )
         layer = layer.overlay(looped, position=start_ms)
         label_text = plan.text or plan.direction_type or "AMBIENCE"
+        labels.append((
+            start_ms / 1000.0, end_ms / 1000.0, label_text,
+            plan.ramp_in_seconds, plan.ramp_out_seconds,
+            None, None, plan.volume_percentage, plan.seq,
+        ))
+
+    return layer, labels
+
+
+def build_vintage_filter_layer(
+    stem_plans: list[StemPlan],
+    timeline: dict[int, int],
+    total_ms: int,
+    level_db: float = 0,
+) -> tuple[AudioSegment, list[tuple]]:
+    """Build the vintage filter crackle layer.
+
+    Loops the crackle source between each ``VINTAGE FILTER ENGAGES``
+    marker and the next ``VINTAGE FILTER DISENGAGES`` marker (or track
+    end if no DISENGAGES follows).  Use ``level_db=0`` for DAW export so
+    the producer controls levels in-DAW.
+
+    Args:
+        stem_plans: Classified stem list from :func:`collect_stem_plans`.
+        timeline: Cue-point timestamps from :func:`build_foreground`.
+        total_ms: Total foreground track length in milliseconds.
+        level_db: Volume adjustment applied to each looped region.
+
+    Returns:
+        Tuple of ``(layer, labels)`` where *layer* is a full-length
+        :class:`~pydub.AudioSegment` with crackle looped at each active
+        span, and *labels* is a list of ``(start_sec, end_sec, text)``
+        tuples for each looped region.
+    """
+    layer = AudioSegment.silent(duration=total_ms)
+    labels: list[tuple[float, float, str]] = []
+    vf_plans = sorted(
+        (p for p in stem_plans if p.direction_type == "VINTAGE FILTER"),
+        key=lambda p: p.seq,
+    )
+    if not vf_plans:
+        return layer, labels
+
+    # All VF cue positions sorted — used to find the end boundary for each span.
+    vf_cues: list[tuple[int, int]] = sorted(
+        ((timeline.get(p.seq, 0), p.seq) for p in vf_plans),
+        key=lambda t: t[0],
+    )
+
+    for plan in vf_plans:
+        if not plan.filepath:  # DISENGAGES marker — boundary only, no audio
+            continue
+        start_ms = timeline.get(plan.seq, 0)
+        if start_ms >= total_ms:
+            continue
+
+        # End at the next VF cue after this one, or track end.
+        end_ms = total_ms
+        for cue_ms, cue_seq in vf_cues:
+            if cue_seq > plan.seq and cue_ms > start_ms:
+                end_ms = min(cue_ms, total_ms)
+                break
+
+        duration_needed = end_ms - start_ms
+        if duration_needed <= 0:
+            continue
+
+        try:
+            clip = AudioSegment.from_file(plan.filepath)
+        except (CouldntDecodeError, OSError) as exc:
+            logger.warning("Skipping corrupt vintage filter stem: %s (%s)", plan.filepath, exc)
+            continue
+        ramp_in_ms = int((plan.ramp_in_seconds or 0) * 1000)
+        ramp_out_ms = int((plan.ramp_out_seconds or 0) * 1000)
+        looped = _loop_clip(clip, duration_needed) if plan.loop else clip[:duration_needed]
+        looped = _apply_clip_effects(
+            looped, plan.volume_percentage, ramp_in_ms, ramp_out_ms, level_db
+        )
+        layer = layer.overlay(looped, position=start_ms)
+        label_text = plan.text or "VINTAGE FILTER"
         labels.append((
             start_ms / 1000.0, end_ms / 1000.0, label_text,
             plan.ramp_in_seconds, plan.ramp_out_seconds,
@@ -873,6 +964,59 @@ def compute_ambience_labels(
     return labels
 
 
+def compute_vintage_filter_labels(
+    stem_plans: list[StemPlan],
+    timeline: dict[int, int],
+    total_ms: int,
+) -> list[tuple[float, float, str]]:
+    """Compute vintage filter label tuples without loading audio.
+
+    Uses the same boundary logic as :func:`build_vintage_filter_layer`.
+
+    Args:
+        stem_plans: Classified stem list.
+        timeline: Cue-point timestamps.
+        total_ms: Total episode duration in ms.
+
+    Returns:
+        List of label tuples spanning each active crackle region.
+    """
+    labels: list[tuple[float, float, str]] = []
+    vf_plans = sorted(
+        (p for p in stem_plans if p.direction_type == "VINTAGE FILTER"),
+        key=lambda p: p.seq,
+    )
+    if not vf_plans:
+        return labels
+
+    vf_cues: list[tuple[int, int]] = sorted(
+        ((timeline.get(p.seq, 0), p.seq) for p in vf_plans),
+        key=lambda t: t[0],
+    )
+
+    for plan in vf_plans:
+        if not plan.filepath:  # DISENGAGES marker — boundary only, no label
+            continue
+        start_ms = timeline.get(plan.seq, 0)
+        if start_ms >= total_ms:
+            continue
+        end_ms = total_ms
+        for cue_ms, cue_seq in vf_cues:
+            if cue_seq > plan.seq and cue_ms > start_ms:
+                end_ms = min(cue_ms, total_ms)
+                break
+        if end_ms - start_ms <= 0:
+            continue
+        label_text = plan.text or "VINTAGE FILTER"
+        labels.append((
+            start_ms / 1000.0, end_ms / 1000.0, label_text,
+            plan.ramp_in_seconds, plan.ramp_out_seconds,
+            None, None, plan.volume_percentage, plan.seq,
+        ))
+
+    return labels
+
+
 def compute_music_labels(
     stem_plans: list[StemPlan],
     timeline: dict[int, int],
@@ -934,10 +1078,12 @@ def compute_sfx_labels(
             continue
         start_ms = timeline.get(plan.seq, 0)
         duration = _mp3_duration_ms(plan.filepath)
+        if plan.play_duration is not None and not plan.pre_trimmed:
+            duration = max(1, int(duration * plan.play_duration / 100.0))
         label_text = plan.text or plan.direction_type or "SFX"
         labels.append((
             start_ms / 1000.0, (start_ms + duration) / 1000.0, label_text,
-            None, None, None, None, plan.volume_percentage, plan.seq,
+            None, None, plan.play_duration, None, plan.volume_percentage, plan.seq,
         ))
     return labels
 
@@ -970,12 +1116,14 @@ def build_sfx_layer(
             continue
         start_ms = timeline.get(plan.seq, 0)
         segment = AudioSegment.from_file(plan.filepath)
+        if plan.play_duration is not None and not plan.pre_trimmed:
+            segment = segment[:max(1, int(len(segment) * plan.play_duration / 100.0))]
         if plan.volume_percentage is not None:
             segment = segment + _volume_pct_to_db(plan.volume_percentage)
         layer = layer.overlay(segment, position=start_ms)
         label_text = plan.text or plan.direction_type or "SFX"
         labels.append((
             start_ms / 1000.0, (start_ms + len(segment)) / 1000.0, label_text,
-            None, None, None, None, plan.volume_percentage, plan.seq,
+            None, None, plan.play_duration, None, plan.volume_percentage, plan.seq,
         ))
     return layer, labels

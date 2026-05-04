@@ -255,7 +255,7 @@ def main():
     slug = resolve_slug(args.show)
     p = derive_paths(slug, tag)
     parsed_path = args.parsed or p["parsed"]
-    stems_dir = args.stems_dir or f"stems/{slug}/{tag}"
+    stems_dir = args.stems_dir or p["stems"]
 
     with run_banner(SCRIPT_NAME):
         # Validate inputs

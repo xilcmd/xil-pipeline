@@ -315,7 +315,7 @@ class ScriptEntry(BaseModel):
     speaker: str | None = Field(default=None, description="Normalized speaker key")
     direction: str | None = Field(default=None, description="Acting direction")
     text: str = Field(..., description="Entry content text")
-    direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT"] | None = Field(
+    direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER"] | None = Field(
         default=None, description="Sound category for direction entries"
     )
     sfx_source: str | None = Field(

@@ -47,11 +47,13 @@ from xil_pipeline.mix_common import (
     build_foreground_timeline_only,
     build_music_layer,
     build_sfx_layer,
+    build_vintage_filter_layer,
     collect_stem_plans,
     compute_ambience_labels,
     compute_dialogue_labels,
     compute_music_labels,
     compute_sfx_labels,
+    compute_vintage_filter_labels,
     load_entries_index,
 )
 from xil_pipeline.models import CastConfiguration, SfxConfiguration, VoiceConfig, derive_paths, resolve_slug
@@ -79,10 +81,11 @@ SILENCE_GAP_MS = 600
 
 # Layer definitions: (key, filename_suffix, description)
 LAYERS: list[tuple[str, str, str]] = [
-    ("dialogue", "layer_dialogue", "Spoken dialogue (audio filter chain + pan applied per speaker)"),
-    ("ambience", "layer_ambience", "Looped environmental background (no ducking)"),
-    ("music",    "layer_music",    "Music stings and themes (no ducking)"),
-    ("sfx",      "layer_sfx",      "One-shot sound effects and beat silences"),
+    ("dialogue",       "layer_dialogue",       "Spoken dialogue (audio filter chain + pan applied per speaker)"),
+    ("ambience",       "layer_ambience",       "Looped environmental background (no ducking)"),
+    ("music",          "layer_music",          "Music stings and themes (no ducking)"),
+    ("sfx",            "layer_sfx",            "One-shot sound effects and beat silences"),
+    ("vintage_filter", "layer_vintage_filter", "Record player crackle (vintage filter active spans)"),
 ]
 
 
@@ -362,6 +365,7 @@ def dry_run_daw(
     bg_plans = [p for p in stem_plans if p.is_background]
     ambience = [p for p in bg_plans if p.direction_type == "AMBIENCE"]
     music = [p for p in bg_plans if p.direction_type == "MUSIC"]
+    vf = [p for p in bg_plans if p.direction_type == "VINTAGE FILTER"]
     sfx = [p for p in stem_plans if p.direction_type in ("SFX", "BEAT")]
     dialogue = [p for p in stem_plans if p.entry_type == "dialogue"]
 
@@ -385,6 +389,7 @@ def dry_run_daw(
             logger.info(f"     per-speaker    : {parts}")
     logger.info(f"   ambience          {len(ambience):3d} stems  (looped to scene boundaries)")
     logger.info(f"   music             {len(music):3d} stems  (one-shot at cue points)")
+    logger.info(f"   vintage filter    {len(vf):3d} stems  (crackle looped to DISENGAGES)")
     logger.info(f"   sfx               {len(sfx):3d} stems")
     logger.info("")
     logger.info("   Output files (all same duration as foreground track):")
@@ -535,6 +540,19 @@ def export_daw_layers(
     layer_files.append(("Labels (SFX)", f"{tag}_labels_sfx.txt"))
     logger.info(f"    Written: {output_dir}/{tag}_labels_sfx.txt")
 
+    # --- Vintage filter layer ---
+    logger.info("--- Building vintage filter layer ---")
+    vf, vf_labels = build_vintage_filter_layer(stem_plans, cue_timeline, total_ms, level_db=0)
+    fname = f"{tag}_layer_vintage_filter.wav"
+    wav_path = os.path.join(output_dir, fname)
+    vf.export(wav_path, format="wav")
+    tag_wav(wav_path, show=show, title=f"{tag} Vintage Filter", artist=artist)
+    layer_files.append(("Vintage Filter", fname))
+    logger.info(f"    Written: {output_dir}/{fname}")
+    _write_labels(output_dir, f"{tag}_labels_vintage_filter.txt", vf_labels)
+    layer_files.append(("Labels (Vintage Filter)", f"{tag}_labels_vintage_filter.txt"))
+    logger.info(f"    Written: {output_dir}/{tag}_labels_vintage_filter.txt")
+
     # --- Audacity helper script ---
     script_fname = f"{tag}_open_in_audacity.py"
     script_path = os.path.join(output_dir, script_fname)
@@ -560,7 +578,7 @@ def export_daw_layers(
         dlg_labels = compute_dialogue_labels(stem_plans, cue_timeline)
         td = build_timeline_data(
             tag, total_ms / 1000.0,
-            dlg_labels, amb_labels, mus_labels, sfx_labels,
+            dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
         )
         if timeline:
             print(render_terminal_timeline(td))
@@ -690,9 +708,10 @@ def main() -> None:
                     include_foreground_override=True,
                 )
                 sfx_labels = compute_sfx_labels(stem_plans, timeline, total_ms)
+                vf_labels = compute_vintage_filter_labels(stem_plans, timeline, total_ms)
                 td = build_timeline_data(
                     tag, total_ms / 1000.0,
-                    dlg_labels, amb_labels, mus_labels, sfx_labels,
+                    dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
                 )
                 if args.timeline:
                     print(render_terminal_timeline(td))

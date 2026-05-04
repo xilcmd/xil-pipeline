@@ -286,7 +286,7 @@ def get_section_map(project_type: str = "podcast") -> dict[str, str]:
 
 
 # Direction subtypes
-DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT"]
+DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER"]
 
 
 def strip_markdown_escapes(text: str) -> str:

@@ -27,7 +27,7 @@ import shutil
 from dataclasses import dataclass
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import derive_paths, resolve_slug
+from xil_pipeline.models import derive_paths, get_workspace_root, resolve_slug
 from xil_pipeline.sfx_common import run_banner
 
 logger = get_logger(__name__)
@@ -372,9 +372,12 @@ def main() -> None:
             tag = args.episode or args.tag
             slug = resolve_slug(args.show)
             p = derive_paths(slug, tag)
-            old_path = args.old or f"parsed/{args.orig_prefix}parsed_{slug}_{tag}.json"
+            old_path = args.old or os.path.join(
+                str(get_workspace_root()), "parsed",
+                f"{args.orig_prefix}parsed_{slug}_{tag}.json"
+            )
             new_path = args.new or p["parsed"]
-            stems_dir = args.stems or f"stems/{slug}/{tag}"
+            stems_dir = args.stems or p["stems"]
         else:
             if not (args.old and args.new and args.stems):
                 parser.error("Provide --episode, or all three of --old, --new, and --stems.")
