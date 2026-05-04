@@ -1020,7 +1020,7 @@ def _build_app():
                     ep_override = (ep_override or "").strip()
                     if ep_override:
                         # Manual tag: derive slug from project.json, use override as tag
-                        from xil_pipeline.models import resolve_slug, get_workspace_root
+                        from xil_pipeline.models import resolve_slug
                         slug = resolve_slug(
                             None,
                             os.path.join(str(get_workspace_root()), "project.json"),
