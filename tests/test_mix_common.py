@@ -17,6 +17,7 @@ collect_stem_plans = mix_common.collect_stem_plans
 extract_seq = mix_common.extract_seq
 _apply_clip_effects = mix_common._apply_clip_effects
 _resolve_audio_params = mix_common._resolve_audio_params
+_vf_engaged_seqs = mix_common._vf_engaged_seqs
 _volume_pct_to_db = mix_common._volume_pct_to_db
 build_ambience_layer = mix_common.build_ambience_layer
 build_music_layer = mix_common.build_music_layer
@@ -903,3 +904,69 @@ class TestSourceDurationSecondsToPlayDuration:
         plans = collect_stem_plans(str(tmp_path), index, sfx_config=sfx_config)
         assert len(plans) == 1
         assert plans[0].play_duration is None
+
+
+# ─── Tests: _vf_engaged_seqs ───
+
+class TestVfEngagedSeqs:
+    def _make_plan(self, seq, entry_type, direction_type=None, text=None):
+        return StemPlan(seq=seq, filepath="", entry_type=entry_type,
+                        direction_type=direction_type, text=text)
+
+    def test_dialogue_between_engage_disengage_is_included(self):
+        plans = [
+            self._make_plan(10, "direction", "VINTAGE FILTER", "VINTAGE FILTER: ENGAGES"),
+            self._make_plan(11, "dialogue"),
+            self._make_plan(12, "dialogue"),
+            self._make_plan(13, "direction", "VINTAGE FILTER", "VINTAGE FILTER: DISENGAGES"),
+            self._make_plan(14, "dialogue"),
+        ]
+        engaged = _vf_engaged_seqs(plans)
+        assert 11 in engaged
+        assert 12 in engaged
+        assert 14 not in engaged  # after DISENGAGES
+
+    def test_no_markers_returns_empty(self):
+        plans = [
+            self._make_plan(1, "dialogue"),
+            self._make_plan(2, "dialogue"),
+        ]
+        assert _vf_engaged_seqs(plans) == frozenset()
+
+    def test_engage_without_disengage_runs_to_end(self):
+        plans = [
+            self._make_plan(5, "dialogue"),
+            self._make_plan(6, "direction", "VINTAGE FILTER", "VINTAGE FILTER: ENGAGES"),
+            self._make_plan(7, "dialogue"),
+            self._make_plan(8, "dialogue"),
+        ]
+        engaged = _vf_engaged_seqs(plans)
+        assert 5 not in engaged  # before ENGAGES
+        assert 7 in engaged
+        assert 8 in engaged
+
+    def test_multiple_spans(self):
+        plans = [
+            self._make_plan(1, "direction", "VINTAGE FILTER", "VINTAGE FILTER: ENGAGES"),
+            self._make_plan(2, "dialogue"),
+            self._make_plan(3, "direction", "VINTAGE FILTER", "VINTAGE FILTER: DISENGAGES"),
+            self._make_plan(4, "dialogue"),
+            self._make_plan(5, "direction", "VINTAGE FILTER", "VINTAGE FILTER: ENGAGES"),
+            self._make_plan(6, "dialogue"),
+            self._make_plan(7, "direction", "VINTAGE FILTER", "VINTAGE FILTER: DISENGAGES"),
+            self._make_plan(8, "dialogue"),
+        ]
+        engaged = _vf_engaged_seqs(plans)
+        assert 2 in engaged
+        assert 4 not in engaged
+        assert 6 in engaged
+        assert 8 not in engaged
+
+    def test_non_dialogue_entries_ignored(self):
+        plans = [
+            self._make_plan(1, "direction", "VINTAGE FILTER", "VINTAGE FILTER: ENGAGES"),
+            self._make_plan(2, "direction", "SFX"),
+            self._make_plan(3, "section_header"),
+        ]
+        engaged = _vf_engaged_seqs(plans)
+        assert len(engaged) == 0  # no dialogue entries in span

@@ -463,6 +463,27 @@ def _apply_speaker_filters(segment: AudioSegment, filter_val: "str | bool | None
     return segment
 
 
+def _vf_engaged_seqs(stem_plans: list[StemPlan]) -> frozenset[int]:
+    """Return seq numbers of dialogue stems that fall within a VINTAGE FILTER span.
+
+    Scans stem plans in seq order.  A ``VINTAGE FILTER: ENGAGES`` direction
+    entry starts a span; the next ``VINTAGE FILTER: DISENGAGES`` (or end of
+    episode) closes it.  Any dialogue stem whose seq falls inside an open span
+    is included in the returned set.
+    """
+    active = False
+    engaged: set[int] = set()
+    for plan in sorted(stem_plans, key=lambda p: p.seq):
+        if plan.direction_type == "VINTAGE FILTER":
+            if "DISENGAGES" in (plan.text or ""):
+                active = False
+            elif "ENGAGES" in (plan.text or ""):
+                active = True
+        elif active and plan.entry_type == "dialogue":
+            engaged.add(plan.seq)
+    return frozenset(engaged)
+
+
 def build_foreground(
     stem_plans: list[StemPlan],
     cast_config: dict,
@@ -497,6 +518,7 @@ def build_foreground(
     foreground = AudioSegment.empty()
     timeline: dict[int, int] = {}
     current_ms = 0
+    vf_engaged = _vf_engaged_seqs(stem_plans)
 
     for plan in sorted(stem_plans, key=lambda p: p.seq):
         # Record cue position for ALL stems (both fg and bg).
@@ -524,10 +546,13 @@ def build_foreground(
             segment = _apply_speaker_filters(segment, cast_config[speaker].get("filter"))
             segment = segment.pan(cast_config[speaker].get("pan", 0.0))
 
-        # Scene-scoped vintage filter: applies to all dialogue in listed scenes.
-        if (vintage_scenes and plan.entry_type == "dialogue"
-                and plan.scene in vintage_scenes):
-            segment = apply_vintage_filter(segment)
+        # Vintage filter for dialogue: script-direction spans take precedence;
+        # fall back to scene-scoped vintage_scenes list.
+        if plan.entry_type == "dialogue":
+            if plan.seq in vf_engaged:
+                segment = apply_vintage_filter(segment)
+            elif vintage_scenes and plan.scene in vintage_scenes:
+                segment = apply_vintage_filter(segment)
 
         foreground += segment + AudioSegment.silent(duration=gap_ms)
         current_ms += len(segment) + gap_ms
@@ -806,6 +831,7 @@ def build_dialogue_layer(
     """
     layer = AudioSegment.silent(duration=total_ms)
     labels: list[tuple[float, float, str]] = []
+    vf_engaged = _vf_engaged_seqs(stem_plans)
     for plan in sorted(stem_plans, key=lambda p: p.seq):
         if plan.entry_type != "dialogue":
             continue
@@ -816,7 +842,9 @@ def build_dialogue_layer(
         if speaker in cast_config:
             segment = _apply_speaker_filters(segment, cast_config[speaker].get("filter"))
             segment = segment.pan(cast_config[speaker].get("pan", 0.0))
-        if (vintage_scenes and plan.scene in vintage_scenes):
+        if plan.seq in vf_engaged:
+            segment = apply_vintage_filter(segment)
+        elif vintage_scenes and plan.scene in vintage_scenes:
             segment = apply_vintage_filter(segment)
         end_ms = start_ms + len(segment)
         labels.append((start_ms / 1000.0, end_ms / 1000.0, speaker, None, None, None, None, None, plan.seq))
