@@ -55,3 +55,6 @@ masters/
 parsed/
 cues/
 *.conds.pt
+
+# Generated reports (xil-stem-log output)
+stem_log*.csv
