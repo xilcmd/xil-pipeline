@@ -899,7 +899,7 @@ def _build_app():
                                 scale=2,
                             )
                         parse_episode_override = gr.Textbox(
-                            label="--episode  (override, e.g. S01E02 — leave blank to use episode dropdown)",
+                            label="Episode tag override (e.g. S01E02) — leave blank to use episode dropdown",
                             placeholder="S01E02",
                         )
                         with gr.Row():
@@ -1018,6 +1018,9 @@ def _build_app():
 
                 def run_parse(ep, ep_override, script, preview, quiet, debug, speakers):
                     ep_override = (ep_override or "").strip()
+                    # Strip accidental "--episode " prefix if user included the flag name
+                    if ep_override.lower().startswith("--episode"):
+                        ep_override = ep_override.split()[-1].strip()
                     if ep_override:
                         # Manual tag: derive slug from project.json, use override as tag
                         from xil_pipeline.models import resolve_slug
