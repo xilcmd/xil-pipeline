@@ -390,7 +390,8 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
                  gen_sfx: bool, gen_music: bool, gen_ambience: bool,
                  local_only: bool, terse: bool,
                  start_from: int | None, stop_at: int | None,
-                 exaggeration: float, cb_python: str = "") -> list[str]:
+                 exaggeration: float, cb_python: str = "",
+                 force: bool = False) -> list[str]:
     module = _STAGE_MODULES["produce"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
     if dry_run:
@@ -416,6 +417,8 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
             cmd += ["--exaggeration", f"{exaggeration:.2f}"]
         if cb_python and cb_python.strip():
             cmd += ["--chatterbox-python", cb_python.strip()]
+    if force:
+        cmd.append("--force")
     return cmd
 
 
@@ -943,6 +946,11 @@ def _build_app():
                             label="--chatterbox-python  (blank = auto-detect venv-chatterbox/)",
                             placeholder=_default_chatterbox_python(),
                         )
+                        with gr.Row():
+                            prod_force_cb = gr.Checkbox(
+                                label="--force  ⚠️ overwrite existing stems (API cost!)",
+                                value=False,
+                            )
                         prod_btn = gr.Button("▶ Run Produce", variant="primary")
 
                     # ── Assemble ──────────────────────────────────────
@@ -1043,7 +1051,7 @@ def _build_app():
 
                 def run_produce(ep, dry_run, backend, gen_sfx, gen_music, gen_amb,
                                 local_only, terse, start_from, stop_at, exaggeration,
-                                cb_python):
+                                cb_python, force):
                     if not ep:
                         yield "Select an episode first."
                         return
@@ -1052,7 +1060,7 @@ def _build_app():
                                        local_only, terse,
                                        int(start_from) if start_from else None,
                                        int(stop_at) if stop_at else None,
-                                       exaggeration, cb_python or "")
+                                       exaggeration, cb_python or "", force=force)
                     yield from _execute_cmd(cmd)
 
                 def run_assemble(ep, gap_ms, parsed_path, output):
@@ -1107,7 +1115,7 @@ def _build_app():
                              prod_gen_sfx_cb, prod_gen_music_cb, prod_gen_amb_cb,
                              prod_local_only_cb, prod_terse_cb,
                              prod_start_from, prod_stop_at, prod_exaggeration,
-                             prod_cb_python],
+                             prod_cb_python, prod_force_cb],
                     outputs=log_box,
                 )
                 asm_btn.click(

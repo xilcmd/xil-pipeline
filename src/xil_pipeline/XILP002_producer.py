@@ -287,7 +287,7 @@ def dry_run(
     config: dict[str, dict], dialogue_entries: list[dict], start_from: int = 1,
     stop_at: int | None = None,
     sfx_entries: list[dict] | None = None, sfx_config: dict | None = None,
-    stems_dir: str = "",
+    stems_dir: str = "", force: bool = False,
 ) -> None:
     """Preview all dialogue lines and TTS cost without making API calls.
 
@@ -321,7 +321,7 @@ def dry_run(
         speaker = entry["speaker"]
         in_range = entry["seq"] >= start_from and (stop_at is None or entry["seq"] <= stop_at)
 
-        stem_exists = bool(
+        stem_exists = (not force) and bool(
             stems_dir and os.path.exists(os.path.join(stems_dir, entry["stem_name"] + ".mp3"))
         )
 
@@ -429,6 +429,7 @@ def generate_voices(
     stems_dir: str, start_from: int = 1, stop_at: int | None = None,
     show: str = "Sample Show", backend: str = "elevenlabs",
     chatterbox_client: "_ChatterboxClient | None" = None,
+    force: bool = False,
 ) -> None:
     """Generate individual voice stem MP3s via the configured TTS backend.
 
@@ -488,11 +489,13 @@ def generate_voices(
         text = entry["text"]
         stem_name = entry["stem_name"]
 
-        # Skip if stem already exists
+        # Skip if stem already exists (unless --force)
         stem_file = os.path.join(stems_dir, f"{stem_name}.mp3")
         if os.path.exists(stem_file):
-            logger.info("   Exists: %s — skipping", stem_file)
-            continue
+            if not force:
+                logger.info("   Exists: %s — skipping", stem_file)
+                continue
+            logger.warning("   Force: overwriting %s", os.path.basename(stem_file))
 
         # Check voice_id is assigned (ElevenLabs only — gTTS uses a single flat voice)
         if backend == "elevenlabs" and config.get(speaker, {}).get("id") == "TBD":
@@ -960,7 +963,8 @@ def _dry_run_postamble(cast_cfg, postamble_voice_stem: str) -> None:
 def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
                            label: str, sfx_dir: str = "SFX",
                            backend: str = "elevenlabs",
-                           chatterbox_client: "_ChatterboxClient | None" = None) -> None:
+                           chatterbox_client: "_ChatterboxClient | None" = None,
+                           force: bool = False) -> None:
     """Generate a voice stem from a preamble or postamble block.
 
     All segment texts (when ``block.segments`` is present) are resolved and
@@ -969,8 +973,10 @@ def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
     The legacy single ``text`` field is also supported.
     """
     if file_nonempty(voice_stem):
-        logger.info("   Exists: %s — skipping", voice_stem)
-        return
+        if not force:
+            logger.info("   Exists: %s — skipping", voice_stem)
+            return
+        logger.warning("   Force: overwriting %s", os.path.basename(voice_stem))
 
     spk = block.speaker
     voice_id = config.get(spk, {}).get("id", "TBD")
@@ -996,18 +1002,20 @@ def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
 
 def _generate_preamble_voice(cast_cfg, config: dict, preamble_voice_stem: str,
                               sfx_dir: str = "SFX", backend: str = "elevenlabs",
-                              chatterbox_client: "_ChatterboxClient | None" = None) -> None:
+                              chatterbox_client: "_ChatterboxClient | None" = None,
+                              force: bool = False) -> None:
     _generate_voice_block(cast_cfg.preamble, cast_cfg, config,
                           preamble_voice_stem, "PREAMBLE", sfx_dir, backend=backend,
-                          chatterbox_client=chatterbox_client)
+                          chatterbox_client=chatterbox_client, force=force)
 
 
 def _generate_postamble_voice(cast_cfg, config: dict, postamble_voice_stem: str,
                                sfx_dir: str = "SFX", backend: str = "elevenlabs",
-                               chatterbox_client: "_ChatterboxClient | None" = None) -> None:
+                               chatterbox_client: "_ChatterboxClient | None" = None,
+                               force: bool = False) -> None:
     _generate_voice_block(cast_cfg.postamble, cast_cfg, config,
                           postamble_voice_stem, "POSTAMBLE", sfx_dir, backend=backend,
-                          chatterbox_client=chatterbox_client)
+                          chatterbox_client=chatterbox_client, force=force)
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -1026,6 +1034,10 @@ def get_parser() -> argparse.ArgumentParser:
                         help="Path to parsed script JSON (default: derived from cast config)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Preview all lines and TTS cost without API calls")
+    parser.add_argument("--force", action="store_true", default=False,
+                        help="Overwrite existing stem files instead of skipping them. "
+                             "Use with --range to regenerate specific lines. "
+                             "WARNING: incurs ElevenLabs API cost for every stem in range.")
     parser.add_argument("--start-from", type=int, default=1,
                         help="Start generation from sequence number N (for resuming)")
     parser.add_argument("--stop-at", type=int, default=None,
@@ -1197,7 +1209,7 @@ def main() -> None:
             dry_run(config, dialogue_entries, start_from=args.start_from,
                     stop_at=args.stop_at,
                     sfx_entries=sfx_entries, sfx_config=sfx_config_data,
-                    stems_dir=stems_dir)
+                    stems_dir=stems_dir, force=args.force)
             if cast_cfg.postamble and postamble_voice_stem:
                 _dry_run_postamble(cast_cfg, postamble_voice_stem)
         else:
@@ -1252,7 +1264,8 @@ def main() -> None:
                     os.makedirs(stems_dir, exist_ok=True)
                     _generate_preamble_voice(cast_cfg, config, preamble_voice_stem,
                                              backend=args.backend,
-                                             chatterbox_client=chatterbox_client)
+                                             chatterbox_client=chatterbox_client,
+                                             force=args.force)
                     # Copy intro music from sfx config 'INTRO MUSIC' source (always regenerate — free local copy)
                     if sfx_config_model and "INTRO MUSIC" in sfx_config_model.effects:
                         intro_entry = sfx_config_model.effects["INTRO MUSIC"]
@@ -1272,7 +1285,8 @@ def main() -> None:
                 generate_voices(config, dialogue_entries, stems_dir,
                                 start_from=args.start_from, stop_at=args.stop_at,
                                 show=cast_cfg.show, backend=args.backend,
-                                chatterbox_client=chatterbox_client)
+                                chatterbox_client=chatterbox_client,
+                                force=args.force)
                 if sfx_entries and sfx_config_data:
                     generate_sfx_stems(sfx_entries, sfx_config_data, stems_dir,
                                        client=client, start_from=args.start_from)
@@ -1304,7 +1318,8 @@ def main() -> None:
                             logger.warning("OUTRO MUSIC entry has no 'source' — skipping outro music stem")
                     _generate_postamble_voice(cast_cfg, config, postamble_voice_stem,
                                              backend=args.backend,
-                                             chatterbox_client=chatterbox_client)
+                                             chatterbox_client=chatterbox_client,
+                                             force=args.force)
             finally:
                 if chatterbox_client is not None:
                     chatterbox_client.close()
