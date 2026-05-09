@@ -50,6 +50,7 @@ class LayerSpan:
     snippet: str | None = None
     volume_pct: float | None = None
     seq: int | None = None
+    tts_model: str | None = None
 
 
 @dataclass
@@ -105,7 +106,8 @@ def build_timeline_data(
             sn = tup[6] if len(tup) > 6 else None
             vp = tup[7] if len(tup) > 7 else None
             sq = tup[8] if len(tup) > 8 else None
-            spans.append(LayerSpan(s, e, t, ri, ro, pd, sn, vp, sq))
+            tm = tup[9] if len(tup) > 9 else None
+            spans.append(LayerSpan(s, e, t, ri, ro, pd, sn, vp, sq, tm))
         return spans
 
     layers = {
@@ -369,8 +371,9 @@ function render() {{
       else if (sp.volume_pct != null) {{ rampTip += '\U0001f50a vol: '+sp.volume_pct+'%  '; }}
       const tipExtra = rampTip ? '<br><span style="opacity:0.8">'+rampTip.trim()+'</span>' : '';
       const snippetLine = sp.snippet ? '<br><em style="opacity:0.75">'+sp.snippet.replace(/</g,'&lt;')+'\u2026</em>' : '';
+      const modelLine = sp.tts_model ? '<br><span style="opacity:0.55;font-size:0.85em">\u26a1\ufe0f '+sp.tts_model+'</span>' : '';
       const seqPrefix = sp.seq != null ? '<span style="opacity:0.6">#'+String(sp.seq).padStart(3,'0')+'</span> ' : '';
-      tips[ti] = seqPrefix+'<strong>'+sp.label.replace(/</g,'&lt;')+'</strong>'+snippetLine+'<br>'+fmtTime(sp.start_s)+' \u2192 '+fmtTime(sp.end_s)+' ('+dur+'s)'+tipExtra;
+      tips[ti] = seqPrefix+'<strong>'+sp.label.replace(/</g,'&lt;')+'</strong>'+snippetLine+'<br>'+fmtTime(sp.start_s)+' \u2192 '+fmtTime(sp.end_s)+' ('+dur+'s)'+tipExtra+modelLine;
       tiToSeq[ti] = sp.seq;
       const seqAttr = (sp.seq != null) ? ' data-seq="'+sp.seq+'"' : '';
       lhtml += '<div class="span '+COLORS[key]+'" style="left:'+left+'%;width:'+w+'%" data-ti="'+ti+'"'+seqAttr+'>'+rampBadges+'</div>';
@@ -490,6 +493,7 @@ def render_html_timeline(
                     "snippet": sp.snippet,
                     "volume_pct": sp.volume_pct,
                     "seq": sp.seq,
+                    "tts_model": sp.tts_model,
                 }
                 for sp in spans
             ]

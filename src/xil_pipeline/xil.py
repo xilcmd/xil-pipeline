@@ -104,6 +104,24 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(run once per workspace)",
     ),
+    "db-profile": CommandSpec(
+        "xil_pipeline.XILU010_db_profile",
+        "profile MP3 loudness: peak, average, and minimum dBFS",
+        _UTILITY,
+        "(audio level analysis)",
+    ),
+    "sfx-csv": CommandSpec(
+        "xil_pipeline.XILU011_sfx_csv",
+        "flatten sfx_<tag>.json configs to CSV — one row per effect",
+        _UTILITY,
+        "(debug / audit)",
+    ),
+    "parsed-csv": CommandSpec(
+        "xil_pipeline.XILU012_parsed_csv",
+        "export parsed_<tag>.json entries to CSV — one row per entry",
+        _UTILITY,
+        "(debug / audit)",
+    ),
 }
 """Subcommand registry. Insertion order defines display order within each group."""
 

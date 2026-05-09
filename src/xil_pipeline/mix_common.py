@@ -77,6 +77,7 @@ class StemPlan:
     ramp_in_seconds: float | None = None
     ramp_out_seconds: float | None = None
     play_duration: float | None = None
+    tts_model: str | None = None
     pre_trimmed: bool = False
     loop: bool = True
 
@@ -334,6 +335,15 @@ def collect_stem_plans(
         plan.ramp_out_seconds = ro
 
         plan.play_duration = pd
+        if entry_type == "dialogue" and _MutagenMP3 is not None:
+            try:
+                audio = _MutagenMP3(filepath)
+                if audio.tags:
+                    comm = audio.tags.get("COMM::eng")
+                    if comm and comm.text:
+                        plan.tts_model = comm.text[0]
+            except Exception:
+                pass
         src_entry = _find_effect_entry(sfx_config, plan.text) if sfx_config else None
         if src_entry is not None:
             if src_entry.loop is False:
@@ -931,7 +941,7 @@ def compute_dialogue_labels(
         speaker = basename.rsplit("_", 1)[-1]
         words = (plan.text or "").split()
         snippet = " ".join(words[:5]) if words else None
-        labels.append((start_ms / 1000.0, end_ms / 1000.0, speaker, None, None, None, snippet, None, plan.seq))
+        labels.append((start_ms / 1000.0, end_ms / 1000.0, speaker, None, None, None, snippet, None, plan.seq, plan.tts_model))
     return labels
 
 
