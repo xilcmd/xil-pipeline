@@ -404,6 +404,7 @@ class TestCastMember:
             "style": None,
             "use_speaker_boost": None,
             "language_code": None,
+            "speed": None,
         }
         assert models.CastMember(**raw).model_dump() == raw
 
@@ -419,6 +420,7 @@ class TestCastMember:
             "style": 0.1,
             "use_speaker_boost": True,
             "language_code": "en",
+            "speed": None,
         }
         assert models.CastMember(**raw).model_dump() == raw
 
@@ -501,6 +503,7 @@ class TestCastConfiguration:
                 "style": None,
                 "use_speaker_boost": None,
                 "language_code": None,
+                "speed": None,
             },
         }
 
