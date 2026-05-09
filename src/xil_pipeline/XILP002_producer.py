@@ -257,6 +257,7 @@ def load_production(
             "style": member.style,
             "use_speaker_boost": member.use_speaker_boost,
             "language_code": member.language_code,
+            "speed": member.speed,
         }
 
     # Extract dialogue entries with stem naming info
@@ -518,7 +519,7 @@ def generate_voices(
         # Build VoiceSettings from per-speaker cast config (None fields are omitted)
         cfg = config.get(speaker, {})
         vs_fields = {
-            k: cfg[k] for k in ("stability", "similarity_boost", "style", "use_speaker_boost")
+            k: cfg[k] for k in ("stability", "similarity_boost", "style", "use_speaker_boost", "speed")
             if cfg.get(k) is not None
         }
         voice_settings = VoiceSettings(**vs_fields) if vs_fields else None

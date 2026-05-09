@@ -427,6 +427,10 @@ class CastMember(BaseModel):
         default=None,
         description="ISO 639-1 language code for text normalisation (e.g. 'en', 'de'); None = auto",
     )
+    speed: float | None = Field(
+        default=None, ge=0.7, le=1.5,
+        description="TTS speaking rate (0.7=slow … 1.0=default … 1.5=fast); None uses voice default",
+    )
 
 
 class PreambleSegment(BaseModel):
