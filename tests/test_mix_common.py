@@ -542,9 +542,10 @@ class TestComputeDialogueLabelsSnippet:
 
         assert len(labels) == 1
         tup = labels[0]
-        assert len(tup) == 9
+        assert len(tup) == 10
         assert tup[6] == "It's 7:14 AM on a"
-        assert tup[8] == 1  # seq
+        assert tup[8] == 1   # seq
+        assert tup[9] is None  # tts_model (no COMM tag in synthetic MP3)
 
     def test_snippet_is_none_when_no_text(self, tmp_path):
         mp3_path = str(tmp_path / "001_cold-open_adam.mp3")
