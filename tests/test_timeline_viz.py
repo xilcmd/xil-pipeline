@@ -560,7 +560,7 @@ class TestVolumePercentageInTimeline:
         )
         out = str(tmp_path / "test.html")
         render_html_timeline(data, out)
-        html = open(out).read()
+        html = open(out, encoding="utf-8").read()
         assert '"volume_pct": 80.0' in html
 
     def test_volume_pct_tooltip_text_in_html(self, tmp_path):
@@ -571,7 +571,7 @@ class TestVolumePercentageInTimeline:
         )
         out = str(tmp_path / "test.html")
         render_html_timeline(data, out)
-        html = open(out).read()
+        html = open(out, encoding="utf-8").read()
         assert "volume_pct" in html
         assert "vol:" in html
 
