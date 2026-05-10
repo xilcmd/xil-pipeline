@@ -39,6 +39,7 @@ from xil_pipeline.models import (
     SfxConfiguration,
     VoiceConfig,
     derive_paths,
+    get_workspace_root,
     resolve_slug,
 )
 from xil_pipeline.sfx_common import (
@@ -66,7 +67,7 @@ def _log_stem_hash(path: str) -> None:
 # Setup ElevenLabs Client
 client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
 
-STEMS_DIR = "stems"
+STEMS_DIR = str(get_workspace_root() / "stems")
 
 
 def check_elevenlabs_quota() -> int | None:
@@ -1197,7 +1198,6 @@ def main() -> None:
             postamble_voice_stem = os.path.join(stems_dir, f"{_max_seq + 2:03d}_postamble_{spk_post}.mp3")
 
         if args.voice_refs is None:
-            from xil_pipeline.models import get_workspace_root
             args.voice_refs = str(get_workspace_root() / "voice_refs")
 
         if args.backend == "chatterbox":

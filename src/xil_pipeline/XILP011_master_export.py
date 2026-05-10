@@ -35,7 +35,7 @@ from xil_pipeline.sfx_common import run_banner, tag_mp3
 logger = get_logger(__name__)
 
 MASTERS_DIR = str(get_workspace_root() / "masters")
-DAW_DIR = "daw"
+DAW_DIR = str(get_workspace_root() / "daw")
 LAYER_SUFFIXES = ("dialogue", "ambience", "music", "sfx")
 SAMPLE_RATE = 48000
 

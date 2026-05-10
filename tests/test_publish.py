@@ -211,6 +211,7 @@ def test_publish_episode_dry_run_no_api_call(tmp_path, monkeypatch):
 
 def test_publish_episode_calls_api_and_writes_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mod, "POSTS_DIR", str(tmp_path / "posts"))
     parsed_dir = tmp_path / "parsed" / "the413"
     parsed_dir.mkdir(parents=True)
     (parsed_dir / "parsed_S04E01.json").write_text(json.dumps(_PARSED))

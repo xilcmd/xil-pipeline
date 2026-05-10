@@ -34,7 +34,7 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs.core.api_error import ApiError
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import CastConfiguration, derive_paths, resolve_slug
+from xil_pipeline.models import CastConfiguration, derive_paths, get_workspace_root, resolve_slug
 from xil_pipeline.sfx_common import run_banner, tag_mp3
 
 logger = get_logger(__name__)
@@ -42,7 +42,7 @@ logger = get_logger(__name__)
 # Setup ElevenLabs Client
 client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
 
-VOICE_SAMPLES_DIR = "voice_samples"
+VOICE_SAMPLES_DIR = str(get_workspace_root() / "voice_samples")
 
 try:
     from gtts import gTTS as _gTTS

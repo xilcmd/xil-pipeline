@@ -47,13 +47,13 @@ import re
 import tempfile
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import derive_paths, resolve_slug
+from xil_pipeline.models import derive_paths, get_workspace_root, resolve_slug
 from xil_pipeline.sfx_common import file_nonempty, run_banner
 
 logger = get_logger(__name__)
 
-SFX_DIR = "SFX"
-CUES_DIR = "cues"
+SFX_DIR = str(get_workspace_root() / "SFX")
+CUES_DIR = str(get_workspace_root() / "cues")
 DEFAULT_SFX_DURATION = 5.0   # seconds when no duration given in cues sheet
 API_MAX_DURATION = 30.0       # ElevenLabs Sound Effects API hard cap
 CREDITS_PER_SECOND = 40       # approximate ElevenLabs credit cost per second

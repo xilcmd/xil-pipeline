@@ -125,7 +125,7 @@ class TestModuleImport:
         assert hasattr(cues_ingester, "write_manifest")
 
     def test_constants_defined(self):
-        assert cues_ingester.SFX_DIR == "SFX"
+        assert cues_ingester.SFX_DIR.endswith("SFX")
         assert cues_ingester.API_MAX_DURATION == 30.0
         assert cues_ingester.DEFAULT_SFX_DURATION == 5.0
 
@@ -267,11 +267,11 @@ class TestParseCuesMarkdown:
 class TestAssetLibraryPath:
     def test_music_naming(self):
         path = cues_ingester.asset_library_path("MUS-THEME-MAIN-01")
-        assert path == os.path.join("SFX", "mus-theme-main-01.mp3")
+        assert path == os.path.join(cues_ingester.SFX_DIR, "mus-theme-main-01.mp3")
 
     def test_sfx_naming(self):
         path = cues_ingester.asset_library_path("SFX-BOOTS-STAMP-01")
-        assert path == os.path.join("SFX", "sfx-boots-stamp-01.mp3")
+        assert path == os.path.join(cues_ingester.SFX_DIR, "sfx-boots-stamp-01.mp3")
 
     def test_custom_sfx_dir(self):
         path = cues_ingester.asset_library_path("AMB-QUARRY-01", sfx_dir="custom/")

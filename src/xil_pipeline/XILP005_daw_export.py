@@ -56,7 +56,7 @@ from xil_pipeline.mix_common import (
     compute_vintage_filter_labels,
     load_entries_index,
 )
-from xil_pipeline.models import CastConfiguration, SfxConfiguration, VoiceConfig, derive_paths, resolve_slug
+from xil_pipeline.models import CastConfiguration, SfxConfiguration, VoiceConfig, derive_paths, get_workspace_root, resolve_slug
 from xil_pipeline.sfx_common import run_banner, tag_wav
 from xil_pipeline.timeline_viz import build_timeline_data, render_html_timeline, render_terminal_timeline
 
@@ -75,8 +75,8 @@ def _validate_tag_for_script(tag: str) -> str:
         )
     return tag
 
-STEMS_DIR = "stems"
-DAW_DIR = "daw"
+STEMS_DIR = str(get_workspace_root() / "stems")
+DAW_DIR = str(get_workspace_root() / "daw")
 SILENCE_GAP_MS = 600
 
 # Layer definitions: (key, filename_suffix, description)

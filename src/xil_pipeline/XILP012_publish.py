@@ -34,7 +34,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import derive_paths, resolve_slug
+from xil_pipeline.models import derive_paths, get_workspace_root, resolve_slug
 from xil_pipeline.sfx_common import run_banner
 
 if TYPE_CHECKING:
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-POSTS_DIR = "posts"
+POSTS_DIR = str(get_workspace_root() / "posts")
 
 _SYSTEM_PROMPT = """\
 You are a social media copywriter for the Berkshire Talking Chronicle, a radio reading service \

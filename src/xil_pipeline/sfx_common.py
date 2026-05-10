@@ -32,11 +32,11 @@ from mutagen.wave import WAVE
 from pydub import AudioSegment
 
 from xil_pipeline.log_config import get_logger
-from xil_pipeline.models import SfxConfiguration, SfxEntry
+from xil_pipeline.models import SfxConfiguration, SfxEntry, get_workspace_root
 
 logger = get_logger(__name__)
 
-SFX_DIR = "SFX"
+SFX_DIR = str(get_workspace_root() / "SFX")
 
 _BAR = "=" * 70
 
