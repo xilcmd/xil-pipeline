@@ -29,12 +29,12 @@ import os
 from pydub import AudioSegment
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import CastConfiguration, derive_paths, resolve_slug
+from xil_pipeline.models import CastConfiguration, derive_paths, get_workspace_root, resolve_slug
 from xil_pipeline.sfx_common import run_banner, tag_mp3
 
 logger = get_logger(__name__)
 
-MASTERS_DIR = "masters"
+MASTERS_DIR = str(get_workspace_root() / "masters")
 DAW_DIR = "daw"
 LAYER_SUFFIXES = ("dialogue", "ambience", "music", "sfx")
 SAMPLE_RATE = 48000

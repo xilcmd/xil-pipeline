@@ -176,7 +176,7 @@ def _stage_status(slug: str, tag: str) -> dict[str, str]:
     root = str(get_workspace_root())
     has_master = (
         os.path.exists(p["master"])
-        or bool(glob.glob(os.path.join(root, "masters", f"*{tag}*master*.mp3")))
+        or bool(glob.glob(os.path.join(root, "masters", f"{tag}_*.mp3")))
         or bool(glob.glob(os.path.join(root, f"{slug}_{tag}_master.mp3")))
     )
     return {
