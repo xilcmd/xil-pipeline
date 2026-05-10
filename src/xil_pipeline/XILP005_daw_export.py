@@ -56,7 +56,14 @@ from xil_pipeline.mix_common import (
     compute_vintage_filter_labels,
     load_entries_index,
 )
-from xil_pipeline.models import CastConfiguration, SfxConfiguration, VoiceConfig, derive_paths, get_workspace_root, resolve_slug
+from xil_pipeline.models import (
+    CastConfiguration,
+    SfxConfiguration,
+    VoiceConfig,
+    derive_paths,
+    get_workspace_root,
+    resolve_slug,
+)
 from xil_pipeline.sfx_common import run_banner, tag_wav
 from xil_pipeline.timeline_viz import build_timeline_data, render_html_timeline, render_terminal_timeline
 

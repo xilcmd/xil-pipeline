@@ -45,7 +45,14 @@ from xil_pipeline.mix_common import (
     collect_stem_plans,
     load_entries_index,
 )
-from xil_pipeline.models import CastConfiguration, SfxConfiguration, VoiceConfig, derive_paths, get_workspace_root, resolve_slug
+from xil_pipeline.models import (
+    CastConfiguration,
+    SfxConfiguration,
+    VoiceConfig,
+    derive_paths,
+    get_workspace_root,
+    resolve_slug,
+)
 from xil_pipeline.sfx_common import run_banner
 
 logger = get_logger(__name__)
