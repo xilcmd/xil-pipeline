@@ -582,6 +582,9 @@ class SfxEntry(BaseModel):
     ElevenLabs Sound Effects API parameters needed to generate it, or marks
     it as silence (for BEAT entries).
 
+    Note: per-effect volume is always ``volume_percentage``, not the prefixed
+    form (``ambience_volume_percentage`` etc.) — those belong in ``defaults`` only.
+
     Attributes:
         prompt: Natural-language description for the ElevenLabs SFX API.
             ``None`` for silence entries.
@@ -624,6 +627,24 @@ class SfxEntry(BaseModel):
         default=None, ge=0.0, le=100.0,
         description="Percentage of clip duration to play (100=full); None plays full clip",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_prefixed_volume(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        bad = [k for k in data if k in ("ambience_volume_percentage",
+                                         "music_volume_percentage",
+                                         "sfx_volume_percentage",
+                                         "vintage_filter_volume_percentage")]
+        if bad:
+            raise ValueError(
+                f"Unknown field(s) in SfxEntry: {bad}. "
+                "Use 'volume_percentage' for per-effect volume; "
+                "the prefixed forms (ambience_volume_percentage, etc.) "
+                "belong in the 'defaults' block only."
+            )
+        return data
 
     @model_validator(mode="after")
     def _check_api_duration_cap(self) -> "SfxEntry":

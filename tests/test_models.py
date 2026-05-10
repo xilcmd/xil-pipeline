@@ -747,6 +747,16 @@ class TestSfxEntry:
         with pytest.raises(ValidationError):
             self._make(volume_percentage=201.0)
 
+    @pytest.mark.parametrize("bad_key", [
+        "ambience_volume_percentage",
+        "music_volume_percentage",
+        "sfx_volume_percentage",
+        "vintage_filter_volume_percentage",
+    ])
+    def test_prefixed_volume_percentage_rejected(self, bad_key):
+        with pytest.raises(ValidationError, match="volume_percentage"):
+            models.SfxEntry(**{bad_key: 15, "duration_seconds": 5.0})
+
     def test_ramp_in_seconds_accepted(self):
         entry = self._make(ramp_in_seconds=1.0)
         assert entry.ramp_in_seconds == 1.0
