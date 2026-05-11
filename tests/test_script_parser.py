@@ -127,13 +127,21 @@ class TestLineClassifiers:
 class TestParseSceneHeader:
     def test_simple(self):
         num, name = parser.parse_scene_header("SCENE 1: THE DINER – INTERIOR")
-        assert num == 1
+        assert num == "1"
         assert name == "THE DINER – INTERIOR"
 
     def test_no_match(self):
         num, name = parser.parse_scene_header("COLD OPEN")
         assert num is None
         assert name is None
+
+    def test_suffixed_scene_number(self):
+        num, name = parser.parse_scene_header("SCENE 5A: WRRS RADIO BOOTH — BRIEF STING")
+        assert num == "5A"
+        assert name == "WRRS RADIO BOOTH — BRIEF STING"
+
+    def test_suffixed_scene_header_recognized(self):
+        assert parser.is_scene_header("SCENE 5A: WRRS RADIO BOOTH — BRIEF STING") is True
 
 
 # ─── Unit Tests: parse_script_header ───

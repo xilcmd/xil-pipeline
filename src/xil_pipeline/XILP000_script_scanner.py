@@ -135,7 +135,9 @@ def scan_script(
         match = try_match_speaker(line, known_speakers, speaker_keys)
         if match:
             speaker_key, _direction, _spoken = match
-            display = line.split("(")[0].strip()  # display name without direction
+            # Use the exact speaker prefix that matched, not the full line
+            _ks = known_speakers if known_speakers is not None else []
+            display = next((s for s in _ks if line.startswith(s)), line.split("(")[0].strip())
             if speaker_key not in speakers:
                 speakers[speaker_key] = {
                     "display": display,

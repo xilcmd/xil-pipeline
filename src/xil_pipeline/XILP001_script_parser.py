@@ -480,9 +480,10 @@ def is_scene_header(line: str) -> bool:
         line: A stripped line from the script.
 
     Returns:
-        ``True`` if the line matches the ``SCENE \\d+:`` pattern.
+        ``True`` if the line matches the ``SCENE \\d+[A-Za-z]*:`` pattern
+        (supports suffixed scene numbers such as ``SCENE 5A:``).
     """
-    return bool(re.match(r"^SCENE \d+:", line))
+    return bool(re.match(r"^SCENE \d+[A-Za-z]*:", line))
 
 
 def is_divider(line: str) -> bool:
@@ -518,7 +519,7 @@ def is_metadata_section(line: str) -> bool:
     )
 
 
-def parse_scene_header(line: str) -> tuple[int | None, str | None]:
+def parse_scene_header(line: str) -> tuple[str | None, str | None]:
     """Extract scene number and name from a scene header line.
 
     Args:
@@ -526,11 +527,12 @@ def parse_scene_header(line: str) -> tuple[int | None, str | None]:
 
     Returns:
         A tuple of ``(scene_number, scene_name)``, or ``(None, None)``
-        if the line doesn't match.
+        if the line doesn't match. ``scene_number`` is a string to
+        support suffixed numbers such as ``"5A"``.
     """
-    m = re.match(r"^SCENE (\d+):\s*(.+)", line)
+    m = re.match(r"^SCENE (\d+[A-Za-z]*):\s*(.+)", line)
     if m:
-        return int(m.group(1)), m.group(2).strip()
+        return m.group(1), m.group(2).strip()
     return None, None
 
 
