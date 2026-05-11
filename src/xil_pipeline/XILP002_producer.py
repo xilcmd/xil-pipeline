@@ -1086,6 +1086,13 @@ def get_parser() -> argparse.ArgumentParser:
                             "1.0 = dramatically expressive (default: 0.5). "
                             "Used only with --backend chatterbox."
                         ))
+    parser.add_argument("--cfg-weight", type=float, default=0.5, metavar="FLOAT",
+                        help=(
+                            "Chatterbox CFG weight controlling pacing/delivery: lower values "
+                            "(e.g. 0.3) produce slower, more deliberate speech and help "
+                            "compensate for acceleration at high exaggeration (default: 0.5). "
+                            "Used only with --backend chatterbox."
+                        ))
     return parser
 
 
@@ -1257,6 +1264,7 @@ def main() -> None:
                     python_path=cb_python,
                     voice_refs_dir=args.voice_refs,
                     exaggeration=args.exaggeration,
+                    cfg_weight=args.cfg_weight,
                 )
 
             try:

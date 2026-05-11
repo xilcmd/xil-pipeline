@@ -391,7 +391,7 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
                  local_only: bool, terse: bool,
                  start_from: int | None, stop_at: int | None,
                  exaggeration: float, cb_python: str = "",
-                 force: bool = False) -> list[str]:
+                 force: bool = False, cfg_weight: float = 0.5) -> list[str]:
     module = _STAGE_MODULES["produce"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
     if dry_run:
@@ -415,6 +415,8 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
     if backend == "chatterbox":
         if exaggeration != 0.5:
             cmd += ["--exaggeration", f"{exaggeration:.2f}"]
+        if cfg_weight != 0.5:
+            cmd += ["--cfg-weight", f"{cfg_weight:.2f}"]
         if cb_python and cb_python.strip():
             cmd += ["--chatterbox-python", cb_python.strip()]
     if force:
@@ -942,6 +944,10 @@ def _build_app():
                             label="--exaggeration  (Chatterbox only, 0.0–1.0)",
                             minimum=0.0, maximum=1.0, step=0.05, value=0.5,
                         )
+                        prod_cfg_weight = gr.Slider(
+                            label="--cfg-weight  (Chatterbox only, 0.1–1.0)",
+                            minimum=0.1, maximum=1.0, step=0.05, value=0.5,
+                        )
                         prod_cb_python = gr.Textbox(
                             label="--chatterbox-python  (blank = auto-detect venv-chatterbox/)",
                             placeholder=_default_chatterbox_python(),
@@ -1051,7 +1057,7 @@ def _build_app():
 
                 def run_produce(ep, dry_run, backend, gen_sfx, gen_music, gen_amb,
                                 local_only, terse, start_from, stop_at, exaggeration,
-                                cb_python, force):
+                                cfg_weight, cb_python, force):
                     if not ep:
                         yield "Select an episode first."
                         return
@@ -1060,7 +1066,8 @@ def _build_app():
                                        local_only, terse,
                                        int(start_from) if start_from else None,
                                        int(stop_at) if stop_at else None,
-                                       exaggeration, cb_python or "", force=force)
+                                       exaggeration, cb_python or "", force=force,
+                                       cfg_weight=cfg_weight)
                     yield from _execute_cmd(cmd)
 
                 def run_assemble(ep, gap_ms, parsed_path, output):
@@ -1115,7 +1122,7 @@ def _build_app():
                              prod_gen_sfx_cb, prod_gen_music_cb, prod_gen_amb_cb,
                              prod_local_only_cb, prod_terse_cb,
                              prod_start_from, prod_stop_at, prod_exaggeration,
-                             prod_cb_python, prod_force_cb],
+                             prod_cfg_weight, prod_cb_python, prod_force_cb],
                     outputs=log_box,
                 )
                 asm_btn.click(
