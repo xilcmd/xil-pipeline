@@ -1876,6 +1876,65 @@ class TestUnrecognizedDirectionFilter:
         assert bad == [], f"Found direction entries with direction_type=None: {bad}"
 
 
+SCRIPT_STAGE_DIRECTION_BETWEEN_SPEAKER_AND_DIALOGUE = """\
+THE 413 Season 1: Episode 1: Test
+
+===
+
+ACT ONE
+
+SCENE 1: THE DINER
+
+ADAM
+[BEAT]
+Hello there.
+
+ADAM
+[BEAT — soft laugh from MAYA]
+That's a Manchester chicken.
+
+===
+
+END OF EPISODE 1
+"""
+
+
+class TestStagDirectionBetweenSpeakerAndDialogue:
+    """Stage directions between a bare speaker name and dialogue must not corrupt the text."""
+
+    def test_beat_between_speaker_and_dialogue(self, tmp_path):
+        """[BEAT] between speaker name and dialogue produces a BEAT entry, not broken text."""
+        f = tmp_path / "script.md"
+        f.write_text(SCRIPT_STAGE_DIRECTION_BETWEEN_SPEAKER_AND_DIALOGUE, encoding="utf-8")
+        parsed = parser.parse_script(str(f))
+        dialogues = [e for e in parsed["entries"] if e["type"] == "dialogue"]
+        assert len(dialogues) == 2
+        assert dialogues[0]["text"] == "Hello there."
+        assert dialogues[0]["speaker"] == "adam"
+        assert dialogues[1]["text"] == "That's a Manchester chicken."
+        assert dialogues[1]["speaker"] == "adam"
+
+    def test_beat_between_speaker_and_dialogue_emits_direction(self, tmp_path):
+        """[BEAT] between speaker name and dialogue still produces a direction entry."""
+        f = tmp_path / "script.md"
+        f.write_text(SCRIPT_STAGE_DIRECTION_BETWEEN_SPEAKER_AND_DIALOGUE, encoding="utf-8")
+        parsed = parser.parse_script(str(f))
+        beats = [e for e in parsed["entries"]
+                 if e["type"] == "direction" and e["direction_type"] == "BEAT"]
+        assert len(beats) == 2
+
+    def test_stage_direction_text_not_concatenated_into_dialogue(self, tmp_path):
+        """The bracket content must never appear in the dialogue text field."""
+        f = tmp_path / "script.md"
+        f.write_text(SCRIPT_STAGE_DIRECTION_BETWEEN_SPEAKER_AND_DIALOGUE, encoding="utf-8")
+        parsed = parser.parse_script(str(f))
+        for entry in parsed["entries"]:
+            if entry["type"] == "dialogue":
+                assert "[" not in entry["text"], (
+                    f"Bracket content leaked into dialogue: {entry['text']!r}"
+                )
+
+
 # ─── Tests: --tag flag (non-episodic content) ───
 
 class TestTagOverride:

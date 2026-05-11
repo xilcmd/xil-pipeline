@@ -125,6 +125,10 @@ def scan_script(
         if line.startswith("END OF"):
             break
 
+        # Stage directions — never mine for speaker names, regardless of content.
+        if is_stage_direction(line):
+            continue
+
         # Try speaker match first — handles both multi-line format (bare "ADAM") and
         # single-line format ("ADAM (direction) dialogue text"). try_match_speaker
         # matches on the leading all-caps speaker prefix regardless of what follows.

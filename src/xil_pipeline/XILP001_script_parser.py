@@ -730,6 +730,32 @@ def parse_script(
                 p_direction = line[1:-1].strip()
                 pending_speaker = (p_speaker_key, p_direction)
                 continue
+            # Stage direction between speaker name and dialogue — process the
+            # direction normally and keep pending_speaker alive for the next line.
+            if is_stage_direction(line):
+                brackets = re.findall(r"\[([^\]]+)\]", line)
+                for bracket_text in brackets:
+                    clean_text, sfx_source = _parse_direction_hint(bracket_text.strip())
+                    direction_type = classify_direction(clean_text)
+                    if direction_type is None:
+                        logger.debug(f"  Skipping unrecognized direction: [{clean_text}]")
+                        continue
+                    seq += 1
+                    entry = {
+                        "seq": seq,
+                        "type": "direction",
+                        "section": current_section,
+                        "scene": current_scene,
+                        "speaker": None,
+                        "direction": None,
+                        "text": clean_text,
+                        "direction_type": direction_type,
+                    }
+                    if sfx_source:
+                        entry["sfx_source"] = sfx_source
+                    entries.append(entry)
+                    debug_line_map.append((i + 1, lines[i], len(entries) - 1))
+                continue
             # Otherwise this line is the spoken text
             seq += 1
             entries.append({
