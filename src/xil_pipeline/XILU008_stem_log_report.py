@@ -147,6 +147,50 @@ _FIELDNAMES = [
 ]
 
 
+def _audit(records: list[dict], parsed_json_path: str, threshold: int = 20) -> None:
+    """Cross-reference log char_counts against current parsed JSON text lengths.
+
+    Flags any stem whose logged char_count differs from the current parsed JSON
+    text length by more than *threshold* characters — a heuristic indicator that
+    the stem may contain audio for a different line than the one the JSON expects.
+
+    Args:
+        records: Stem log records (list of dicts with seq, speaker, char_count).
+        parsed_json_path: Path to the current parsed script JSON.
+        threshold: Char-count delta above which a stem is flagged (default 20).
+    """
+    import json as _json
+    with open(parsed_json_path, encoding="utf-8") as f:
+        parsed = _json.load(f)
+
+    by_seq_spk: dict[tuple, str] = {}
+    for entry in parsed.get("entries", []):
+        if entry.get("type") == "dialogue":
+            by_seq_spk[(entry["seq"], entry["speaker"])] = entry.get("text", "")
+
+    print(f"{'seq':>4}  {'speaker':<14} {'log_chars':>9}  {'json_chars':>10}  {'delta':>6}  {'status'}")
+    print("-" * 65)
+    ok = 0
+    flagged = 0
+    unmatched = 0
+    for rec in records:
+        key = (rec["seq"], rec["speaker"])
+        if key not in by_seq_spk:
+            unmatched += 1
+            continue
+        json_len = len(by_seq_spk[key])
+        log_len = rec["char_count"]
+        delta = abs(json_len - log_len)
+        status = "OK" if delta <= threshold else "⚠ MISMATCH"
+        if delta > threshold:
+            flagged += 1
+            print(f"{rec['seq']:>4}  {rec['speaker']:<14} {log_len:>9}  {json_len:>10}  {delta:>6}  {status}")
+        else:
+            ok += 1
+    print("-" * 65)
+    print(f"  {ok} OK, {flagged} flagged (delta > {threshold}), {unmatched} not in current JSON")
+
+
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="xil-stem-log",
@@ -185,6 +229,19 @@ def get_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print CSV to stdout (equivalent to --output -)",
     )
+    parser.add_argument(
+        "--audit",
+        metavar="PARSED_JSON",
+        help="Instead of writing CSV: compare logged char_counts against the given "
+             "parsed script JSON and flag stems whose audio may not match current text.",
+    )
+    parser.add_argument(
+        "--audit-threshold",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Char-count delta threshold for --audit flagging (default: 20)",
+    )
     return parser
 
 
@@ -221,6 +278,10 @@ def main() -> None:
         all_records = [r for r in all_records if r.get("stem_path") and slug in (r["stem_path"].lower())]
 
     print(f"Total: {len(all_records)} stem records", file=sys.stderr)
+
+    if args.audit:
+        _audit(all_records, args.audit, threshold=args.audit_threshold)
+        return
 
     use_stdout = args.show or args.output == "-"
     out_path = None if use_stdout else Path(args.output)

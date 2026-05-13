@@ -113,6 +113,51 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
+# ── SFX stem manifest helpers ─────────────────────────────────────────────────
+
+def _sfx_manifest_path(stems_dir: str) -> str:
+    tag = os.path.basename(stems_dir.rstrip(os.sep))
+    return os.path.join(stems_dir, f"{tag}_sfx_manifest.json")
+
+
+def _sfx_manifest_load(path: str) -> dict:
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"version": 1, "entries": []}
+
+
+def _sfx_manifest_save(path: str, manifest: dict) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    os.replace(tmp, path)
+
+
+def _sfx_manifest_content_key(effect_key: str, sfx_type: str,
+                               source_path: str | None,
+                               prompt: str | None,
+                               duration_seconds: float | None) -> tuple:
+    return (effect_key, sfx_type, source_path or "", prompt or "",
+            round(duration_seconds, 3) if duration_seconds is not None else None)
+
+
+def _sfx_manifest_upsert(manifest: dict, by_key: dict, entry: dict) -> None:
+    key = _sfx_manifest_content_key(
+        entry["effect_key"], entry["sfx_type"],
+        entry.get("source_path"), entry.get("prompt"),
+        entry.get("duration_seconds"),
+    )
+    if key in by_key:
+        by_key[key].update(entry)
+    else:
+        manifest["entries"].append(entry)
+        by_key[key] = entry
+
+
 def file_nonempty(path: str) -> bool:
     """Return True if *path* exists and has a non-zero size.
 
@@ -505,6 +550,17 @@ def generate_sfx(
     os.makedirs(stems_dir, exist_ok=True)
     sfx_cfg = SfxConfiguration(**sfx_config)
     defaults = sfx_cfg.defaults
+    run_started_at = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+
+    mf_path = _sfx_manifest_path(stems_dir)
+    manifest = _sfx_manifest_load(mf_path)
+    by_key: dict = {}
+    for _me in manifest["entries"]:
+        _k = _sfx_manifest_content_key(
+            _me["effect_key"], _me["sfx_type"],
+            _me.get("source_path"), _me.get("prompt"), _me.get("duration_seconds"),
+        )
+        by_key[_k] = _me
 
     entries_to_process = [e for e in sfx_entries if e["seq"] >= start_from]
     logger.info("--- SFX: Processing %d entries ---", len(entries_to_process))
@@ -512,11 +568,13 @@ def generate_sfx(
     # Phase 1: ensure shared assets for unique effect keys
     unique_keys = dict.fromkeys(e["text"] for e in entries_to_process)
     shared_paths: dict[str, str] = {}
+    effects: dict[str, object] = {}
     for key in unique_keys:
         effect = sfx_cfg.effects[key]
         path = ensure_shared_sfx(key, effect, sfx_dir, defaults, client,
                                 show=sfx_cfg.show)
         shared_paths[key] = path
+        effects[key] = effect
         logger.info("   Shared: %s", path)
 
     # Phase 2: place episode stems
@@ -525,18 +583,43 @@ def generate_sfx(
     for entry in entries_to_process:
         stem_file = os.path.join(stems_dir, f"{entry['stem_name']}.mp3")
         shared_path = shared_paths[entry["text"]]
-        if place_episode_stem(shared_path, stem_file):
+        effect = effects[entry["text"]]
+        placed = place_episode_stem(shared_path, stem_file)
+        if placed:
             logger.info("   Placed: %s", stem_file)
             logger.info("   SHA256: %s", _sha256_file(stem_file))
             copied_count += 1
         else:
             logger.info("   Exists: %s — skipping", stem_file)
             skipped_count += 1
+        try:
+            sha256_hex = _sha256_file(stem_file)
+            _sfx_manifest_upsert(manifest, by_key, {
+                "effect_key": entry["text"],
+                "sfx_type": getattr(effect, "type", "copy"),
+                "source_path": getattr(effect, "source", None),
+                "prompt": getattr(effect, "prompt", None),
+                "duration_seconds": getattr(effect, "duration_seconds", None),
+                "sha256": sha256_hex,
+                "seq_at_placement": entry["seq"],
+                "stem_filename": os.path.basename(stem_file),
+                "placed_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            })
+        except Exception:
+            pass
 
     logger.info(
         "--- SFX Complete: %d shared assets, %d placed, %d skipped ---",
         len(unique_keys), copied_count, skipped_count,
     )
+    try:
+        _sfx_manifest_save(mf_path, manifest)
+        logger.info("   SFX Manifest: %s (%d entries)", os.path.basename(mf_path), len(manifest["entries"]))
+        snap_path = mf_path.replace(".json", f"_{run_started_at}.json")
+        _sfx_manifest_save(snap_path, manifest)
+        logger.info("   SFX Snapshot: %s", os.path.basename(snap_path))
+    except Exception as exc:
+        logger.warning("Could not write SFX manifest: %s", exc)
 
 
 def dry_run_sfx(

@@ -4,7 +4,7 @@
 
 """XILP011 — Final Master MP3 Export.
 
-Overlays the four DAW layer WAV files produced by XILP005 into a single
+Overlays the five DAW layer WAV files produced by XILP005 into a single
 stereo MP3 file suitable for podcast distribution.
 
 Output format:
@@ -36,7 +36,7 @@ logger = get_logger(__name__)
 
 MASTERS_DIR = str(get_workspace_root() / "masters")
 DAW_DIR = str(get_workspace_root() / "daw")
-LAYER_SUFFIXES = ("dialogue", "ambience", "music", "sfx")
+LAYER_SUFFIXES = ("dialogue", "ambience", "music", "sfx", "vintage_filter")
 SAMPLE_RATE = 48000
 
 

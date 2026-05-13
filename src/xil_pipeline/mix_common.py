@@ -714,7 +714,11 @@ def build_vintage_filter_layer(
     )
 
     for plan in vf_plans:
-        if not plan.filepath:  # DISENGAGES marker — boundary only, no audio
+        # Skip DISENGAGES: either the filepath sentinel ("") or a real file whose
+        # text says DISENGAGES (happens when the producer generated an SFX stem for
+        # the DISENGAGES direction entry before collect_stem_plans could inject the
+        # empty-filepath sentinel, causing the real file to win deduplication).
+        if not plan.filepath or "DISENGAGES" in (plan.text or ""):
             continue
         start_ms = timeline.get(plan.seq, 0)
         if start_ms >= total_ms:
@@ -1033,7 +1037,7 @@ def compute_vintage_filter_labels(
     )
 
     for plan in vf_plans:
-        if not plan.filepath:  # DISENGAGES marker — boundary only, no label
+        if not plan.filepath or "DISENGAGES" in (plan.text or ""):
             continue
         start_ms = timeline.get(plan.seq, 0)
         if start_ms >= total_ms:

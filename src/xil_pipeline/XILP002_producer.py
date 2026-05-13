@@ -13,6 +13,7 @@ Module Attributes:
 
 import argparse
 import contextlib
+import datetime
 import json
 import os
 import re
@@ -63,6 +64,51 @@ def _log_stem_hash(path: str) -> None:
         logger.info("   SHA256: %s", _hash_file(path))
     except Exception as exc:
         logger.debug("Could not hash %s: %s", path, exc)
+
+
+# ── Stem manifest helpers ─────────────────────────────────────────────────────
+
+def _manifest_path(stems_dir: str) -> str:
+    tag = os.path.basename(stems_dir.rstrip(os.sep))
+    return os.path.join(stems_dir, f"{tag}_stem_manifest.json")
+
+
+def _load_manifest(path: str) -> dict:
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"version": 1, "entries": []}
+
+
+def _save_manifest(path: str, manifest: dict) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    os.replace(tmp, path)
+
+
+def _manifest_content_key(text: str, voice_id: str, speed: float,
+                           stability: float, similarity_boost: float,
+                           backend: str) -> tuple:
+    return (text, voice_id or "", round(speed or 1.0, 4), round(stability or 0.5, 4),
+            round(similarity_boost or 0.75, 4), backend)
+
+
+def _manifest_upsert(manifest: dict, by_key: dict, entry: dict) -> None:
+    key = _manifest_content_key(
+        entry["text"], entry["voice_id"], entry["speed"],
+        entry["stability"], entry["similarity_boost"], entry["backend"],
+    )
+    if key in by_key:
+        old = by_key[key]
+        old.update(entry)
+    else:
+        manifest["entries"].append(entry)
+        by_key[key] = entry
+
 
 # Setup ElevenLabs Client
 client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
@@ -431,6 +477,7 @@ def generate_voices(
     show: str = "Sample Show", backend: str = "elevenlabs",
     chatterbox_client: "_ChatterboxClient | None" = None,
     force: bool = False,
+    manifest_path: str | None = None,
 ) -> None:
     """Generate individual voice stem MP3s via the configured TTS backend.
 
@@ -449,6 +496,18 @@ def generate_voices(
             a free flat-voice draft pass.
     """
     os.makedirs(stems_dir, exist_ok=True)
+    run_started_at = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+
+    # Load (or create) the stem manifest for this episode
+    mf_path = manifest_path or _manifest_path(stems_dir)
+    manifest = _load_manifest(mf_path)
+    by_key: dict[tuple, dict] = {}
+    for mentry in manifest["entries"]:
+        k = _manifest_content_key(
+            mentry["text"], mentry["voice_id"], mentry["speed"],
+            mentry["stability"], mentry["similarity_boost"], mentry["backend"],
+        )
+        by_key[k] = mentry
 
     # Block if any cast member in the range has an unassigned voice_id (ElevenLabs only)
     if backend == "elevenlabs":
@@ -492,9 +551,30 @@ def generate_voices(
 
         # Skip if stem already exists (unless --force)
         stem_file = os.path.join(stems_dir, f"{stem_name}.mp3")
+        cfg = config.get(speaker, {})
         if os.path.exists(stem_file):
             if not force:
                 logger.info("   Exists: %s — skipping", stem_file)
+                mkey = _manifest_content_key(
+                    text, cfg.get("id", ""), cfg.get("speed", 1.0),
+                    cfg.get("stability", 0.5), cfg.get("similarity_boost", 0.75), backend,
+                )
+                if mkey not in by_key:
+                    try:
+                        sha256_hex = _hash_file(stem_file)
+                        _manifest_upsert(manifest, by_key, {
+                            "text": text, "speaker": speaker,
+                            "voice_id": cfg.get("id", ""),
+                            "speed": cfg.get("speed", 1.0),
+                            "stability": cfg.get("stability", 0.5),
+                            "similarity_boost": cfg.get("similarity_boost", 0.75),
+                            "backend": backend, "sha256": sha256_hex,
+                            "seq_at_generation": entry["seq"],
+                            "stem_filename": os.path.basename(stem_file),
+                            "generated_at": "",
+                        })
+                    except Exception:
+                        pass
                 continue
             logger.warning("   Force: overwriting %s", os.path.basename(stem_file))
 
@@ -577,10 +657,33 @@ def generate_voices(
         )
         logger.info("   Saved: %s", stem_file)
         _log_stem_hash(stem_file)
+        try:
+            sha256_hex = _hash_file(stem_file)
+            _manifest_upsert(manifest, by_key, {
+                "text": text, "speaker": speaker,
+                "voice_id": cfg.get("id", ""),
+                "speed": cfg.get("speed", 1.0),
+                "stability": cfg.get("stability", 0.5),
+                "similarity_boost": cfg.get("similarity_boost", 0.75),
+                "backend": backend, "sha256": sha256_hex,
+                "seq_at_generation": entry["seq"],
+                "stem_filename": os.path.basename(stem_file),
+                "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            })
+        except Exception:
+            pass
         generated_count += 1
 
     stem_count = len([f for f in os.listdir(stems_dir) if f.endswith(".mp3")])
     logger.info("--- Phase 1 Complete: %d new, %d total stems in %s/ ---", generated_count, stem_count, stems_dir)
+    try:
+        _save_manifest(mf_path, manifest)
+        logger.info("   Manifest: %s (%d entries)", os.path.basename(mf_path), len(manifest["entries"]))
+        snap_path = mf_path.replace(".json", f"_{run_started_at}.json")
+        _save_manifest(snap_path, manifest)
+        logger.info("   Snapshot: %s", os.path.basename(snap_path))
+    except Exception as exc:
+        logger.warning("Could not write stem manifest: %s", exc)
 
 
 
@@ -965,7 +1068,10 @@ def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
                            label: str, sfx_dir: str = "SFX",
                            backend: str = "elevenlabs",
                            chatterbox_client: "_ChatterboxClient | None" = None,
-                           force: bool = False) -> None:
+                           force: bool = False,
+                           manifest: dict | None = None,
+                           by_key: dict | None = None,
+                           seq: int = -2) -> None:
     """Generate a voice stem from a preamble or postamble block.
 
     All segment texts (when ``block.segments`` is present) are resolved and
@@ -973,10 +1079,10 @@ def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
     This produces natural prosody across the whole block without audible seams.
     The legacy single ``text`` field is also supported.
     """
-    if file_nonempty(voice_stem):
-        if not force:
-            logger.info("   Exists: %s — skipping", voice_stem)
-            return
+    already_exists = file_nonempty(voice_stem)
+    if already_exists and not force:
+        logger.info("   Exists: %s — skipping", voice_stem)
+    elif already_exists:
         logger.warning("   Force: overwriting %s", os.path.basename(voice_stem))
 
     spk = block.speaker
@@ -991,32 +1097,161 @@ def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
         kwargs = _episode_kwargs(cast_cfg)
         resolved = _format_block_text(block.text, kwargs, "preamble/postamble text")
 
-    if backend == "elevenlabs" and not has_enough_characters(resolved):
-        logger.warning("Insufficient quota for %s — skipping", label.lower())
-        return
-    logger.info(" > [%s] %s (%d chars)...", label, spk, len(resolved))
-    _tts_segment(resolved, voice_stem, voice_id, block.speed, backend=backend,
-                 chatterbox_client=chatterbox_client, speaker_key=spk)
-    logger.info("   Saved: %s", voice_stem)
-    _log_stem_hash(voice_stem)
+    if not already_exists or force:
+        if backend == "elevenlabs" and not has_enough_characters(resolved):
+            logger.warning("Insufficient quota for %s — skipping", label.lower())
+            return
+        logger.info(" > [%s] %s (%d chars)...", label, spk, len(resolved))
+        _tts_segment(resolved, voice_stem, voice_id, block.speed, backend=backend,
+                     chatterbox_client=chatterbox_client, speaker_key=spk)
+        logger.info("   Saved: %s", voice_stem)
+        _log_stem_hash(voice_stem)
+
+    if manifest is not None and by_key is not None and file_nonempty(voice_stem):
+        try:
+            sha256_hex = _hash_file(voice_stem)
+            cfg = config.get(spk, {})
+            _manifest_upsert(manifest, by_key, {
+                "text": resolved, "speaker": spk,
+                "voice_id": "" if voice_id == "TBD" else voice_id,
+                "speed": cfg.get("speed", 1.0),
+                "stability": cfg.get("stability", 0.5),
+                "similarity_boost": cfg.get("similarity_boost", 0.75),
+                "backend": backend, "sha256": sha256_hex,
+                "seq_at_generation": seq,
+                "stem_filename": os.path.basename(voice_stem),
+                "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            })
+        except Exception:
+            pass
 
 
 def _generate_preamble_voice(cast_cfg, config: dict, preamble_voice_stem: str,
                               sfx_dir: str = "SFX", backend: str = "elevenlabs",
                               chatterbox_client: "_ChatterboxClient | None" = None,
-                              force: bool = False) -> None:
+                              force: bool = False,
+                              manifest: dict | None = None,
+                              by_key: dict | None = None,
+                              seq: int = -2) -> None:
     _generate_voice_block(cast_cfg.preamble, cast_cfg, config,
                           preamble_voice_stem, "PREAMBLE", sfx_dir, backend=backend,
-                          chatterbox_client=chatterbox_client, force=force)
+                          chatterbox_client=chatterbox_client, force=force,
+                          manifest=manifest, by_key=by_key, seq=seq)
 
 
 def _generate_postamble_voice(cast_cfg, config: dict, postamble_voice_stem: str,
                                sfx_dir: str = "SFX", backend: str = "elevenlabs",
                                chatterbox_client: "_ChatterboxClient | None" = None,
-                               force: bool = False) -> None:
+                               force: bool = False,
+                               manifest: dict | None = None,
+                               by_key: dict | None = None,
+                               seq: int = -2) -> None:
     _generate_voice_block(cast_cfg.postamble, cast_cfg, config,
                           postamble_voice_stem, "POSTAMBLE", sfx_dir, backend=backend,
-                          chatterbox_client=chatterbox_client, force=force)
+                          chatterbox_client=chatterbox_client, force=force,
+                          manifest=manifest, by_key=by_key, seq=seq)
+
+
+def reconcile(
+    config: dict[str, dict],
+    dialogue_entries: list[dict],
+    stems_dir: str,
+    backend: str = "elevenlabs",
+    apply: bool = False,
+) -> None:
+    """Re-link existing stems to new seq-numbered filenames after a re-parse.
+
+    Reads the stem manifest and the current dialogue entries (from the new
+    parsed JSON), matches each entry by content key (text + voice settings),
+    verifies SHA-256 integrity, and renames the file if needed.  Prints a
+    plan by default; pass ``apply=True`` to execute.
+
+    Args:
+        config: Speaker-to-voice mapping from ``load_production()``.
+        dialogue_entries: Dialogue entry dicts from the new parsed JSON.
+        stems_dir: Episode stems directory.
+        backend: TTS backend label used as part of the content key.
+        apply: If True, execute the renames and update the manifest.
+    """
+    mf_path = _manifest_path(stems_dir)
+    if not os.path.exists(mf_path):
+        logger.error(
+            "No stem manifest at %s — run 'xil produce' first to build it.",
+            mf_path,
+        )
+        return
+
+    manifest = _load_manifest(mf_path)
+    by_key: dict[tuple, dict] = {}
+    for mentry in manifest["entries"]:
+        k = _manifest_content_key(
+            mentry["text"], mentry["voice_id"], mentry["speed"],
+            mentry["stability"], mentry["similarity_boost"], mentry["backend"],
+        )
+        by_key[k] = mentry
+
+    to_rename: list[tuple] = []   # (src_path, dst_path, mentry, de)
+    to_generate: list[tuple] = [] # (de, reason)
+    already_correct = 0
+
+    for de in dialogue_entries:
+        speaker = de["speaker"]
+        cfg = config.get(speaker, {})
+        text = de["text"]
+        key = _manifest_content_key(
+            text, cfg.get("id", ""), cfg.get("speed", 1.0),
+            cfg.get("stability", 0.5), cfg.get("similarity_boost", 0.75), backend,
+        )
+        expected_filename = de["stem_name"] + ".mp3"
+        expected_path = os.path.join(stems_dir, expected_filename)
+
+        if os.path.exists(expected_path):
+            already_correct += 1
+            continue
+
+        if key not in by_key:
+            to_generate.append((de, "not in manifest"))
+            continue
+
+        mentry = by_key[key]
+        current_path = os.path.join(stems_dir, mentry["stem_filename"])
+
+        if not os.path.exists(current_path):
+            to_generate.append((de, f"manifest file missing: {mentry['stem_filename']}"))
+            continue
+
+        try:
+            actual = _hash_file(current_path)
+        except Exception:
+            actual = None
+        if actual != mentry["sha256"]:
+            to_generate.append((de, f"SHA-256 mismatch for {mentry['stem_filename']}"))
+            continue
+
+        to_rename.append((current_path, expected_path, mentry, de))
+
+    logger.info(
+        "--- Reconcile: %d correct, %d to re-link, %d need new TTS ---",
+        already_correct, len(to_rename), len(to_generate),
+    )
+    for src, dst, _, _ in to_rename:
+        logger.info("  RELINK  %s → %s", os.path.basename(src), os.path.basename(dst))
+    for de, reason in to_generate:
+        logger.info("  MISSING seq %03d %s: %s", de["seq"], de["speaker"], reason)
+
+    if not apply:
+        logger.info("  (dry-run — pass --apply to execute renames)")
+        return
+
+    for src, dst, mentry, de in to_rename:
+        os.rename(src, dst)
+        mentry["stem_filename"] = os.path.basename(dst)
+        mentry["seq_at_generation"] = de["seq"]
+        logger.info("  Relinked: %s", os.path.basename(dst))
+
+    if to_rename:
+        _save_manifest(mf_path, manifest)
+        logger.info("  Manifest updated: %s", os.path.basename(mf_path))
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -1035,6 +1270,12 @@ def get_parser() -> argparse.ArgumentParser:
                         help="Path to parsed script JSON (default: derived from cast config)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Preview all lines and TTS cost without API calls")
+    parser.add_argument("--reconcile", action="store_true",
+                        help="Re-link existing stems to new seq filenames after a re-parse "
+                             "(reads stem manifest, proposes renames, no TTS calls). "
+                             "Add --apply to execute.")
+    parser.add_argument("--apply", action="store_true",
+                        help="With --reconcile: execute the renames instead of dry-run preview.")
     parser.add_argument("--force", action="store_true", default=False,
                         help="Overwrite existing stem files instead of skipping them. "
                              "Use with --range to regenerate specific lines. "
@@ -1210,7 +1451,10 @@ def main() -> None:
         if args.backend == "chatterbox":
             _print_voice_refs_table(config, args.voice_refs)
 
-        if args.dry_run:
+        if args.reconcile:
+            reconcile(config, dialogue_entries, stems_dir,
+                      backend=args.backend, apply=args.apply)
+        elif args.dry_run:
             if cast_cfg.preamble:
                 _dry_run_preamble(cast_cfg, preamble_voice_stem)
             dry_run(config, dialogue_entries, start_from=args.start_from,
@@ -1268,13 +1512,9 @@ def main() -> None:
                 )
 
             try:
+                # Copy intro/outro music first (cheap local copies — no manifest needed)
                 if cast_cfg.preamble:
                     os.makedirs(stems_dir, exist_ok=True)
-                    _generate_preamble_voice(cast_cfg, config, preamble_voice_stem,
-                                             backend=args.backend,
-                                             chatterbox_client=chatterbox_client,
-                                             force=args.force)
-                    # Copy intro music from sfx config 'INTRO MUSIC' source (always regenerate — free local copy)
                     if sfx_config_model and "INTRO MUSIC" in sfx_config_model.effects:
                         intro_entry = sfx_config_model.effects["INTRO MUSIC"]
                         if intro_entry.source:
@@ -1301,6 +1541,26 @@ def main() -> None:
                 # Inject preamble entries into parsed JSON (idempotent)
                 if cast_cfg.preamble and preamble_text is not None and os.path.exists(args.script):
                     inject_preamble_entries(args.script, preamble_text, cast_cfg.preamble.speaker)
+                # --- Preamble/Postamble voice stems (after dialogue manifest saved) ---
+                mf_path = _manifest_path(stems_dir)
+                pp_manifest = _load_manifest(mf_path)
+                pp_by_key: dict = {}
+                for _me in pp_manifest["entries"]:
+                    _k = _manifest_content_key(
+                        _me["text"], _me["voice_id"], _me["speed"],
+                        _me["stability"], _me["similarity_boost"], _me["backend"],
+                    )
+                    pp_by_key[_k] = _me
+                pp_manifest_touched = False
+                if cast_cfg.preamble:
+                    _generate_preamble_voice(cast_cfg, config, preamble_voice_stem,
+                                             backend=args.backend,
+                                             chatterbox_client=chatterbox_client,
+                                             force=args.force,
+                                             manifest=pp_manifest,
+                                             by_key=pp_by_key,
+                                             seq=-2)
+                    pp_manifest_touched = True
                 # --- Postamble ---
                 if cast_cfg.postamble and postamble_text is not None and os.path.exists(args.script):
                     os.makedirs(stems_dir, exist_ok=True)
@@ -1327,7 +1587,21 @@ def main() -> None:
                     _generate_postamble_voice(cast_cfg, config, postamble_voice_stem,
                                              backend=args.backend,
                                              chatterbox_client=chatterbox_client,
-                                             force=args.force)
+                                             force=args.force,
+                                             manifest=pp_manifest,
+                                             by_key=pp_by_key,
+                                             seq=voice_seq)
+                    pp_manifest_touched = True
+                if pp_manifest_touched:
+                    pp_ts = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+                    try:
+                        _save_manifest(mf_path, pp_manifest)
+                        pp_snap = mf_path.replace(".json", f"_{pp_ts}.json")
+                        _save_manifest(pp_snap, pp_manifest)
+                        logger.info("   Manifest: %s (%d entries)", os.path.basename(mf_path), len(pp_manifest["entries"]))
+                        logger.info("   Snapshot: %s", os.path.basename(pp_snap))
+                    except Exception as exc:
+                        logger.warning("Could not update preamble/postamble manifest: %s", exc)
             finally:
                 if chatterbox_client is not None:
                     chatterbox_client.close()
