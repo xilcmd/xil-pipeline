@@ -152,7 +152,7 @@ class TestLoadLayerWavsEdgeCases:
     def test_returns_paths_in_canonical_order(self, tmp_path):
         tag = "S01E01"
         # Create in reverse order to confirm result order is LAYER_SUFFIXES order
-        for s in reversed(("dialogue", "ambience", "music", "sfx")):
+        for s in reversed(mod.LAYER_SUFFIXES):
             _make_wav(tmp_path, tag, s)
         layers = mod.load_layer_wavs(str(tmp_path / "daw" / tag), tag)
         assert [l[0] for l in layers] == list(mod.LAYER_SUFFIXES)
