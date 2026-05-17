@@ -1123,8 +1123,6 @@ def main() -> None:
                 {**e, "text": truncate_to_words(e["text"])} for e in dialogue_entries
             ]
 
-        # Load SFX config (always, for preamble music lookup)
-        sfx_config_model = None
         sfx_config_data = None
         if os.path.exists(sfx_path):
             with open(sfx_path, encoding="utf-8") as f:
