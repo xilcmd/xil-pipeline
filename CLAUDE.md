@@ -77,7 +77,7 @@ Resolution order for `get_workspace_root()` (in `models.py`):
 
 All scripts accept a `--show` CLI flag to override the show name. Resolution order: `--show` arg > `project.json` > hardcoded fallback `"sample"`.
 
-The `season_title` key in `project.json` is the workspace-level default for the season/arc title. When a script header contains `Arc: "…"`, that value takes precedence; when absent, `project.json` `season_title` fills in. Resolution order: script header `Arc:` > `project.json` `season_title` > `None`. The `{season_title}` placeholder in preamble/postamble segment text resolves from this value.
+The `season_title` key in `project.json` is the workspace-level default for the season/arc title. When a script header contains `Arc: "…"`, that value takes precedence; when absent, `project.json` `season_title` fills in. Resolution order: script header `Arc:` > `project.json` `season_title` > `None`. The `{season_title}` placeholder in PREAMBLE/POSTAMBLE script text resolves from this value.
 
 The `season` key in `project.json` is the workspace-level default season number. When a script header contains `Season N:`, that value takes precedence; when absent, `project.json` `season` fills in. Resolution order: script header `Season N:` > `project.json` `season` > `None`.
 
@@ -189,7 +189,7 @@ xil parse "scripts/<script>.md" --episode S01E01 --preview 10
 - `--episode S01E01` (optional) validates that the script header matches the intended episode tag
 - `--show` overrides the show name used for slug derivation (see Project Configuration)
 - When `--episode` is provided and `cast_<slug>_S01E01.json` / `sfx_<slug>_S01E01.json` don't exist, auto-generates skeleton configs with `voice_id=TBD` and default SFX prompts; the cast skeleton includes `season_title` populated from the script header's `Arc: "…"` declaration (or `null` when absent)
-- `season_title` is extracted from the `Arc: "…"` token in the script header (e.g. `THE 413 Season 1: Episode 1: "The Empty Booth" Arc: "The Holiday Shift"`) and stored in the parsed JSON; it is available as `{season_title}` in preamble/postamble segment text
+- `season_title` is extracted from the `Arc: "…"` token in the script header (e.g. `THE 413 Season 1: Episode 1: "The Empty Booth" Arc: "The Holiday Shift"`) and stored in the parsed JSON; it is available as `{season_title}` in PREAMBLE/POSTAMBLE script text
 - Supports `--quiet` (JSON only, skip summary) and `--debug` (write diagnostic CSV alongside JSON)
 - Auto-generates BEAT variants (`BEAT — 3 SECONDS` etc.) as `type: "silence"` with duration parsed from the text (e.g. 3.0s)
 - Auto-generates `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives as `type: "silence", duration_seconds: 0.0` stop markers — no audio asset needed
@@ -229,12 +229,10 @@ xil produce --episode S01E01 --dry-run
 
 - `--episode` or `--tag` (one required) derives `cast_<slug>_S01E01.json` and `sfx_<slug>_S01E01.json`
 - `--show` overrides the show name used for slug derivation (see Project Configuration)
-- Reads: parsed JSON + cast config; always loads SFX config (for preamble music lookup and `--sfx-music`)
+- Reads: parsed JSON + cast config; always loads SFX config (for INTRO/OUTRO MUSIC source lookup)
 - Outputs: `stems/<slug>/<TAG>/{seq:03d}_{section}[-{scene}]_{speaker}.mp3` (e.g. `stems/the413/S01E01/003_cold-open_adam.mp3`)
-- **Preamble stems** (when cast config has a `preamble` block): `n002_preamble_tina.mp3` (voice, seq −2) and `n001_preamble_sfx.mp3` (intro music, seq −1); music source read from `sfx_config.effects["INTRO MUSIC"].source`
-- After generation, injects seq −2/−1 entries into the parsed JSON via `inject_preamble_entries()` — idempotent, re-running replaces existing preamble entries
-- **Postamble stems** (when cast config has a `postamble` block): `{max+1:03d}_postamble_{speaker}.mp3` (voice) and `{max+2:03d}_postamble_sfx.mp3` (outro music, source from `sfx_config.effects["OUTRO MUSIC"].source`); injected into parsed JSON with `section="postamble"` via `inject_postamble_entries()` — idempotent
-- Both `preamble` and `postamble` support multi-segment text: `segments` list texts are joined into a single string and sent as one TTS call, producing seamless prosody across the whole block; `shared_key` is retained in the model for backward compatibility but is no longer used for per-segment caching; legacy `text` field still works as a fallback
+- **Preamble/Postamble**: `PREAMBLE` and `POSTAMBLE` are first-class script sections parsed by XILP001 and written into the parsed JSON with contiguous seq numbers. XILP002 generates their voice stems through the standard `generate_voices()` loop, applying a per-section speed override from the cast config `preamble.speed` / `postamble.speed` field. No separate injection step — preamble/postamble entries exist in the parsed JSON from the start
+- INTRO/OUTRO MUSIC source stems are copied from `sfx_config.effects["INTRO MUSIC"/"OUTRO MUSIC"].source` at produce time
 - Supports `--start-from N` for resuming interrupted runs; `--stop-at N` to halt after a specific seq (useful for previewing a section without regenerating the full episode)
 - Supports `--dry-run` to preview lines and TTS character cost without API calls; includes a per-speaker breakdown table (lines + chars to generate vs. already on disk) sorted by chars descending; per-entry marker: `[ ]` = will generate, `[=]` = stem exists/skip, `[x]` = out of range
 - Supports `--terse` to truncate each line to 3 words (minimizes TTS character cost)
@@ -318,7 +316,7 @@ xil daw --episode S01E01 --timeline --timeline-html
 - `--save-aup3` includes a `SaveProject2` command in the generated `{TAG}_open_in_audacity.py` helper script (requires mod-script-pipe in Audacity)
 - `--timeline` prints an ASCII multitrack timeline to stdout (works with `--dry-run` via fast mutagen header reads)
 - `--timeline-html` writes a self-contained interactive HTML timeline to `daw/{TAG}/{TAG}_timeline.html` (hover tooltips, Ctrl+scroll zoom)
-- Preamble stems (`n002_preamble_tina.mp3`, `n001_preamble_sfx.mp3`) are picked up automatically via `collect_stem_plans()` when their seq −2/−1 entries are present in the parsed JSON (injected by XILP002)
+- Preamble/postamble stems are picked up automatically via `collect_stem_plans()` — they are regular seq-numbered entries in the parsed JSON (no special negative-seq handling)
 - No ElevenLabs API key required — no API calls made
 - Shared mixing logic imported from `mix_common.py`; visualization via `timeline_viz.py`
 
@@ -476,7 +474,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILP010_*` — Studio export importer (ElevenLabs Studio ZIP → pipeline stems)
 - `XILP011_*` — final master MP3 export (overlay 4 DAW layer WAVs → single stereo 48 kHz VBR MP3)
 - `XILP012_*` — social media post draft generator (parsed JSON + Claude Haiku → `posts/{slug}/{tag}_posts.md`; 3 variants: Hype, Quote, Spotlight; requires `[publish]` extra + `ANTHROPIC_API_KEY`)
-- `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.scene` (str|None): scene label from parsed JSON, used for scene-scoped vintage filter; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `volume_percentage`, `ramp_in_seconds`, and `ramp_out_seconds` each fall back to the global key when no category-specific key exists (e.g. SFX/MUSIC when `sfx_volume_percentage`/`music_ramp_in_seconds` are absent from the config defaults); `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing; `apply_vintage_filter()` applies a 1960s-era HF roll-off + 1 dB reduction; `_apply_speaker_filters(segment, filter_val)` resolves the cast config `filter` string and applies the named filter chain (`false`/`None` = none, `true`/`"phone"` = phone, `"vintage"` = vintage, `"vintage,phone"` = both)
+- `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.scene` (str|None): scene label from parsed JSON, used for scene-scoped vintage filter; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `volume_percentage`, `ramp_in_seconds`, and `ramp_out_seconds` each fall back to the global key when no category-specific key exists (e.g. SFX/MUSIC when `sfx_volume_percentage`/`music_ramp_in_seconds` are absent from the config defaults); `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing; `apply_vintage_filter()` applies a 1960s-era HF roll-off + 1 dB reduction; `_apply_speaker_filters(segment, filter_val)` resolves the cast config `filter` string and applies the named filter chain (`false`/`None` = none, `true`/`"phone"` = phone, `"vintage"` = vintage, `"vintage,phone"` = both); `_vf_engaged_seqs(stem_plans)` returns the set of dialogue seq numbers that fall within a `VINTAGE FILTER: ENGAGES`…`VINTAGE FILTER: DISENGAGES` span — used by `build_foreground()` and `build_dialogue_layer()` to apply the vintage EQ to dialogue within those spans (script-direction spans take precedence over `vintage_scenes` list fallback)
 - `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency; HTML bar badges: `ri` (↑ ramp in, left), `ro` (↓ ramp out, right-top), `pd` (% play duration, center), `vb` (🔊 volume%, right-bottom, shown when `volume_pct != 100`); applies to music, ambience, and SFX spans
 - `models.py` — Pydantic data models plus `get_workspace_root()` (respects `XIL_PROJECTROOT` env var), `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "sample"` fallback; `ProjectConfig` model with `type`/`tag_format` fields; `TYPE_DEFAULTS` dict with gap_ms and stability per content type; `derive_paths_legacy()` returns pre-0.1.8 paths anchored to workspace root (used by migration tool); `derive_paths()` auto-detects layout (legacy if root cast config exists, normalized otherwise); `load_project_config()` / `resolve_project_type()` helpers
@@ -500,31 +498,22 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 
 Voice IDs are discovered via `XILU001_discover_voices_T2S.py` (filters to premade category).
 
-Optional `preamble` and `postamble` blocks (`intro_music_source` is **not** a field — intro/outro music lives in the SFX config under `"INTRO MUSIC"` / `"OUTRO MUSIC"` keys):
+Optional `preamble` and `postamble` blocks define the speaker and speed for those sections. The actual dialogue text lives in the script (PREAMBLE/POSTAMBLE sections); the cast config only needs `speaker` and `speed`:
 
 ```json
 {
   "preamble": {
     "speaker": "tina",
-    "speed": 0.85,
-    "segments": [
-      { "text": "This is the Berkshire Talking Chronicle...", "shared_key": "preamble-the413-tina-intro" },
-      { "text": "{season_title}, Episode {episode}, {title}, by Tina Brissette.", "shared_key": null },
-      { "text": " Thank you for listening...", "shared_key": "preamble-the413-tina-outro" }
-    ]
+    "speed": 0.85
   },
   "postamble": {
     "speaker": "tina",
-    "speed": 0.85,
-    "segments": [
-      { "text": "This is Tina Brissette... Episode {episode} \"{title}\"", "shared_key": null },
-      { "text": " The material is read exactly as printed...", "shared_key": "postamble-the413-tina-outro" }
-    ]
+    "speed": 0.85
   }
 }
 ```
 
-Legacy single-string `"text"` field still works as a fallback for un-migrated episodes. When `segments` is present, all segment texts are joined into a single string and sent as one TTS call — `shared_key` is retained in the model for backward compatibility but is no longer used for per-segment caching. Use native v3 audio tags like `[pause]` for pauses — SSML (`<break time="1s"/>`) is no longer supported; `_select_model()` no longer falls back to `eleven_multilingual_v2` for SSML segments (it logs a warning instead). All TTS generation uses `eleven_v3` unconditionally.
+Intro/outro music lives in the SFX config under `"INTRO MUSIC"` / `"OUTRO MUSIC"` keys — not in the cast config. All TTS generation uses `eleven_v3` unconditionally.
 
 ## SFX Configuration
 
@@ -543,7 +532,7 @@ Legacy single-string `"text"` field still works as a fallback for un-migrated ep
 ```
 
 - Keys match the `text` field of parsed direction entries exactly
-- `"INTRO MUSIC"` is the reserved key for preamble intro music; XILP002 reads its `source` field to copy the audio file into `n001_preamble_sfx.mp3` — no API generation
+- `"INTRO MUSIC"` / `"OUTRO MUSIC"` are reserved keys for preamble/postamble music; XILP002 reads their `source` field to copy the audio file into the appropriate seq-numbered stem — no API generation
 - `type: "sfx"` (default) entries call `client.text_to_sound_effects.convert()` with the `prompt`
 - `type: "silence"` entries (BEAT/LONG BEAT) generate local silent audio — no API call
 - `loop: false` entries play the audio file once up to the scene boundary (no tiling); `loop: true` (default) tiles the file to fill the full scene duration
@@ -687,6 +676,8 @@ xil-stem-log --episode S03E03
 xil-stem-log --episode S03E03 --since 2026-04-01
 xil-stem-log --slug the413
 xil-stem-log --logs-dir logs/ --output stem_log_report.csv
+xil-stem-log --episode S03E03 --audit
+xil-stem-log --episode S03E03 --audit --audit-threshold 20
 ```
 
 - `--episode TAG` (optional) filters records to a specific episode tag (e.g. `S03E03`); matched against `stem_path`
@@ -695,6 +686,8 @@ xil-stem-log --logs-dir logs/ --output stem_log_report.csv
 - `--output PATH` output CSV path (default: `stem_log_report.csv`); use `-` for stdout
 - `--since DATE` filter to logs on or after the given date (YYYY-MM-DD)
 - `--show` print CSV to stdout (equivalent to `--output -`)
+- `--audit` cross-references logged `char_count` values against the current parsed JSON and flags stems whose logged character count differs from the current text length by more than `--audit-threshold` percent (default: 10); useful for detecting stale stems after script edits
+- `--audit-threshold N` percentage threshold for the `--audit` flag (default: 10)
 - Parses `logs/xil_YYYY-MM-DD.log` files; three regex patterns match ElevenLabs, gTTS, and Chatterbox generation lines
 - State machine: generation line → saved line → SHA256 line → emits one record
 - `run_index` counter increments per `Phase 1: Generating` marker, grouping stems by production run
