@@ -92,15 +92,16 @@ class StemPlan:
 def extract_seq(filepath: str) -> int:
     """Extract the sequence number from a stem filename.
 
-    Positive stems are named ``{seq:03d}_{section}[-{scene}]_{speaker}.mp3``.
-    Negative (preamble) stems use an ``n`` prefix: ``n{abs(seq):03d}_...mp3``.
+    Stems are named ``{seq:03d}_{section}[-{scene}]_{speaker}.mp3``.
+    Legacy preamble stems used an ``n`` prefix (``n{abs(seq):03d}_...mp3``)
+    and are still parsed for backward compatibility.
 
     Args:
-        filepath: Path like ``stems/S01E01/003_cold-open_adam.mp3`` or
-            ``stems/S02E03/n002_preamble_tina.mp3``.
+        filepath: Path like ``stems/S01E01/001_preamble_tina.mp3`` or
+            ``stems/S01E01/003_cold-open_adam.mp3``.
 
     Returns:
-        Integer sequence number (e.g. ``"003"`` → ``3``, ``"n002"`` → ``-2``).
+        Integer sequence number (e.g. ``"003"`` → ``3``).
     """
     basename = os.path.splitext(os.path.basename(filepath))[0]
     prefix = basename.split("_")[0]

@@ -36,8 +36,22 @@ from xil_pipeline.sfx_common import run_banner
 
 logger = get_logger(__name__)
 
-# Canonical column order — defines CSV header
+# Canonical column order — defines CSV header.
+# Cols 1-5 match parsed-csv; col 6 (effect_key) aligns with seq; col 7 (type) aligns exactly.
 _META_COLS = ["file", "tag", "show", "season", "episode"]
+_EFFECT_COLS = [
+    "effect_key",
+    "type",
+    "prompt",
+    "source",
+    "duration_seconds",
+    "loop",
+    "play_duration",
+    "volume_percentage",
+    "ramp_in_seconds",
+    "ramp_out_seconds",
+    "prompt_influence",
+]
 _DEFAULT_COLS = [
     "default_prompt_influence",
     "default_volume_percentage",
@@ -50,20 +64,7 @@ _DEFAULT_COLS = [
     "default_ambience_ramp_in_seconds",
     "default_ambience_ramp_out_seconds",
 ]
-_EFFECT_COLS = [
-    "effect_key",
-    "prompt",
-    "type",
-    "source",
-    "duration_seconds",
-    "loop",
-    "play_duration",
-    "volume_percentage",
-    "ramp_in_seconds",
-    "ramp_out_seconds",
-    "prompt_influence",
-]
-ALL_COLS = _META_COLS + _DEFAULT_COLS + _EFFECT_COLS
+ALL_COLS = _META_COLS + _EFFECT_COLS + _DEFAULT_COLS
 
 
 def _tag_from_path(path: str, data: dict) -> str:

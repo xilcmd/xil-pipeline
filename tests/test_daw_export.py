@@ -378,62 +378,64 @@ class TestGenerateAudacityMacro:
 # ─── Tests: Preamble in DAW export ───
 
 class TestPreambleInDawExport:
-    """Verify n002_preamble_tina.mp3 and n001_preamble_sfx.mp3 appear in the correct layers."""
+    """Verify preamble stems appear in the correct DAW layers (contiguous seqs, standard names)."""
 
-    def _inject_preamble(self, parsed_file: str) -> None:
-        """Prepend seq -2 and -1 preamble entries into the parsed JSON (as XILP002 would)."""
-        import json as _json
-        with open(parsed_file, encoding="utf-8") as f:
-            data = _json.load(f)
-        preamble_entries = [
-            {"seq": -2, "type": "dialogue", "section": "preamble", "scene": None,
-             "speaker": "tina", "direction": None, "text": "Hello, listeners.",
-             "direction_type": None},
-            {"seq": -1, "type": "direction", "section": "preamble", "scene": None,
-             "speaker": None, "direction": None, "text": "INTRO MUSIC",
-             "direction_type": "MUSIC"},
-        ]
-        data["entries"] = preamble_entries + data["entries"]
-        with open(parsed_file, "w", encoding="utf-8") as f:
-            _json.dump(data, f, indent=2)
+    def _make_preamble_parsed(self, tmp_path):
+        """Parsed JSON with preamble at seq 1-2 and a cold-open line at seq 3."""
+        data = {
+            "show": "THE 413", "season": 1, "episode": 1, "title": "Test",
+            "source_file": "test.md",
+            "entries": [
+                {"seq": 1, "type": "dialogue", "section": "preamble", "scene": None,
+                 "speaker": "tina", "direction": None, "text": "Hello, listeners.",
+                 "direction_type": None},
+                {"seq": 2, "type": "direction", "section": "preamble", "scene": None,
+                 "speaker": None, "direction": None, "text": "INTRO MUSIC",
+                 "direction_type": "MUSIC"},
+                {"seq": 3, "type": "dialogue", "section": "cold-open", "scene": None,
+                 "speaker": "adam", "direction": None, "text": "Hello.",
+                 "direction_type": None},
+            ],
+            "stats": {"total_entries": 3, "dialogue_lines": 2, "direction_lines": 1,
+                      "characters_for_tts": 16, "speakers": ["tina", "adam"],
+                      "sections": ["preamble", "cold-open"]},
+        }
+        p = tmp_path / "parsed_preamble.json"
+        p.write_text(json.dumps(data), encoding="utf-8")
+        return str(p)
 
-    def test_preamble_voice_appears_in_dialogue_layer(
-        self, config, stems_dir, parsed_file, tmp_path
-    ):
-        """n002_preamble_tina.mp3 is placed in the dialogue layer at t=0."""
-        _write_mp3(os.path.join(stems_dir, "n002_preamble_tina.mp3"), duration_ms=400)
-        self._inject_preamble(parsed_file)
+    def _make_stems(self, tmp_path, *filenames, duration_ms=300):
+        d = tmp_path / "stems" / "S01E01"
+        d.mkdir(parents=True, exist_ok=True)
+        for name in filenames:
+            _write_mp3(str(d / name), duration_ms=duration_ms)
+        return str(d)
+
+    def test_preamble_voice_appears_in_dialogue_layer(self, config, tmp_path):
+        """001_preamble_tina.mp3 is placed in the dialogue layer at t=0."""
+        stems_dir = self._make_stems(
+            tmp_path, "001_preamble_tina.mp3", "003_cold-open_adam.mp3"
+        )
+        parsed = self._make_preamble_parsed(tmp_path)
         output_dir = str(tmp_path / "daw" / "S01E01")
 
-        daw.export_daw_layers(
-            config, stems_dir, parsed_file, output_dir, "S01E01",
-        )
+        daw.export_daw_layers(config, stems_dir, parsed, output_dir, "S01E01")
 
         labels_path = os.path.join(output_dir, "S01E01_labels_dialogue.txt")
         content = open(labels_path).read()
         assert "tina" in content
-        # tina should be the first label (earliest start time)
         first_label = content.strip().splitlines()[0]
         assert "tina" in first_label
 
-    def test_preamble_music_in_music_layer(
-        self, config, stems_dir, parsed_file, tmp_path
-    ):
-        """n001_preamble_sfx.mp3 MUST appear in the DAW music layer.
-
-        DAW export passes include_foreground_override=True so the operator
-        can see and mix the preamble/postamble music in Audacity.  The
-        integrated mix (XILP003) still routes it through the foreground
-        path (build_foreground) to avoid double-playback there.
-        """
-        _write_mp3(os.path.join(stems_dir, "n002_preamble_tina.mp3"), duration_ms=300)
-        _write_mp3(os.path.join(stems_dir, "n001_preamble_sfx.mp3"), duration_ms=500)
-        self._inject_preamble(parsed_file)
+    def test_preamble_music_in_music_layer(self, config, tmp_path):
+        """002_preamble_sfx.mp3 MUST appear in the DAW music layer."""
+        stems_dir = self._make_stems(
+            tmp_path, "001_preamble_tina.mp3", "002_preamble_sfx.mp3",
+        )
+        parsed = self._make_preamble_parsed(tmp_path)
         output_dir = str(tmp_path / "daw" / "S01E01")
 
-        daw.export_daw_layers(
-            config, stems_dir, parsed_file, output_dir, "S01E01",
-        )
+        daw.export_daw_layers(config, stems_dir, parsed, output_dir, "S01E01")
 
         music_labels = open(os.path.join(output_dir, "S01E01_labels_music.txt")).read()
         assert "INTRO MUSIC" in music_labels
@@ -445,10 +447,7 @@ class TestPreambleInDawExport:
         _write_mp3(os.path.join(stems_dir, "preamble_tina.mp3"), duration_ms=400)
         output_dir = str(tmp_path / "daw" / "S01E01")
 
-        # No preamble entries in parsed JSON → old filenames silently skipped
-        daw.export_daw_layers(
-            config, stems_dir, parsed_file, output_dir, "S01E01",
-        )
+        daw.export_daw_layers(config, stems_dir, parsed_file, output_dir, "S01E01")
 
         labels_path = os.path.join(output_dir, "S01E01_labels_dialogue.txt")
         content = open(labels_path).read()

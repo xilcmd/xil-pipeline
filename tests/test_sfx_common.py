@@ -919,39 +919,3 @@ class TestDawExportTagValidation:
             _validate_tag_for_script("../evil")
 
 
-class TestPreambleFormatKeyError:
-    """M1: unknown placeholders in preamble/postamble text give a clear ValueError."""
-
-    def _make_cast_cfg(self, preamble_dict):
-        from xil_pipeline.models import CastConfiguration
-        return CastConfiguration.model_validate({
-            "show": "Test Show", "season": 1, "episode": 1, "title": "Ep1",
-            "cast": {"host": {"full_name": "Host", "voice_id": "abc123", "pan": 0.0, "filter": False, "role": "Host"}},
-            "preamble": preamble_dict,
-        })
-
-    def test_unknown_placeholder_raises_value_error(self):
-        from xil_pipeline import XILP002_producer as producer
-        cfg = self._make_cast_cfg({"speaker": "host", "text": "Hello {undefined_key}."})
-        with pytest.raises(ValueError, match="undefined_key"):
-            producer._resolve_preamble_text(cfg)
-
-    def test_unknown_placeholder_in_segment_raises_value_error(self):
-        from xil_pipeline import XILP002_producer as producer
-        cfg = self._make_cast_cfg({
-            "speaker": "host",
-            "segments": [{"text": "Hello {bad_key}.", "shared_key": None}],
-        })
-        with pytest.raises(ValueError, match="bad_key"):
-            producer._resolve_preamble_text(cfg)
-
-    def test_valid_placeholders_do_not_raise(self):
-        from xil_pipeline import XILP002_producer as producer
-        cfg = self._make_cast_cfg({
-            "speaker": "host",
-            "text": "{show} Episode {episode} — {title} ({season_title})",
-        })
-        # season_title defaults to None → empty string in _episode_kwargs
-        result = producer._resolve_preamble_text(cfg)
-        assert "Test Show" in result
-        assert "Episode 1" in result

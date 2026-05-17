@@ -323,6 +323,7 @@ def load_production(
             text=entry["text"],
             stem_name=stem_name,
             seq=entry["seq"],
+            section=entry.get("section"),
             direction=entry.get("direction"),
         )
         dialogue_entries.append(de.model_dump())
@@ -478,6 +479,7 @@ def generate_voices(
     chatterbox_client: "_ChatterboxClient | None" = None,
     force: bool = False,
     manifest_path: str | None = None,
+    section_speed_overrides: dict[str, float] | None = None,
 ) -> None:
     """Generate individual voice stem MP3s via the configured TTS backend.
 
@@ -602,6 +604,10 @@ def generate_voices(
 
         # Build VoiceSettings from per-speaker cast config (None fields are omitted)
         cfg = config.get(speaker, {})
+        section = entry.get("section")
+        if section and section_speed_overrides and section in section_speed_overrides:
+            cfg = dict(cfg)
+            cfg["speed"] = section_speed_overrides[section]
         vs_fields = {
             k: cfg[k] for k in ("stability", "similarity_boost", "style", "use_speaker_boost", "speed")
             if cfg.get(k) is not None
@@ -685,150 +691,6 @@ def generate_voices(
     except Exception as exc:
         logger.warning("Could not write stem manifest: %s", exc)
 
-
-
-def inject_preamble_entries(parsed_path: str, preamble_text: str, speaker: str) -> None:
-    """Prepend seq -2 (voice) and -1 (INTRO MUSIC) entries into the parsed JSON.
-
-    Idempotent: strips any existing ``section="preamble"`` entries before
-    prepending so re-running XILP002 replaces rather than duplicates preamble
-    entries.
-
-    Args:
-        parsed_path: Path to the parsed script JSON file (modified in place).
-        preamble_text: Resolved preamble text (placeholders already substituted).
-        speaker: Cast key for the TTS speaker (e.g. "tina").
-    """
-    with open(parsed_path, encoding="utf-8") as f:
-        data = json.load(f)
-    # Strip any existing preamble entries
-    data["entries"] = [e for e in data["entries"] if e.get("section") != "preamble"]
-    # Prepend seq -2 (voice) and seq -1 (INTRO MUSIC direction)
-    preamble_entries = [
-        {
-            "seq": -2,
-            "type": "dialogue",
-            "section": "preamble",
-            "scene": None,
-            "speaker": speaker,
-            "direction": None,
-            "text": preamble_text,
-            "direction_type": None,
-        },
-        {
-            "seq": -1,
-            "type": "direction",
-            "section": "preamble",
-            "scene": None,
-            "speaker": None,
-            "direction": None,
-            "text": "INTRO MUSIC",
-            "direction_type": "MUSIC",
-        },
-    ]
-    data["entries"] = preamble_entries + data["entries"]
-    with open(parsed_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    logger.info("   Injected preamble entries (seq -2, -1) into %s", parsed_path)
-
-
-def inject_postamble_entries(parsed_path: str, postamble_text: str, speaker: str) -> tuple[int, int]:
-    """Append postamble OUTRO MUSIC + voice entries at the end of the parsed JSON.
-
-    Order: music (max+1) precedes voice (max+2) so the outro sting plays
-    before Tina's sign-off.  Idempotent: removes any existing
-    ``section="postamble"`` entries before appending.
-
-    Args:
-        parsed_path: Path to the parsed script JSON file (modified in place).
-        postamble_text: Resolved postamble text (placeholders already substituted).
-        speaker: Cast key for the TTS speaker (e.g. "tina").
-
-    Returns:
-        Tuple of (music_seq, voice_seq) — the assigned sequence numbers.
-    """
-    with open(parsed_path, encoding="utf-8") as f:
-        data = json.load(f)
-    # Strip any existing postamble entries
-    data["entries"] = [e for e in data["entries"] if e.get("section") != "postamble"]
-    # Determine max episode seq (positive, non-postamble)
-    episode_seqs = [e["seq"] for e in data["entries"] if e["seq"] > 0]
-    max_seq = max(episode_seqs) if episode_seqs else 0
-    music_seq = max_seq + 1
-    voice_seq = max_seq + 2
-    data["entries"] += [
-        {
-            "seq": music_seq,
-            "type": "direction",
-            "section": "postamble",
-            "scene": None,
-            "speaker": None,
-            "direction": None,
-            "text": "OUTRO MUSIC",
-            "direction_type": "MUSIC",
-        },
-        {
-            "seq": voice_seq,
-            "type": "dialogue",
-            "section": "postamble",
-            "scene": None,
-            "speaker": speaker,
-            "direction": None,
-            "text": postamble_text,
-            "direction_type": None,
-        },
-    ]
-    with open(parsed_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    logger.info("   Injected postamble entries (seq %d OUTRO MUSIC, %d voice) into %s", music_seq, voice_seq, parsed_path)
-    return music_seq, voice_seq
-
-
-# ---------------------------------------------------------------------------
-# Preamble / postamble helpers
-# ---------------------------------------------------------------------------
-
-def _episode_kwargs(cast_cfg) -> dict:
-    return dict(
-        show=cast_cfg.show or "",
-        season=cast_cfg.season or "",
-        season_title=cast_cfg.season_title or "",
-        episode=cast_cfg.episode,
-        title=cast_cfg.title or "",
-    )
-
-
-def _format_block_text(template: str, kwargs: dict, context: str) -> str:
-    """Format *template* with *kwargs*, raising a clear error on unknown placeholders."""
-    try:
-        return template.format(**kwargs)
-    except KeyError as e:
-        raise ValueError(
-            f"Unknown placeholder {e} in {context}: {template!r}. "
-            f"Valid keys: {sorted(kwargs)}"
-        ) from e
-
-
-def _resolve_voice_block_text(block, cast_cfg) -> str:
-    """Resolve a Preamble/postamble block to its full spoken text string.
-
-    Joins segments (no separator) or formats the legacy single-string form.
-    """
-    kwargs = _episode_kwargs(cast_cfg)
-    if block.segments:
-        return "".join(
-            _format_block_text(seg.text, kwargs, "preamble/postamble segment")
-            for seg in block.segments
-        )
-    return _format_block_text(block.text, kwargs, "preamble/postamble text")
-
-
-def _resolve_preamble_text(cast_cfg) -> str:
-    return _resolve_voice_block_text(cast_cfg.preamble, cast_cfg)
-
-
-def _resolve_postamble_text(cast_cfg) -> str:
-    return _resolve_voice_block_text(cast_cfg.postamble, cast_cfg)
 
 
 def _gtts_generate(text: str, out_path: str) -> None:
@@ -1035,121 +897,6 @@ def _print_voice_refs_table(config: dict[str, dict], voice_refs_dir: str) -> Non
         logger.warning("  Missing refs: %s", ", ".join(missing))
         logger.warning("  Add <key>.wav to %s to use a reference voice.", voice_refs_dir)
     logger.info("")
-
-
-def _dry_run_voice_block(block, cast_cfg, stem_path: str, label: str) -> None:
-    """Print dry-run summary for a preamble or postamble voice stem."""
-    spk = block.speaker
-    stem_exists = file_nonempty(stem_path)
-    if stem_exists:
-        logger.info(" [%s] %s — stem exists, will skip\n", label, spk)
-        return
-
-    if block.segments:
-        resolved = _resolve_voice_block_text(block, cast_cfg)
-        logger.info(" [%s] %s | %d chars (single call)", label, spk, len(resolved))
-        logger.info("   stem: %s\n", os.path.basename(stem_path))
-    else:
-        kwargs = _episode_kwargs(cast_cfg)
-        resolved = _format_block_text(block.text, kwargs, "preamble/postamble text")
-        logger.info(" [%s] %s | %d chars", label, spk, len(resolved))
-        logger.info("   stem: %s\n", os.path.basename(stem_path))
-
-
-def _dry_run_preamble(cast_cfg, preamble_voice_stem: str) -> None:
-    _dry_run_voice_block(cast_cfg.preamble, cast_cfg, preamble_voice_stem, "PREAMBLE")
-
-
-def _dry_run_postamble(cast_cfg, postamble_voice_stem: str) -> None:
-    _dry_run_voice_block(cast_cfg.postamble, cast_cfg, postamble_voice_stem, "POSTAMBLE")
-
-
-def _generate_voice_block(block, cast_cfg, config: dict, voice_stem: str,
-                           label: str, sfx_dir: str = "SFX",
-                           backend: str = "elevenlabs",
-                           chatterbox_client: "_ChatterboxClient | None" = None,
-                           force: bool = False,
-                           manifest: dict | None = None,
-                           by_key: dict | None = None,
-                           seq: int = -2) -> None:
-    """Generate a voice stem from a preamble or postamble block.
-
-    All segment texts (when ``block.segments`` is present) are resolved and
-    joined into a single string, then sent to the TTS backend as one call.
-    This produces natural prosody across the whole block without audible seams.
-    The legacy single ``text`` field is also supported.
-    """
-    already_exists = file_nonempty(voice_stem)
-    if already_exists and not force:
-        logger.info("   Exists: %s — skipping", voice_stem)
-    elif already_exists:
-        logger.warning("   Force: overwriting %s", os.path.basename(voice_stem))
-
-    spk = block.speaker
-    voice_id = config.get(spk, {}).get("id", "TBD")
-    if backend == "elevenlabs" and voice_id == "TBD":
-        logger.warning("No voice_id for %s — skipping %s", spk, os.path.basename(voice_stem))
-        return
-
-    if block.segments:
-        resolved = _resolve_voice_block_text(block, cast_cfg)
-    else:
-        kwargs = _episode_kwargs(cast_cfg)
-        resolved = _format_block_text(block.text, kwargs, "preamble/postamble text")
-
-    if not already_exists or force:
-        if backend == "elevenlabs" and not has_enough_characters(resolved):
-            logger.warning("Insufficient quota for %s — skipping", label.lower())
-            return
-        logger.info(" > [%s] %s (%d chars)...", label, spk, len(resolved))
-        _tts_segment(resolved, voice_stem, voice_id, block.speed, backend=backend,
-                     chatterbox_client=chatterbox_client, speaker_key=spk)
-        logger.info("   Saved: %s", voice_stem)
-        _log_stem_hash(voice_stem)
-
-    if manifest is not None and by_key is not None and file_nonempty(voice_stem):
-        try:
-            sha256_hex = _hash_file(voice_stem)
-            cfg = config.get(spk, {})
-            _manifest_upsert(manifest, by_key, {
-                "text": resolved, "speaker": spk,
-                "voice_id": "" if voice_id == "TBD" else voice_id,
-                "speed": cfg.get("speed", 1.0),
-                "stability": cfg.get("stability", 0.5),
-                "similarity_boost": cfg.get("similarity_boost", 0.75),
-                "backend": backend, "sha256": sha256_hex,
-                "seq_at_generation": seq,
-                "stem_filename": os.path.basename(voice_stem),
-                "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            })
-        except Exception:
-            pass
-
-
-def _generate_preamble_voice(cast_cfg, config: dict, preamble_voice_stem: str,
-                              sfx_dir: str = "SFX", backend: str = "elevenlabs",
-                              chatterbox_client: "_ChatterboxClient | None" = None,
-                              force: bool = False,
-                              manifest: dict | None = None,
-                              by_key: dict | None = None,
-                              seq: int = -2) -> None:
-    _generate_voice_block(cast_cfg.preamble, cast_cfg, config,
-                          preamble_voice_stem, "PREAMBLE", sfx_dir, backend=backend,
-                          chatterbox_client=chatterbox_client, force=force,
-                          manifest=manifest, by_key=by_key, seq=seq)
-
-
-def _generate_postamble_voice(cast_cfg, config: dict, postamble_voice_stem: str,
-                               sfx_dir: str = "SFX", backend: str = "elevenlabs",
-                               chatterbox_client: "_ChatterboxClient | None" = None,
-                               force: bool = False,
-                               manifest: dict | None = None,
-                               by_key: dict | None = None,
-                               seq: int = -2) -> None:
-    _generate_voice_block(cast_cfg.postamble, cast_cfg, config,
-                          postamble_voice_stem, "POSTAMBLE", sfx_dir, backend=backend,
-                          chatterbox_client=chatterbox_client, force=force,
-                          manifest=manifest, by_key=by_key, seq=seq)
 
 
 def reconcile(
@@ -1407,43 +1154,12 @@ def main() -> None:
             if args.stop_at is not None:
                 sfx_entries = [e for e in sfx_entries if e["seq"] <= args.stop_at]
 
-        # --- Preamble ---
-        speaker = cast_cfg.preamble.speaker if cast_cfg.preamble else "tina"
-        preamble_voice_stem = os.path.join(stems_dir, f"n002_preamble_{speaker}.mp3")
-        preamble_music_stem = os.path.join(stems_dir, "n001_preamble_sfx.mp3")
-
-        # Warn if preamble stems exist on disk but the cast config has no preamble block —
-        # the stems will never be injected into the parsed JSON and will be invisible to xil-daw.
-        if not cast_cfg.preamble:
-            orphaned = [s for s in (preamble_voice_stem, preamble_music_stem) if os.path.exists(s)]
-            if orphaned:
-                for s in orphaned:
-                    logger.warning(
-                        "Preamble stem exists but cast config has no preamble block — "
-                        "add a preamble block to your cast config so this stem is injected "
-                        "into the parsed JSON: %s", s,
-                    )
-
-        # Resolve the full preamble text (used for dry-run char count + legacy path)
-        preamble_text = None
-        if cast_cfg.preamble:
-            preamble_text = _resolve_preamble_text(cast_cfg)
-
-        # --- Postamble stem names (seqs determined at inject time; derive here for dry-run) ---
-        postamble_text = None
-        postamble_voice_stem = None
-        postamble_music_stem = None
-        if cast_cfg.postamble and os.path.exists(args.script):
-            postamble_text = _resolve_postamble_text(cast_cfg)
-            with open(args.script, encoding="utf-8") as f:
-                _parsed = json.load(f)
-            _episode_seqs = [e["seq"] for e in _parsed["entries"]
-                             if e["seq"] > 0 and e.get("section") != "postamble"]
-            _max_seq = max(_episode_seqs) if _episode_seqs else 0
-            spk_post = cast_cfg.postamble.speaker
-            # music (max+1) precedes voice (max+2)
-            postamble_music_stem = os.path.join(stems_dir, f"{_max_seq + 1:03d}_postamble_sfx.mp3")
-            postamble_voice_stem = os.path.join(stems_dir, f"{_max_seq + 2:03d}_postamble_{spk_post}.mp3")
+        # --- Section-level speed overrides (preamble/postamble read at a different rate) ---
+        section_speed_overrides: dict[str, float] = {}
+        if cast_cfg.preamble and cast_cfg.preamble.speed is not None:
+            section_speed_overrides["preamble"] = cast_cfg.preamble.speed
+        if cast_cfg.postamble and cast_cfg.postamble.speed is not None:
+            section_speed_overrides["postamble"] = cast_cfg.postamble.speed
 
         if args.voice_refs is None:
             args.voice_refs = str(get_workspace_root() / "voice_refs")
@@ -1455,14 +1171,10 @@ def main() -> None:
             reconcile(config, dialogue_entries, stems_dir,
                       backend=args.backend, apply=args.apply)
         elif args.dry_run:
-            if cast_cfg.preamble:
-                _dry_run_preamble(cast_cfg, preamble_voice_stem)
             dry_run(config, dialogue_entries, start_from=args.start_from,
                     stop_at=args.stop_at,
                     sfx_entries=sfx_entries, sfx_config=sfx_config_data,
                     stems_dir=stems_dir, force=args.force)
-            if cast_cfg.postamble and postamble_voice_stem:
-                _dry_run_postamble(cast_cfg, postamble_voice_stem)
         else:
             if args.backend == "elevenlabs":
                 check_elevenlabs_quota()
@@ -1512,96 +1224,15 @@ def main() -> None:
                 )
 
             try:
-                # Copy intro/outro music first (cheap local copies — no manifest needed)
-                if cast_cfg.preamble:
-                    os.makedirs(stems_dir, exist_ok=True)
-                    if sfx_config_model and "INTRO MUSIC" in sfx_config_model.effects:
-                        intro_entry = sfx_config_model.effects["INTRO MUSIC"]
-                        if intro_entry.source:
-                            clip = AudioSegment.from_file(intro_entry.source)
-                            if intro_entry.play_duration is not None:
-                                trim_ms = int(len(clip) * intro_entry.play_duration / 100.0)
-                                clip = clip[:trim_ms]
-                                logger.info("   Trimmed intro music to %.1fs (%s%%)", trim_ms/1000, intro_entry.play_duration)
-                            clip.export(preamble_music_stem, format="mp3")
-                            logger.info("   Saved: %s", preamble_music_stem)
-                            _log_stem_hash(preamble_music_stem)
-                        else:
-                            logger.warning("INTRO MUSIC entry has no 'source' — skipping music stem")
-                    else:
-                        logger.warning("No 'INTRO MUSIC' entry in sfx config — skipping music stem")
                 generate_voices(config, dialogue_entries, stems_dir,
                                 start_from=args.start_from, stop_at=args.stop_at,
                                 show=cast_cfg.show, backend=args.backend,
                                 chatterbox_client=chatterbox_client,
-                                force=args.force)
+                                force=args.force,
+                                section_speed_overrides=section_speed_overrides or None)
                 if sfx_entries and sfx_config_data:
                     generate_sfx_stems(sfx_entries, sfx_config_data, stems_dir,
                                        client=client, start_from=args.start_from)
-                # Inject preamble entries into parsed JSON (idempotent)
-                if cast_cfg.preamble and preamble_text is not None and os.path.exists(args.script):
-                    inject_preamble_entries(args.script, preamble_text, cast_cfg.preamble.speaker)
-                # --- Preamble/Postamble voice stems (after dialogue manifest saved) ---
-                mf_path = _manifest_path(stems_dir)
-                pp_manifest = _load_manifest(mf_path)
-                pp_by_key: dict = {}
-                for _me in pp_manifest["entries"]:
-                    _k = _manifest_content_key(
-                        _me["text"], _me["voice_id"], _me["speed"],
-                        _me["stability"], _me["similarity_boost"], _me["backend"],
-                    )
-                    pp_by_key[_k] = _me
-                pp_manifest_touched = False
-                if cast_cfg.preamble:
-                    _generate_preamble_voice(cast_cfg, config, preamble_voice_stem,
-                                             backend=args.backend,
-                                             chatterbox_client=chatterbox_client,
-                                             force=args.force,
-                                             manifest=pp_manifest,
-                                             by_key=pp_by_key,
-                                             seq=-2)
-                    pp_manifest_touched = True
-                # --- Postamble ---
-                if cast_cfg.postamble and postamble_text is not None and os.path.exists(args.script):
-                    os.makedirs(stems_dir, exist_ok=True)
-                    music_seq, voice_seq = inject_postamble_entries(
-                        args.script, postamble_text, cast_cfg.postamble.speaker
-                    )
-                    spk_post = cast_cfg.postamble.speaker
-                    postamble_music_stem = os.path.join(stems_dir, f"{music_seq:03d}_postamble_sfx.mp3")
-                    postamble_voice_stem = os.path.join(stems_dir, f"{voice_seq:03d}_postamble_{spk_post}.mp3")
-                    # Copy outro music from sfx config 'OUTRO MUSIC' source (always regenerate — free local copy)
-                    if sfx_config_model and "OUTRO MUSIC" in sfx_config_model.effects:
-                        outro_entry = sfx_config_model.effects["OUTRO MUSIC"]
-                        if outro_entry.source:
-                            clip = AudioSegment.from_file(outro_entry.source)
-                            if outro_entry.play_duration is not None:
-                                trim_ms = int(len(clip) * outro_entry.play_duration / 100.0)
-                                clip = clip[:trim_ms]
-                                logger.info("   Trimmed outro music to %.1fs (%s%%)", trim_ms/1000, outro_entry.play_duration)
-                            clip.export(postamble_music_stem, format="mp3")
-                            logger.info("   Saved: %s", postamble_music_stem)
-                            _log_stem_hash(postamble_music_stem)
-                        else:
-                            logger.warning("OUTRO MUSIC entry has no 'source' — skipping outro music stem")
-                    _generate_postamble_voice(cast_cfg, config, postamble_voice_stem,
-                                             backend=args.backend,
-                                             chatterbox_client=chatterbox_client,
-                                             force=args.force,
-                                             manifest=pp_manifest,
-                                             by_key=pp_by_key,
-                                             seq=voice_seq)
-                    pp_manifest_touched = True
-                if pp_manifest_touched:
-                    pp_ts = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-                    try:
-                        _save_manifest(mf_path, pp_manifest)
-                        pp_snap = mf_path.replace(".json", f"_{pp_ts}.json")
-                        _save_manifest(pp_snap, pp_manifest)
-                        logger.info("   Manifest: %s (%d entries)", os.path.basename(mf_path), len(pp_manifest["entries"]))
-                        logger.info("   Snapshot: %s", os.path.basename(pp_snap))
-                    except Exception as exc:
-                        logger.warning("Could not update preamble/postamble manifest: %s", exc)
             finally:
                 if chatterbox_client is not None:
                     chatterbox_client.close()

@@ -220,6 +220,8 @@ SECTION_MAP = {
     "DEZ'S CLOSING NARRATION": "dez-closing",       # S02E03 straight apostrophe
     "DEZ\u2019S CLOSING NARRATION": "dez-closing",  # S02E03 curly apostrophe
     "PRODUCTION NOTES": "production-notes",     # S02E03 preamble
+    "PREAMBLE":  "preamble",
+    "POSTAMBLE": "postamble",
 }
 
 # ---------------------------------------------------------------------------
@@ -242,6 +244,8 @@ PODCAST_SECTIONS: dict[str, str] = {
     "POST-CREDITS SCENE": "post-credits",
     "INTRO": "intro",
     "OUTRO": "outro",
+    "PREAMBLE":  "preamble",
+    "POSTAMBLE": "postamble",
 }
 
 _AUDIOBOOK_CHAPTERS: dict[str, str] = {
@@ -380,6 +384,8 @@ def classify_direction(text: str) -> str | None:
             return dt
     if text.strip() == "BEAT" or text.strip() == "LONG BEAT":
         return "BEAT"
+    if text.strip() in {"INTRO MUSIC", "OUTRO MUSIC"}:
+        return "MUSIC"
     return None
 
 

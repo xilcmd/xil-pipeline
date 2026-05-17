@@ -10,7 +10,8 @@ during a live parse run.  Use this to inspect, diff, or spreadsheet-import an
 already-parsed episode without re-running the parser.
 
 Output columns:
-    seq, type, section, scene, speaker, direction, direction_type, text
+    file, tag, show, season, episode, seq, type, section, scene,
+    speaker, direction, direction_type, text
 
 Text is truncated at 200 characters to match the XILP001 debug output.
 stdout is clean CSV (no banner) when no --output file is specified, so the
@@ -38,7 +39,15 @@ from xil_pipeline.sfx_common import run_banner
 logger = get_logger(__name__)
 
 _TRUNCATE = 200  # matches XILP001._DEBUG_TRUNCATE
-ALL_COLS = ["seq", "type", "section", "scene", "speaker", "direction", "direction_type", "text"]
+_ENTRY_COLS = ["seq", "type", "section", "scene", "speaker", "direction", "direction_type", "text"]
+ALL_COLS = ["file", "tag", "show", "season", "episode"] + _ENTRY_COLS
+
+
+def _tag_from_path(path: str, data: dict) -> str:
+    name = os.path.basename(path)
+    if name.startswith("parsed_") and name.endswith(".json"):
+        return name[len("parsed_"):-len(".json")]
+    return data.get("tag_override", name)
 
 
 def _rows_from_file(path: str) -> list[dict]:
@@ -46,9 +55,17 @@ def _rows_from_file(path: str) -> list[dict]:
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
+    meta = {
+        "file":    os.path.basename(path),
+        "tag":     _tag_from_path(path, data),
+        "show":    data.get("show", ""),
+        "season":  data.get("season", ""),
+        "episode": data.get("episode", ""),
+    }
     rows = []
     for entry in data.get("entries", []):
         rows.append({
+            **meta,
             "seq":            entry["seq"],
             "type":           entry["type"],
             "section":        entry.get("section") or "",

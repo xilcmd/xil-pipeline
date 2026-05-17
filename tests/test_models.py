@@ -631,6 +631,7 @@ class TestDialogueEntry:
             "text": "What's up?",
             "stem_name": "005_act1_dez",
             "seq": 5,
+            "section": None,
             "direction": "excited",
         }
         assert models.DialogueEntry(**raw).model_dump() == raw

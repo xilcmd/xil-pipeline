@@ -306,7 +306,7 @@ class ScriptEntry(BaseModel):
         direction_type: Subtype for direction entries indicating sound category.
     """
 
-    seq: int = Field(..., description="Sequence number (negative for preamble entries)")
+    seq: int = Field(..., description="Sequence number")
     type: Literal["dialogue", "direction", "section_header", "scene_header"] = Field(
         ..., description="Entry classification"
     )
@@ -477,11 +477,6 @@ class Preamble(BaseModel):
         description="TTS speaking rate (0.7–1.2); None uses the voice default"
     )
 
-    @model_validator(mode="after")
-    def _require_text_or_segments(self) -> "Preamble":
-        if self.text is None and not self.segments:
-            raise ValueError("Preamble requires either 'text' or 'segments'")
-        return self
 
 
 class CastConfiguration(BaseModel):
@@ -566,7 +561,8 @@ class DialogueEntry(BaseModel):
     speaker: str = Field(..., description="Speaker key")
     text: str = Field(..., description="Dialogue text for TTS")
     stem_name: str = Field(..., description="Output audio stem name")
-    seq: int = Field(..., description="Sequence number; negative values reserved for preamble entries")
+    seq: int = Field(..., description="Sequence number")
+    section: str | None = Field(default=None, description="Script section slug (e.g. 'preamble', 'act1')")
     direction: str | None = Field(default=None, description="Acting direction")
 
 

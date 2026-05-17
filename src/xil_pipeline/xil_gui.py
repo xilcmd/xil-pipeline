@@ -364,7 +364,7 @@ def _cmd_scan(slug: str, tag: str, script_path: str | None, speakers: str, as_js
 
 
 def _cmd_parse(slug: str, tag: str, script_path: str | None, preview: int | None,
-               quiet: bool, debug: bool, speakers: str) -> list[str]:
+               quiet: bool, debug: bool, stats: bool, speakers: str) -> list[str]:
     module = _STAGE_MODULES["parse"]
     if script_path and str(script_path).strip():
         cmd = [sys.executable, "-m", module, str(script_path).strip(), "--episode", tag]
@@ -381,6 +381,8 @@ def _cmd_parse(slug: str, tag: str, script_path: str | None, preview: int | None
         cmd.append("--quiet")
     if debug:
         cmd.append("--debug")
+    if stats:
+        cmd.append("--stats")
     if speakers.strip():
         cmd += ["--speakers", speakers.strip()]
     return cmd
@@ -914,6 +916,7 @@ def _build_app():
                             )
                             parse_quiet_cb = gr.Checkbox(label="--quiet  (JSON only, skip summary)")
                             parse_debug_cb = gr.Checkbox(label="--debug  (write diagnostic CSV)", value=True)
+                            parse_stats_cb = gr.Checkbox(label="--stats  (per-speaker line/word/char distribution)")
                         parse_btn = gr.Button("▶ Run Parse", variant="primary")
 
                     # ── Produce ───────────────────────────────────────
@@ -1030,7 +1033,7 @@ def _build_app():
                         return
                     yield from _execute_cmd(cmd)
 
-                def run_parse(ep, ep_override, script, preview, quiet, debug, speakers):
+                def run_parse(ep, ep_override, script, preview, quiet, debug, stats, speakers):
                     ep_override = (ep_override or "").strip()
                     # Strip accidental "--episode " prefix if user included the flag name
                     if ep_override.lower().startswith("--episode"):
@@ -1049,7 +1052,7 @@ def _build_app():
                         yield "Select an episode or enter an episode tag override (e.g. S01E02)."
                         return
                     try:
-                        cmd = _cmd_parse(slug, tag, script, preview or None, quiet, debug, speakers)
+                        cmd = _cmd_parse(slug, tag, script, preview or None, quiet, debug, stats, speakers)
                     except ValueError as exc:
                         yield str(exc)
                         return
@@ -1113,7 +1116,7 @@ def _build_app():
                 parse_btn.click(
                     fn=run_parse,
                     inputs=[run_ep_dd, parse_episode_override, parse_script,
-                             parse_preview, parse_quiet_cb, parse_debug_cb, parse_speakers],
+                             parse_preview, parse_quiet_cb, parse_debug_cb, parse_stats_cb, parse_speakers],
                     outputs=log_box,
                 )
                 prod_btn.click(
