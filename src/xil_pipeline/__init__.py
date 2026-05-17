@@ -4,7 +4,7 @@
 
 """XIL Pipeline — show-agnostic audio production pipeline."""
 
-__version__ = "0.1.8"
+__version__ = "0.1.9"
 
 from xil_pipeline.models import (
     TYPE_DEFAULTS,
