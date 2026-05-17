@@ -5,6 +5,30 @@ MAYA CHEN — host and tech journalist, skeptically optimistic
 DARIUS OKAFOR — open source advocate and ML engineer
 
 ===
+
+PREAMBLE
+
+MAYA  Welcome to Tech Deep Dive. Season 1, Episode 4: The Rise of Open Source A I.
+
+[INTRO MUSIC]
+
+===
+
+COLD OPEN
+SCENE 1: PODCAST STUDIO — PRE-SHOW
+[AMBIENCE: Quiet studio hum, occasional keyboard clicks in background]
+MAYA
+(checking notes)
+Okay. Three minutes to air.
+DARIUS
+(relaxed)
+I've been waiting for someone to ask these questions out loud.
+MAYA
+Then let's make it worth it.
+[BEAT]
+
+===
+
 ACT TWO
 SCENE 6: PODCAST STUDIO
 [AMBIENCE: Quiet studio hum, occasional keyboard clicks in background]
@@ -27,4 +51,16 @@ DARIUS
 [BEAT — 3 SECONDS]
 MAYA
 We'll get into the safety implications right after the break.
-===Sonnet 4.6
+
+===
+
+POSTAMBLE
+
+[OUTRO MUSIC]
+
+MAYA  That was Tech Deep Dive, Season 1, Episode 4: The Rise of Open Source A I.
+MAYA  Thanks for listening.
+
+===
+
+END OF EPISODE

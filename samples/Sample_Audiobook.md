@@ -6,6 +6,15 @@ NARRATOR — measured, unhurried; the voice carrying the story
 ELARA VOSS — protagonist, radio engineer, mid-thirties
 
 ===
+
+PREAMBLE
+
+NARRATOR  Signals. An audiobook. Chapter 1: The Signal.
+
+[INTRO MUSIC]
+
+===
+
 CHAPTER ONE
 SCENE 1: REMOTE RESEARCH STATION — INTERIOR
 [AMBIENCE: Wind against insulated walls, low electrical hum of equipment racks]
@@ -33,3 +42,13 @@ NARRATOR
 Alive.
 
 ===
+
+POSTAMBLE
+
+[OUTRO MUSIC]
+
+NARRATOR  That was Signals, Chapter 1: The Signal.
+
+===
+
+END OF EPISODE

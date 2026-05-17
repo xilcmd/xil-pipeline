@@ -59,6 +59,7 @@ END OF EPISODE
 
   | Header | Notes |
   |--------|-------|
+  | `PREAMBLE` | Broadcast intro — place before COLD OPEN; seq numbers are contiguous with the episode |
   | `COLD OPEN` | |
   | `OPENING CREDITS` | |
   | `ACT ONE` / `ACT 1` | Numeral variants accepted |
@@ -70,6 +71,7 @@ END OF EPISODE
   | `POST-INTERVIEW` | Bonus commentary after the episode closes |
   | `POST-CREDITS SCENE` | |
   | `PRODUCTION NOTES` | Internal notes; included in parsed output |
+  | `POSTAMBLE` | Broadcast outro — place after the last section, before `END OF EPISODE` |
   | `CHAPTER ONE` / `CHAPTER 1` | Audiobook format |
   | `CHAPTER TWO` / `CHAPTER 2` | Audiobook format |
   | `CHAPTER THREE` / `CHAPTER 3` | Audiobook format |
@@ -77,7 +79,7 @@ END OF EPISODE
 - **Scene headers**: `SCENE N: LOCATION NAME` (on own line)
 - **Dialogue**: Speaker name on one line, dialogue text on the next
 - **Acting directions**: In parentheses after speaker name: `CHARACTER (whispering)`
-- **Directions**: In square brackets: `[SFX: ...]`, `[AMBIENCE: ...]`, `[MUSIC: ...]`, `[BEAT]`, `[BEAT — N SECONDS]`
+- **Directions**: In square brackets: `[SFX: ...]`, `[AMBIENCE: ...]`, `[MUSIC: ...]`, `[BEAT]`, `[BEAT — N SECONDS]`, `[VINTAGE FILTER: ENGAGES]`, `[VINTAGE FILTER: DISENGAGES]`
 - **End marker**: `END OF EPISODE` (stops parsing)
 - **Ambience stop**: `[AMBIENCE: STOP]` or `[AMBIENCE: description FADES OUT]` to end a looping ambience
 
@@ -337,21 +339,79 @@ These categories of sounds are well-represented in the existing library. Always 
 
 ## Preamble and Postamble
 
-The episode open and close announcements (e.g. Tina's "This is the Berkshire Talking
-Chronicle…" intro) are **not written in the production script**. They are configured in
-`cast_<slug>_TAG.json` under `preamble` and `postamble` blocks using template placeholders:
+The episode open and close announcements are written directly in the production script as
+`PREAMBLE` and `POSTAMBLE` section blocks. Place `PREAMBLE` before `COLD OPEN` and
+`POSTAMBLE` after the final episode section, before `END OF EPISODE`.
 
-- `{episode}` — episode number (e.g. `2`)
-- `{title}` — episode title from the cast config
-- `{season_title}` — filled from the `Arc: "..."` field in the script header, or from
-  `project.json` `season_title` when the header omits it
+```
+===
 
-The production script starts at `COLD OPEN` and ends at `END OF EPISODE`. The pipeline
-automatically prepends preamble audio (Tina's intro + intro music) and appends postamble
-audio (Tina's outro + outro music) when those blocks are present in the cast config.
+PREAMBLE
 
-Use native v3 audio tags (`[pause]`, `[long pause]`) inside preamble/postamble text in
-the cast config. SSML (`<break time="1s"/>`) is not supported in `eleven_v3`.
+TINA  This is the Berkshire Talking Chronicle…
+TINA  Today on The 4 1 3, Season 4, Episode 4, Porch.
+TINA  Thank you for listening.
+
+[INTRO MUSIC]
+
+===
+
+COLD OPEN
+…
+
+===
+
+POSTAMBLE
+
+[OUTRO MUSIC]
+
+TINA  This is Tina Brissette, your host for The 4 1 3…
+
+===
+
+END OF EPISODE
+```
+
+The cast config `preamble`/`postamble` blocks control **TTS speed only** — no text is stored
+there. The block must specify `speaker` (a cast key) and optionally `speed` (default `1.0`):
+
+```json
+"preamble": { "speaker": "tina", "speed": 0.85 },
+"postamble": { "speaker": "tina", "speed": 0.85 }
+```
+
+Use native v3 audio tags (`[pause]`, `[long pause]`) inline in the dialogue text within
+the script section. SSML (`<break time="1s"/>`) is not supported in `eleven_v3`.
+
+## Vintage Filter
+
+Use `[VINTAGE FILTER: ENGAGES]` and `[VINTAGE FILTER: DISENGAGES]` span markers to route
+a character's voice through the vintage filter DAW layer (telephone / radio effect):
+
+```
+[VINTAGE FILTER: ENGAGES]
+
+DISPATCH
+(through radio, clipped)
+Marlowe. Second floor found something. You'll want to come up.
+
+[VINTAGE FILTER: DISENGAGES]
+```
+
+In the cast config, mark the character with `"filter": "vintage"`:
+
+```json
+"dispatch": {
+  "full_name": "Dispatch",
+  "voice_id": "...",
+  "pan": 0.0,
+  "filter": "vintage",
+  "role": "Voice only, heard through Marlowe's radio — VINTAGE FILTER"
+}
+```
+
+Stems for vintage-filter characters are written to the `vintage_filter` WAV layer in XILP005
+(DAW export) and XILP011 (master export).
 
 ## Consistency Guidelines
 

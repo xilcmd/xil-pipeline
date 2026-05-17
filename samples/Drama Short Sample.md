@@ -6,6 +6,15 @@ SIMONE VREELAND — witness, architect, visibly composed but not calm
 DISPATCH — voice only, heard through Marlowe's radio
 
 ===
+
+PREAMBLE
+
+MARLOWE  Drama Short. The Interview. A production of Sample Audio Works.
+
+[INTRO MUSIC]
+
+===
+
 ACT ONE
 SCENE 1: POLICE INTERVIEW ROOM
 [AMBIENCE: Fluorescent hum, distant corridor footsteps, central AC cycling on]
@@ -25,9 +34,11 @@ SIMONE
 (measured)
 Then the badge log is more certain than I am.
 [SFX: Radio crackle]
+[VINTAGE FILTER: ENGAGES]
 DISPATCH
 (through radio, clipped)
 Marlowe. Second floor found something. You'll want to come up.
+[VINTAGE FILTER: DISENGAGES]
 [BEAT]
 MARLOWE
 (to Simone, not looking away)
@@ -38,4 +49,15 @@ No. You won't.
 [SFX: Door closing. Silence settling.]
 [AMBIENCE: AC shuts off. Room goes very still.]
 [BEAT — 3 SECONDS]
+
 ===
+
+POSTAMBLE
+
+[OUTRO MUSIC]
+
+MARLOWE  That was The Interview. A Drama Short production.
+
+===
+
+END OF EPISODE

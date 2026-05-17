@@ -27,6 +27,8 @@ SECTION_MAP = {
     "DEZ'S CLOSING NARRATION":          "dez-closing",       # S02E03 straight apostrophe
     "DEZ\u2019S CLOSING NARRATION":     "dez-closing",       # S02E03 curly apostrophe
     "PRODUCTION NOTES":                 "production-notes",  # S02E03 preamble
+    "PREAMBLE":                          "preamble",
+    "POSTAMBLE":                         "postamble",
 }
 ```
 
@@ -52,6 +54,8 @@ Note: Section headers may appear as plain text (`COLD OPEN`) in S01E01-style scr
 | `post-credits` | S01E03 | POST-CREDITS SCENE |
 | `dez-closing` | S02E03 | DEZ'S CLOSING NARRATION |
 | `production-notes` | S02E03 | PRODUCTION NOTES |
+| `preamble` | all | PREAMBLE |
+| `postamble` | all | POSTAMBLE |
 
 ---
 

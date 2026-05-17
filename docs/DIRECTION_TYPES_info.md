@@ -5,7 +5,7 @@
 Defined in `XILP001_script_parser.py` at module level:
 
 ```python
-DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT"]
+DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER"]
 ```
 
 These are the recognized sound-category prefixes for stage directions enclosed in
@@ -27,7 +27,7 @@ for dt in DIRECTION_TYPES:
 Called with the **bracket-interior text** only (e.g., `"SFX: DOOR SLAMS"`, not the full
 `"[SFX: DOOR SLAMS]"`). The first prefix match wins and is returned as the
 `direction_type` value. Order in the list matters if any prefixes were overlapping,
-but the current four are disjoint.
+but the current five are disjoint.
 
 `is_stage_direction()` fires on any `[...]` line regardless — it does not consult
 `DIRECTION_TYPES`. Classification happens after detection, not before.
@@ -49,7 +49,7 @@ All other entry types hardcode `"direction_type": None`:
 | `section_header` | Always `None` |
 | `scene_header` | Always `None` |
 | `dialogue` | Always `None` |
-| `direction` | `classify_direction()` result — one of the four values, or `None` |
+| `direction` | `classify_direction()` result — one of the five values, or `None` |
 
 ### The BEAT quirk (lines 87–88)
 
@@ -83,10 +83,22 @@ configuration.
 
 ---
 
+## Effect in XILP005 and XILP011 — VINTAGE FILTER
+
+`"VINTAGE FILTER"` entries are used by `mix_common.collect_stem_plans()` to determine
+span boundaries. A `[VINTAGE FILTER: ENGAGES]` entry marks the start of a vintage-filter
+span; `[VINTAGE FILTER: DISENGAGES]` marks the end. During DAW layer export (XILP005) and
+master export (XILP011), dialogue stems within the span are written to the `vintage_filter`
+WAV layer rather than the standard `dialogue` layer. The fifth `LAYER_SUFFIXES` entry is
+`"vintage_filter"`. No stems are generated for the direction entries themselves — they serve
+only as span markers in the entries index.
+
+---
+
 ## The Pydantic Constraint (models.py line 46)
 
 ```python
-direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT"] | None = Field(
+direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER"] | None = Field(
     default=None, description="Sound category for direction entries"
 )
 ```
@@ -122,11 +134,11 @@ To add `"FOLEY"` as a recognized category:
 
 1. Add to `DIRECTION_TYPES` in `XILP001_script_parser.py`:
    ```python
-   DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "FOLEY"]
+   DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FOLEY"]
    ```
 2. Add to the `Literal` in `ScriptEntry` in `models.py`:
    ```python
-   direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "FOLEY"] | None
+   direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FOLEY"] | None
    ```
 3. Re-run XILP001 to regenerate the parsed JSON with `"direction_type": "FOLEY"` on
    matching entries.

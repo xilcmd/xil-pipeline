@@ -7,6 +7,15 @@ CAST:
 
 ===
 
+PREAMBLE
+
+HOST  Welcome to My Podcast. This is Season 1, Episode 1, Pilot.
+HOST  Thank you for listening.
+
+[INTRO MUSIC]
+
+===
+
 COLD OPEN
 
 SCENE 1: THE STUDIO
@@ -74,6 +83,15 @@ Absolutely. Let's play one for our listeners.
 
 HOST
 Well... that's certainly unsettling. We'll be right back after this break.
+
+===
+
+POSTAMBLE
+
+[OUTRO MUSIC]
+
+HOST  That's all for this episode of My Podcast. Season 1, Episode 1, Pilot.
+HOST  Thank you for listening.
 
 ===
 
