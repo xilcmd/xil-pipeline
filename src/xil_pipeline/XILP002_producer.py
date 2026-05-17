@@ -23,7 +23,6 @@ import tempfile
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
 from elevenlabs.core.api_error import ApiError
-from pydub import AudioSegment
 
 try:
     from gtts import gTTS as _gTTS
@@ -45,7 +44,6 @@ from xil_pipeline.models import (
 )
 from xil_pipeline.sfx_common import (
     dry_run_sfx,
-    file_nonempty,
     load_sfx_entries,
     run_banner,
     tag_mp3,
@@ -1131,7 +1129,6 @@ def main() -> None:
         if os.path.exists(sfx_path):
             with open(sfx_path, encoding="utf-8") as f:
                 sfx_config_data = json.load(f)
-            sfx_config_model = SfxConfiguration(**sfx_config_data)
 
         # Build direction_types filter from gen flags (--sfx-music is deprecated all-in-one)
         gen_sfx      = args.gen_sfx      or args.sfx_music
