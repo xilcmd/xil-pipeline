@@ -209,8 +209,9 @@ THE 413 Season 1: Episode 1: Test
 
 CAST:
 
-* ADAM SANTOS (Host)
-* DEZ WILLIAMS (Supporting)
+* ADAM — Adam Santos, Host
+* DEZ — Dez Williams, Supporting
+* MR. PATTERSON — Recurring Caller
 
 ===
 
@@ -329,7 +330,7 @@ class TestParseScriptIntegration:
 
     def test_cast_section_excluded(self, parsed):
         all_text = " ".join(e["text"] for e in parsed["entries"] if e["text"])
-        assert "ADAM SANTOS (Host)" not in all_text
+        assert "Adam Santos, Host" not in all_text
 
     def test_tts_character_count(self, parsed):
         dialogue = [e for e in parsed["entries"] if e["type"] == "dialogue"]
@@ -640,7 +641,7 @@ THE 413 Season 1: Episode 1: Test
 
 CAST:
 
-* ADAM SANTOS (Host)
+* ADAM — Adam Santos, Host
 
 ===
 

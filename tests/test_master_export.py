@@ -264,7 +264,7 @@ class TestMain:
         cast_path = _make_cast(tmp_path, tag)
         output_path = str(tmp_path / "out.mp3")
         # Patch resolve_slug + derive_paths so cast config is picked up from tmp_path
-        paths = {"cast": cast_path}
+        paths = {"cast": cast_path, "parsed": str(tmp_path / "no_such_parsed.json")}
         with unittest.mock.patch("xil_pipeline.XILP011_master_export.derive_paths", return_value=paths), \
              unittest.mock.patch("xil_pipeline.XILP011_master_export.resolve_slug", return_value="the413"), \
              unittest.mock.patch("sys.argv", [
@@ -282,7 +282,7 @@ class TestMain:
             _make_wav(tmp_path, tag, s, duration_ms=300)
         output_path = str(tmp_path / "out.mp3")
         # Point cast path at a file that doesn't exist
-        paths = {"cast": str(tmp_path / "no_such_cast.json")}
+        paths = {"cast": str(tmp_path / "no_such_cast.json"), "parsed": str(tmp_path / "no_such_parsed.json")}
         with unittest.mock.patch("xil_pipeline.XILP011_master_export.derive_paths", return_value=paths), \
              unittest.mock.patch("xil_pipeline.XILP011_master_export.resolve_slug", return_value="sample"), \
              unittest.mock.patch("sys.argv", [

@@ -140,7 +140,7 @@ Creates: `project.json`, `speakers.json`, `scripts/sample_{tag}.md`, and empty s
 
 ## Speaker Configuration
 
-`configs/{slug}/speakers.json` defines the speaker names the parser recognizes (created by `xil-init`):
+`configs/{slug}/speakers.json` provides optional enrichment (voice_id, pan, filter, role, etc.) for the parser.  Since 0.2.0 it is **not required** for speaker recognition — characters declared in the script's `CAST:` block are always recognized.
 
 ```json
 [
@@ -150,7 +150,20 @@ Creates: `project.json`, `speakers.json`, `scripts/sample_{tag}.md`, and empty s
 ]
 ```
 
-Resolution order: `--speakers PATH` flag > `configs/{slug}/speakers.json` > `speakers.json` in CWD (legacy fallback) > built-in defaults. The list is auto-sorted longest-first for correct compound-name matching. Both `xil-scan` (XILP000) and `xil-parse` (XILP001) accept the `--speakers` flag.
+Recognition order (merged, all sources combined): `CAST:` block entries from the script itself → `configs/{slug}/speakers.json` (JSON key always wins over auto-derived key) → built-in defaults (only when neither CAST entries nor JSON file exist). The list is auto-sorted longest-first for compound-name matching. Both `xil-scan` (XILP000) and `xil-parse` (XILP001) accept the `--speakers` flag.
+
+### CAST: block format
+
+Every script should declare its cast in the header using dialogue-label names (the ALL-CAPS prefix used in dialogue lines), with optional `—` role descriptions:
+
+```
+CAST:
+* ADAM — Adam Santos, Host
+* MR. PATTERSON — Recurring Caller
+* FILM AUDIO (MARGARET'S VOICE) — Archive audio
+```
+
+Characters listed here are automatically recognized during parsing even if absent from `speakers.json`. For new series or one-off characters added mid-series, adding them to the `CAST:` block is sufficient to parse correctly; run `xil scan --harvest-cast` afterwards to propagate them to `speakers.json` for enrichment.
 
 ## Pre-Flight Script Scanner
 
@@ -159,13 +172,19 @@ Resolution order: `--speakers PATH` flag > `configs/{slug}/speakers.json` > `spe
 ```bash
 xil scan "scripts/<script>.md"
 xil scan "scripts/<script>.md" --json
+xil scan --harvest-cast                  # union CAST: blocks across all scripts → speakers.json diff
+xil scan --harvest-cast --yes            # auto-add new entries to speakers.json
+xil scan --backfill-cast --dry-run       # preview CAST: block insertion for old scripts
+xil scan --backfill-cast --yes           # write CAST: blocks to all scripts that lack one
 ```
 
-- No `--episode` flag required — reads only the script file, no side effects
+- No `--episode` flag required for single-script scan — reads only the script file, no side effects
 - Exit code 0 = all recognized (safe to run XILP001); exit code 1 = action needed
 - Imports XILP001's pure functions directly — no duplicated logic
 - `--json` outputs machine-readable scan results
 - `--speakers PATH` overrides the speaker list (see Speaker Configuration)
+- `--harvest-cast` scans all `scripts/*.md`, collects CAST: entries, and reports characters missing from speakers.json; `--yes` adds them automatically; `--scripts-dir DIR` overrides the default scripts directory
+- `--backfill-cast` adds CAST: blocks to scripts that don't have one, inferring speakers from existing parsed JSON (most reliable) or body scan against speakers.json; `--yes` writes files, default is dry-run; `--scripts-dir DIR` overrides the default scripts directory
 
 ## Architecture: Nine-Stage Pipeline (+ Cues Ingester Pre-Processing)
 
@@ -193,8 +212,8 @@ xil parse "scripts/<script>.md" --episode S01E01 --preview 10
 - Supports `--quiet` (JSON only, skip summary) and `--debug` (write diagnostic CSV alongside JSON)
 - Auto-generates BEAT variants (`BEAT — 3 SECONDS` etc.) as `type: "silence"` with duration parsed from the text (e.g. 3.0s)
 - Auto-generates `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives as `type: "silence", duration_seconds: 0.0` stop markers — no audio asset needed
-- Known speakers loaded from `speakers.json` (see Speaker Configuration); built-in defaults used as fallback
-- `--speakers PATH` overrides the speaker list (see Speaker Configuration)
+- Known speakers resolved in priority order: `CAST:` block in the script header (auto-discovered, no setup required) → `speakers.json` enrichment (JSON key overrides auto-derived key) → built-in defaults (only when both sources are absent); new characters declared in `CAST:` are recognized immediately without editing `speakers.json`
+- `--speakers PATH` overrides the speakers.json path (see Speaker Configuration)
 - Sections: COLD OPEN, OPENING CREDITS, ACT ONE, ACT TWO, MID-EPISODE BREAK, CLOSING
 
 ### Stage 1.5: Cues Sheet Ingestion (Pre-processing)

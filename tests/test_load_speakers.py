@@ -9,6 +9,8 @@ import json
 from xil_pipeline.XILP001_script_parser import (
     _BUILTIN_KNOWN_SPEAKERS,
     _BUILTIN_SPEAKER_KEYS,
+    _display_to_key,
+    extract_cast_from_script,
     load_speakers,
     parse_script_header,
     try_match_speaker,
@@ -155,3 +157,120 @@ class TestParseScriptHeader:
     def test_empty_line(self):
         result = parse_script_header("")
         assert result is None
+
+
+class TestDisplayToKey:
+    def test_simple(self):
+        assert _display_to_key("ADAM") == "adam"
+
+    def test_compound(self):
+        assert _display_to_key("MR. PATTERSON") == "mr_patterson"
+
+    def test_parenthetical_stripped(self):
+        assert _display_to_key("FILM AUDIO (MARGARET'S VOICE)") == "film_audio"
+
+    def test_multi_word(self):
+        assert _display_to_key("DETECTIVE NORA WALSH") == "detective_nora_walsh"
+
+    def test_already_simple(self):
+        assert _display_to_key("TINA") == "tina"
+
+
+class TestExtractCastFromScript:
+    def test_basic_cast_block(self):
+        lines = [
+            "THE 413 Season 1: Episode 1: \"Title\"",
+            "CAST:",
+            "* ADAM — Host/Narrator",
+            "* MR. PATTERSON — Recurring Caller",
+            "===",
+            "COLD OPEN",
+        ]
+        result = extract_cast_from_script(lines)
+        assert len(result) == 2
+        assert result[0] == {"display": "ADAM", "key": "adam"}
+        assert result[1] == {"display": "MR. PATTERSON", "key": "mr_patterson"}
+
+    def test_no_cast_block(self):
+        lines = ["THE SHOW Season 1: Episode 1: \"Title\"", "===", "COLD OPEN"]
+        assert extract_cast_from_script(lines) == []
+
+    def test_cast_without_role(self):
+        lines = ["CAST:", "* NARRATOR", "==="]
+        result = extract_cast_from_script(lines)
+        assert result == [{"display": "NARRATOR", "key": "narrator"}]
+
+    def test_cast_role_after_em_dash(self):
+        lines = ["CAST:", "* DETECTIVE NORA WALSH — Lead investigator", "==="]
+        result = extract_cast_from_script(lines)
+        assert result[0]["display"] == "DETECTIVE NORA WALSH"
+        assert result[0]["key"] == "detective_nora_walsh"
+
+    def test_cast_with_parenthetical_display(self):
+        # Parentheticals in the display name (before —) are preserved
+        lines = ["CAST:", "* FILM AUDIO (MARGARET'S VOICE) — Archive footage", "==="]
+        result = extract_cast_from_script(lines)
+        assert result[0]["display"] == "FILM AUDIO (MARGARET'S VOICE)"
+        assert result[0]["key"] == "film_audio"
+
+    def test_no_duplicates(self):
+        lines = ["CAST:", "* ADAM", "* ADAM", "==="]
+        result = extract_cast_from_script(lines)
+        assert len(result) == 1
+
+    def test_stops_at_divider(self):
+        lines = ["CAST:", "* ADAM", "===", "* EXTRA_NOT_CAST"]
+        result = extract_cast_from_script(lines)
+        assert len(result) == 1
+
+    def test_empty_lines_in_cast_ignored(self):
+        lines = ["CAST:", "* ADAM", "", "* TINA", "==="]
+        result = extract_cast_from_script(lines)
+        assert len(result) == 2
+
+
+class TestLoadSpeakersWithCastEntries:
+    def test_cast_only_no_json(self, tmp_path, monkeypatch):
+        """CAST entries are used when no speakers.json exists."""
+        monkeypatch.chdir(tmp_path)
+        cast = [{"display": "NEW_CHAR", "key": "new_char"}]
+        known, keys = load_speakers(cast_entries=cast)
+        assert "NEW_CHAR" in known
+        assert keys["NEW_CHAR"] == "new_char"
+
+    def test_json_key_overrides_cast_key(self, tmp_path):
+        """speakers.json key wins over auto-derived key for same display name."""
+        speakers = [{"display": "MR. PATTERSON", "key": "patterson"}]
+        path = str(tmp_path / "speakers.json")
+        with open(path, "w") as f:
+            json.dump(speakers, f)
+        cast = [{"display": "MR. PATTERSON", "key": "mr_patterson"}]
+        known, keys = load_speakers(path, cast_entries=cast)
+        assert keys["MR. PATTERSON"] == "patterson"  # JSON key wins
+
+    def test_cast_adds_new_speakers_not_in_json(self, tmp_path):
+        """Characters in CAST: but not in speakers.json are still recognised."""
+        speakers = [{"display": "ADAM", "key": "adam"}]
+        path = str(tmp_path / "speakers.json")
+        with open(path, "w") as f:
+            json.dump(speakers, f)
+        cast = [{"display": "ADAM", "key": "adam"}, {"display": "NEW_GUEST", "key": "new_guest"}]
+        known, keys = load_speakers(path, cast_entries=cast)
+        assert "ADAM" in known
+        assert "NEW_GUEST" in known
+        assert keys["NEW_GUEST"] == "new_guest"
+
+    def test_no_cast_no_json_falls_back_to_builtins(self, tmp_path, monkeypatch):
+        """Built-ins used when neither CAST entries nor JSON are present."""
+        monkeypatch.chdir(tmp_path)
+        known, keys = load_speakers(cast_entries=[])
+        assert known == _BUILTIN_KNOWN_SPEAKERS
+
+    def test_longest_first_preserved(self, tmp_path):
+        """Merged list is still sorted longest-first."""
+        cast = [
+            {"display": "AL", "key": "al"},
+            {"display": "AL CAPONE", "key": "al_capone"},
+        ]
+        known, _ = load_speakers(cast_entries=cast)
+        assert known.index("AL CAPONE") < known.index("AL")

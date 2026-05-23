@@ -122,6 +122,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(debug / audit)",
     ),
+    "sfx-hydrate": CommandSpec(
+        "xil_pipeline.XILU013_sfx_hydrate",
+        "write pipe-hint source fields from parsed JSON into the SFX config",
+        _UTILITY,
+        "(after parse, before produce)",
+    ),
 }
 """Subcommand registry. Insertion order defines display order within each group."""
 

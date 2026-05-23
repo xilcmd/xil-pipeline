@@ -91,6 +91,71 @@ KNOWN_SPEAKERS = list(_BUILTIN_KNOWN_SPEAKERS)
 SPEAKER_KEYS = dict(_BUILTIN_SPEAKER_KEYS)
 
 
+def _display_to_key(display: str) -> str:
+    """Convert a speaker display name to a normalized key.
+
+    Examples::
+
+        "ADAM"                          → "adam"
+        "MR. PATTERSON"                 → "mr_patterson"
+        "FILM AUDIO (MARGARET'S VOICE)" → "film_audio"
+        "DETECTIVE NORA WALSH"          → "detective_nora_walsh"
+    """
+    # Strip parenthetical role descriptions
+    name = re.sub(r"\s*\(.*?\)\s*", " ", display).strip()
+    # Remove punctuation except spaces and underscores
+    name = re.sub(r"[^\w\s]", "", name)
+    name = name.lower().strip()
+    # Collapse whitespace to single underscores
+    name = re.sub(r"\s+", "_", name)
+    return name.strip("_")
+
+
+def extract_cast_from_script(lines: list[str]) -> list[dict]:
+    """Extract cast members from the CAST: block in a script header.
+
+    Parses bullet-point entries of the form::
+
+        CAST:
+        * ADAM — Host/Narrator
+        * MR. PATTERSON — Recurring Caller
+        * DETECTIVE NORA WALSH — New this episode
+
+    Each entry is converted to ``{"display": str, "key": str}``.  Role
+    descriptions after ``—``, ``–``, ``-``, or ``(`` are stripped.
+
+    Args:
+        lines: Normalized script lines (from :func:`strip_markdown_formatting`).
+
+    Returns:
+        List of ``{"display": str, "key": str}`` dicts, empty when no CAST:
+        block is present.
+    """
+    entries: list[dict] = []
+    seen_keys: set[str] = set()
+    in_cast = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "CAST:":
+            in_cast = True
+            continue
+        if in_cast:
+            if stripped.startswith("*"):
+                raw = stripped[1:].strip()
+                # Strip role description after em/en dash only.
+                # Plain hyphens can appear in names (e.g. "T-BONE"); parentheticals
+                # may be part of the display label (e.g. "FILM AUDIO (MARGARET'S VOICE)").
+                name = re.split(r"\s*[—–]\s*", raw)[0].strip()
+                if name:
+                    key = _display_to_key(name)
+                    if key and key not in seen_keys:
+                        entries.append({"display": name, "key": key})
+                        seen_keys.add(key)
+            elif stripped in ("===", "---") or (stripped and not stripped.startswith("*")):
+                break  # End of cast block
+    return entries
+
+
 def _resolve_speakers_file(path: str | None = None) -> str | None:
     """Resolve which speakers JSON file to load, without reading it.
 
@@ -118,15 +183,20 @@ def _resolve_speakers_file(path: str | None = None) -> str | None:
 
 def load_speakers(
     path: str | None = None,
+    cast_entries: list[dict] | None = None,
 ) -> tuple[list[str], dict[str, str]]:
-    """Load speaker definitions from a JSON file or fall back to built-in defaults.
+    """Load speaker definitions, merging CAST-block entries with speakers.json.
 
     Resolution order:
 
-    1. Explicit *path* (from ``--speakers`` CLI flag)
-    2. ``configs/{slug}/speakers.json`` (normalized layout)
-    3. ``speakers.json`` in the current working directory (legacy fallback)
-    4. Built-in ``_BUILTIN_KNOWN_SPEAKERS`` / ``_BUILTIN_SPEAKER_KEYS``
+    1. ``cast_entries`` — speakers declared in the script's CAST: block
+       (see :func:`extract_cast_from_script`); auto-derived keys are used
+       unless overridden by speakers.json
+    2. Speakers from ``path`` / ``configs/{slug}/speakers.json`` / CWD
+       ``speakers.json``; JSON keys always win over auto-derived keys and
+       new JSON entries are appended
+    3. Built-in ``_BUILTIN_KNOWN_SPEAKERS`` / ``_BUILTIN_SPEAKER_KEYS``
+       **only** when neither ``cast_entries`` nor a JSON file are available
 
     The JSON file is an array of objects with ``display`` and ``key`` fields::
 
@@ -141,28 +211,45 @@ def load_speakers(
     Args:
         path: Explicit path to a speakers JSON file.  ``None`` triggers
             auto-detection.
+        cast_entries: Speaker dicts extracted from the script's CAST: block
+            via :func:`extract_cast_from_script`.  ``None`` or ``[]`` means
+            no CAST block was found.
 
     Returns:
         A tuple of ``(known_speakers_list, speaker_keys_dict)``.
     """
     speakers_file = _resolve_speakers_file(path)
-    if speakers_file is None:
-        return list(_BUILTIN_KNOWN_SPEAKERS), dict(_BUILTIN_SPEAKER_KEYS)
+    has_json = speakers_file is not None and os.path.exists(speakers_file)
+    has_cast = bool(cast_entries)
 
-    with open(speakers_file, encoding="utf-8") as f:
-        data = json.load(f)
+    # Fall back to built-ins only when there is truly nothing else
+    if not has_cast and not has_json:
+        return list(_BUILTIN_KNOWN_SPEAKERS), dict(_BUILTIN_SPEAKER_KEYS)
 
     known: list[str] = []
     keys: dict[str, str] = {}
-    for entry in data:
+
+    # Seed from CAST-block entries (auto-derived keys)
+    for entry in (cast_entries or []):
         display = entry["display"]
         key = entry["key"]
-        known.append(display)
-        keys[display] = key
+        if display not in keys:
+            known.append(display)
+            keys[display] = key
+
+    # Overlay JSON entries — adds new entries and overrides keys for existing ones
+    if has_json:
+        with open(speakers_file, encoding="utf-8") as f:
+            data = json.load(f)
+        for entry in data:
+            display = entry["display"]
+            key = entry["key"]
+            if display not in keys:
+                known.append(display)
+            keys[display] = key  # JSON key always wins
 
     # Sort longest-first for correct compound-name matching
     known.sort(key=len, reverse=True)
-
     return known, keys
 
 
@@ -677,7 +764,6 @@ def parse_script(
     if project_type is None:
         project_type = resolve_project_type()
     active_section_map = get_section_map(project_type)
-    known_speakers, speaker_keys = load_speakers(speakers_path)
 
     with open(filepath, encoding="utf-8") as f:
         raw = f.read()
@@ -710,7 +796,10 @@ def parse_script(
     season = resolve_season(season)
     season_title = resolve_season_title(season_title)
 
-    # Skip CAST section
+    # Extract CAST block for speaker recognition, then advance start past it.
+    # cast_entries seeds load_speakers() so characters declared here are
+    # recognised even before they are added to speakers.json.
+    cast_entries = extract_cast_from_script(lines[start:])
     in_cast = False
     for i in range(start, len(lines)):
         line = lines[i].strip()
@@ -723,6 +812,9 @@ def parse_script(
                 start = i
                 break
             continue
+
+    # Load speakers — CAST-block entries merged with speakers.json enrichment
+    known_speakers, speaker_keys = load_speakers(speakers_path, cast_entries=cast_entries)
 
     for i in range(start, len(lines)):
         line = lines[i].strip()

@@ -893,6 +893,14 @@ def _build_app():
                     # ── Parse ─────────────────────────────────────────
                     with gr.Tab("Parse"):
                         with gr.Row():
+                            parse_ep_dd = gr.Dropdown(
+                                label="Episode (select existing or type new tag, e.g. S04E04)",
+                                choices=ep_choices,
+                                allow_custom_value=True,
+                                scale=3,
+                            )
+                            parse_ep_refresh_btn = gr.Button("⟳", size="sm", scale=0)
+                        with gr.Row():
                             parse_script = gr.Dropdown(
                                 label="Script (blank = auto-detect first .md in scripts/)",
                                 choices=_script_choices(),
@@ -905,10 +913,6 @@ def _build_app():
                                 placeholder="configs/the413/speakers.json",
                                 scale=2,
                             )
-                        parse_episode_override = gr.Textbox(
-                            label="Episode tag override (e.g. S01E02) — leave blank to use episode dropdown",
-                            placeholder="S01E02",
-                        )
                         with gr.Row():
                             parse_preview = gr.Number(
                                 label="--preview  (show first N entries, 0 = all)",
@@ -1033,24 +1037,23 @@ def _build_app():
                         return
                     yield from _execute_cmd(cmd)
 
-                def run_parse(ep, ep_override, script, preview, quiet, debug, stats, speakers):
-                    ep_override = (ep_override or "").strip()
-                    # Strip accidental "--episode " prefix if user included the flag name
-                    if ep_override.lower().startswith("--episode"):
-                        ep_override = ep_override.split()[-1].strip()
-                    if ep_override:
-                        # Manual tag: derive slug from project.json, use override as tag
+                def run_parse(ep, script, preview, quiet, debug, stats, speakers):
+                    ep = (ep or "").strip()
+                    if not ep:
+                        yield "Select an episode or type a new episode tag (e.g. S04E04)."
+                        return
+                    parts = ep.split()
+                    if len(parts) >= 2:
+                        # Standard dropdown choice: "the413 S03E03 — Episode Title"
+                        slug, tag = parts[0], parts[1]
+                    else:
+                        # Custom-typed tag: resolve slug from project.json
                         from xil_pipeline.models import resolve_slug
                         slug = resolve_slug(
                             None,
                             os.path.join(str(get_workspace_root()), "project.json"),
                         )
-                        tag = ep_override
-                    elif ep:
-                        slug, tag = _parse_choice(ep)
-                    else:
-                        yield "Select an episode or enter an episode tag override (e.g. S01E02)."
-                        return
+                        tag = ep
                     try:
                         cmd = _cmd_parse(slug, tag, script, preview or None, quiet, debug, stats, speakers)
                     except ValueError as exc:
@@ -1104,6 +1107,10 @@ def _build_app():
                     fn=lambda: gr.update(choices=_script_choices()),
                     outputs=scan_script,
                 )
+                parse_ep_refresh_btn.click(
+                    fn=lambda: gr.update(choices=_episode_choices()),
+                    outputs=parse_ep_dd,
+                )
                 parse_refresh_btn.click(
                     fn=lambda: gr.update(choices=_script_choices()),
                     outputs=parse_script,
@@ -1115,7 +1122,7 @@ def _build_app():
                 )
                 parse_btn.click(
                     fn=run_parse,
-                    inputs=[run_ep_dd, parse_episode_override, parse_script,
+                    inputs=[parse_ep_dd, parse_script,
                              parse_preview, parse_quiet_cb, parse_debug_cb, parse_stats_cb, parse_speakers],
                     outputs=log_box,
                 )

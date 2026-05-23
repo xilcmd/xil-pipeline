@@ -1149,7 +1149,44 @@ version reflecting any post-parse edits.
 ```bash
 xil regen --episode S02E03
 xil regen --episode S02E03 --output scripts/revised_S02E03.md
+
+# With SFX config — source-backed direction entries gain a pipe-hint filename suffix
+xil regen --episode S02E03 --sfx configs/sample/sfx_S02E03.json
 ```
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--episode TAG` | — | Episode tag (e.g. `S02E03`). Mutually exclusive with `--tag`. |
+| `--tag TAG` | — | Raw non-episodic tag (e.g. `V01C03`). Mutually exclusive with `--episode`. |
+| `--parsed PATH` | `parsed/<slug>/parsed_<slug>_<TAG>.json` | Override parsed JSON input path. |
+| `--cast PATH` | `configs/<slug>/cast_<TAG>.json` | Override cast config path. |
+| `--sfx PATH` | `configs/<slug>/sfx_<TAG>.json` | Override SFX config path. When the file exists, direction entries are emitted with a pipe-hint filename suffix (`[SFX: TEXT \| filename.mp3]`) for any entry whose SFX config key has a `source` field. Prompt-only and silence entries are unaffected. |
+| `--output PATH` | `scripts/revised_<slug>_<TAG>.md` | Override output markdown path. |
+| `--show NAME` | from `project.json` | Show name override for slug derivation. |
+| `--speakers PATH` | auto-detect → built-in | Path to `speakers.json` for speaker key → display name mapping. |
+
+### Pipe-hint behaviour
+
+When `--sfx` is supplied (or `sfx_<TAG>.json` exists at the default path), direction
+entries that resolve to a `source`-backed asset are emitted in pipe-hint format:
+
+```
+[SFX: PAPER LETTER FOLDED, SET DOWN ON TABLE | PAPRImpt-A_realistic_sound_of-Elevenlabs.mp3]
+[AMBIENCE: RADIO BOOTH - SOFT EQUIPMENT HUM, SLIGHT STATIC, INTIMATE | ambience_radio-booth-soft-equipment-hum-slight-static-intimate.mp3]
+```
+
+Entries with only a `prompt` key (API-generated) or `"type": "silence"` emit without a hint:
+
+```
+[MUSIC: STING OUT]
+[BEAT]
+[VINTAGE FILTER ENGAGES]
+```
+
+This makes the regenerated script immediately usable as a new episode template — the
+pipe-hints allow `xil` to resolve assets from the library without re-generating them.
 
 ### Flow
 
@@ -1159,22 +1196,27 @@ flowchart TD
     Entries with seq, type, speaker, text`"]
     CAST["`📋 cast_sample_S02E03.json
     Speaker key → display name`"]
+    SFX["`📋 sfx_sample_S02E03.json
+    Direction text → source basename
+    (optional)`"]
 
     LOAD["`Load parsed JSON + cast config
-    Build reverse mappings from XILP001`"]
+    Build reverse mappings from XILP001
+    Build SFX source lookup`"]
     FILTER["`Filter entries
     Skip section_header entries
     Skip PREAMBLE / POSTAMBLE sections`"]
     EMIT["`Emit markdown
     section_header → ## HEADER
     scene_header → ## SCENE N: ...
-    direction → [TEXT]
+    direction → [TEXT] or [TEXT | file.mp3]
     dialogue → SPEAKER (dir) + text`"]
     DIVIDER["`Insert === dividers
     Before first entry after headers`"]
 
     PARSED --> LOAD
     CAST --> LOAD
+    SFX -.->|optional| LOAD
     LOAD --> FILTER --> EMIT
     EMIT --> DIVIDER
     DIVIDER --> OUTPUT["`📄 scripts/revised_sample_S02E03.md

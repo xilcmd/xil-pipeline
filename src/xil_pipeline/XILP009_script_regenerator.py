@@ -68,16 +68,48 @@ def speaker_display_name(key: str) -> str:
     return _SPEAKER_KEY_TO_DISPLAY.get(key, key.upper())
 
 
-def regenerate_script(parsed: dict, cast: dict | None = None) -> str:
+def _build_sfx_lookup(sfx_config: dict) -> dict[str, str]:
+    """Build a direction-text → basename(source) lookup from an SFX config.
+
+    Only entries with a ``source`` field are included; prompt-only and
+    silence entries produce no pipe-hint and are omitted.
+
+    Args:
+        sfx_config: Parsed contents of ``sfx_<TAG>.json``.
+
+    Returns:
+        Dict mapping SFX config keys to their source basenames,
+        e.g. ``{"SFX: PAPER LETTER FOLDED, SET DOWN ON TABLE":
+        "PAPRImpt-A_realistic_sound_of-Elevenlabs.mp3"}``.
+    """
+    lookup: dict[str, str] = {}
+    for key, effect in sfx_config.get("effects", {}).items():
+        source = effect.get("source")
+        if source:
+            lookup[key] = os.path.basename(source)
+    return lookup
+
+
+def regenerate_script(
+    parsed: dict,
+    cast: dict | None = None,
+    sfx_config: dict | None = None,
+) -> str:
     """Regenerate a markdown production script from parsed JSON.
 
     Args:
         parsed: The full parsed script dict (with metadata and entries).
         cast: Optional cast config dict for full_name lookups.
+        sfx_config: Optional SFX config dict.  When provided, direction
+            entries whose text matches a ``source``-backed SFX config key
+            are emitted with a pipe-hint filename suffix, e.g.
+            ``[SFX: PAPER LETTER FOLDED, SET DOWN ON TABLE | PAPRImpt-...mp3]``.
 
     Returns:
         The reconstructed markdown script as a string.
     """
+    sfx_lookup = _build_sfx_lookup(sfx_config) if sfx_config else {}
+
     show = parsed.get("show", "Unknown Show")
     season = parsed.get("season")
     episode = parsed.get("episode", 1)
@@ -133,7 +165,9 @@ def regenerate_script(parsed: dict, cast: dict | None = None) -> str:
             after_header = False
 
         if entry_type == "direction":
-            lines.append(f"[{text}]")
+            hint = sfx_lookup.get(text)
+            suffix = f" | {hint}" if hint else ""
+            lines.append(f"[{text}{suffix}]")
             lines.append("")
             continue
 
@@ -167,6 +201,10 @@ def get_parser() -> argparse.ArgumentParser:
                         help="Override parsed JSON path")
     parser.add_argument("--cast", default=None,
                         help="Override cast config path")
+    parser.add_argument("--sfx", default=None,
+                        help="Override SFX config path (sfx_<TAG>.json); "
+                             "when supplied, direction entries are emitted with "
+                             "a pipe-hint filename suffix for source-backed assets")
     parser.add_argument("--show", default=None,
                         help="Show name override (default: from project.json)")
     parser.add_argument("--output", default=None,
@@ -191,6 +229,7 @@ def main():
         p = derive_paths(slug, tag)
         parsed_path = args.parsed or p["parsed"]
         cast_path = args.cast or p["cast"]
+        sfx_path = args.sfx or p["sfx"]
         output_path = args.output or p["revised_script"]
 
         if not os.path.exists(parsed_path):
@@ -205,7 +244,15 @@ def main():
             with open(cast_path, encoding="utf-8") as f:
                 cast = json.load(f)
 
-        script_text = regenerate_script(parsed, cast)
+        sfx_config = None
+        if os.path.exists(sfx_path):
+            with open(sfx_path, encoding="utf-8") as f:
+                sfx_config = json.load(f)
+            logger.info(f"  SFX config loaded: {sfx_path}")
+        else:
+            logger.debug(f"  No SFX config found at {sfx_path} — pipe-hints disabled")
+
+        script_text = regenerate_script(parsed, cast, sfx_config)
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:

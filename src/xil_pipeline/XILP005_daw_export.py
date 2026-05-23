@@ -356,6 +356,7 @@ def dry_run_daw(
     stems_dir: str = "",
     sfx_config=None,
     cast_config: dict | None = None,
+    vintage_scenes: list[str] | None = None,
 ) -> None:
     """Print a DAW export summary without writing any files.
 
@@ -365,8 +366,10 @@ def dry_run_daw(
         entries_index: Parsed entry index.
         output_dir: Target directory (shown in summary).
         stems_dir: Stems source directory (shown in summary).
-        sfx_config: SfxConfiguration instance for vintage_scenes lookup.
+        sfx_config: SfxConfiguration instance for vintage_scenes fallback.
         cast_config: Per-speaker voice settings dict for filter reporting.
+        vintage_scenes: Scene slugs for vintage filter routing.  When provided,
+            overrides ``sfx_config.vintage_scenes``.
     """
     _validate_tag_for_script(tag)
     bg_plans = [p for p in stem_plans if p.is_background]
@@ -376,7 +379,8 @@ def dry_run_daw(
     sfx = [p for p in stem_plans if p.direction_type in ("SFX", "BEAT")]
     dialogue = [p for p in stem_plans if p.entry_type == "dialogue"]
 
-    vintage_scenes = sfx_config.vintage_scenes if sfx_config else []
+    if vintage_scenes is None:
+        vintage_scenes = sfx_config.vintage_scenes if sfx_config else []
     vintage_count = sum(1 for p in dialogue if p.scene in vintage_scenes) if vintage_scenes else 0
 
     logger.info(f"\n--- DAW Export Dry Run: {tag} ---")
@@ -404,6 +408,42 @@ def dry_run_daw(
         logger.info(f"     {output_dir}/{tag}_{suffix}.wav  — {desc}")
     logger.info(f"     {output_dir}/{tag}_open_in_audacity.py")
     logger.info("")
+
+
+def derive_vintage_scenes_from_parsed(parsed_path: str) -> list[str]:
+    """Extract scene slugs that contain VINTAGE FILTER spans from the parsed JSON.
+
+    Collects the ``scene`` field of every ``VINTAGE FILTER ENGAGES`` direction
+    entry.  Returns a deduplicated, order-preserving list of scene slugs.  When
+    the parsed JSON is unavailable or contains no such entries, returns ``[]``.
+
+    Args:
+        parsed_path: Path to the parsed script JSON (XILP001 output).
+
+    Returns:
+        List of scene slug strings, e.g. ``["scene-3", "scene-4"]``.
+    """
+    if not os.path.exists(parsed_path):
+        return []
+    try:
+        with open(parsed_path, encoding="utf-8") as f:
+            parsed = json.load(f)
+    except Exception:
+        return []
+
+    seen: set[str] = set()
+    scenes: list[str] = []
+    for entry in parsed.get("entries", []):
+        if (
+            entry.get("type") == "direction"
+            and entry.get("direction_type") == "VINTAGE FILTER"
+            and entry.get("text", "").upper() == "VINTAGE FILTER ENGAGES"
+        ):
+            scene = entry.get("scene")
+            if scene and scene not in seen:
+                seen.add(scene)
+                scenes.append(scene)
+    return scenes
 
 
 def export_daw_layers(
@@ -446,7 +486,15 @@ def export_daw_layers(
         return
 
     logger.info(f"--- Building foreground timeline from {len(stem_plans)} stems ---")
-    vintage_scenes = sfx_config.vintage_scenes if sfx_config else []
+    # Derive vintage_scenes from parsed JSON spans; fall back to sfx_config list
+    parsed_scenes = derive_vintage_scenes_from_parsed(parsed_path)
+    config_scenes = sfx_config.vintage_scenes if sfx_config else []
+    vintage_scenes = parsed_scenes or config_scenes
+    if parsed_scenes and parsed_scenes != config_scenes and config_scenes:
+        logger.info(
+            f"    vintage_scenes: using parsed JSON ({len(parsed_scenes)} scenes) "
+            f"— sfx_config list ignored"
+        )
     foreground, cue_timeline = build_foreground(
         stem_plans, config, gap_ms=gap_ms, vintage_scenes=vintage_scenes
     )
@@ -701,9 +749,19 @@ def main() -> None:
         entries_index = load_entries_index(parsed_path)
         stem_plans = collect_stem_plans(stems_dir, entries_index, sfx_config=sfx_config)
 
+        # Derive vintage_scenes from parsed JSON spans; fall back to sfx_config list
+        derived_vintage = derive_vintage_scenes_from_parsed(parsed_path)
+        config_vintage = sfx_config.vintage_scenes if sfx_config else []
+        resolved_vintage = derived_vintage or config_vintage
+        if derived_vintage and derived_vintage != config_vintage and config_vintage:
+            logger.info(
+                f"  vintage_scenes: derived from parsed JSON ({len(derived_vintage)} scenes)"
+            )
+
         if args.dry_run:
             dry_run_daw(tag, stem_plans, entries_index, output_dir, stems_dir,
-                        sfx_config=sfx_config, cast_config=config)
+                        sfx_config=sfx_config, cast_config=config,
+                        vintage_scenes=resolved_vintage)
             if args.timeline or args.timeline_html:
                 total_ms, timeline = build_foreground_timeline_only(
                     stem_plans, gap_ms=args.gap_ms

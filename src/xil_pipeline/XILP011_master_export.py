@@ -151,6 +151,7 @@ def main() -> None:
         p = derive_paths(slug, tag)
         daw_dir = args.daw_dir or p["daw"]
         cast_path = p["cast"]
+        parsed_path = p["parsed"]
         show_name = None
         episode_title = None
         artist = None
@@ -160,6 +161,17 @@ def main() -> None:
             show_name = cast_cfg.show
             episode_title = cast_cfg.title
             artist = cast_cfg.artist
+
+        # Fallback: fill missing ID3 fields from parsed JSON script header
+        if (show_name is None or episode_title is None) and os.path.exists(parsed_path):
+            with open(parsed_path, encoding="utf-8") as f:
+                parsed = json.load(f)
+            if show_name is None:
+                show_name = parsed.get("show")
+            if episode_title is None:
+                episode_title = parsed.get("title")
+            if show_name or episode_title:
+                logger.info("  Metadata sourced from parsed JSON (cast config fields absent)")
 
         show_name = show_name or "Sample Show"
         today = datetime.date.today().isoformat()
