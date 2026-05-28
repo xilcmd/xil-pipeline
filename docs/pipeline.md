@@ -1203,30 +1203,29 @@ flowchart TD
     LOAD["`Load parsed JSON + cast config
     Build reverse mappings from XILP001
     Build SFX source lookup`"]
+    CAST_BLOCK["`CAST block
+    Emitted from cast config characters
+    Follows title line`"]
     FILTER["`Filter entries
-    Skip section_header entries
-    Skip PREAMBLE / POSTAMBLE sections`"]
+    seq >= 1 only`"]
     EMIT["`Emit markdown
-    section_header → ## HEADER
-    scene_header → ## SCENE N: ...
+    === + plain text per section_header
+    scene_header → plain text
     direction → [TEXT] or [TEXT | file.mp3]
-    dialogue → SPEAKER (dir) + text`"]
-    DIVIDER["`Insert === dividers
-    Before first entry after headers`"]
+    dialogue → SPEAKER (dir) + text
+    postamble section included`"]
 
     PARSED --> LOAD
     CAST --> LOAD
     SFX -.->|optional| LOAD
-    LOAD --> FILTER --> EMIT
-    EMIT --> DIVIDER
-    DIVIDER --> OUTPUT["`📄 scripts/revised_sample_S02E03.md
+    LOAD --> CAST_BLOCK --> FILTER --> EMIT
+    EMIT --> OUTPUT["`📄 scripts/revised_sample_S02E03.md
     Reconstructed production script`"]
 ```
 
 > **Round-trip verification:** Parse the regenerated script with XILP001 and compare
 > entry counts against the original parsed JSON. Dialogue and direction counts should
-> match exactly. XILP009 omits PREAMBLE and POSTAMBLE sections from the regenerated
-> script by design — those sections are authored in the script source and not reconstructed.
+> match exactly, including PREAMBLE and POSTAMBLE sections.
 >
 > **No API key required** — read-only transformation, no audio generated.
 
@@ -1380,9 +1379,60 @@ flowchart TD
 > Output path: `posts/{slug}/{tag}_posts.md`
 
 
+## 21. XILU014 — Episode Summary CSV
+
+Scans all `parsed_<tag>.json` files under the workspace `parsed/` directory and writes a one-row-per-episode summary CSV. Useful for tracking episode word counts, dialogue line counts, and TTS character spend across a season.
+
+```bash
+xil episode-summary                          # writes episode_summary.csv in workspace root
+xil episode-summary --output summary.csv     # custom output path
+xil episode-summary --show "THE 413"         # filter to one show
+xil episode-summary --stdout                 # write CSV to stdout (no banner)
+```
+
+### Output columns
+
+| Column | Source | Notes |
+|--------|--------|-------|
+| `show` | parsed JSON `show` | Show name (e.g. `THE 413`) |
+| `tag` | filename | Episode tag (e.g. `S03E02`) |
+| `season` | parsed JSON `season` | Integer season number |
+| `episode` | parsed JSON `episode` | Integer episode number |
+| `title` | parsed JSON `title` | Episode title |
+| `season_title` | parsed JSON `season_title` | Arc/season title |
+| `dialogue_lines` | parsed JSON `stats.dialogue_lines` | Total voiced lines |
+| `words` | counted from `entries` | Word count (dialogue entries only) |
+| `tts_chars` | parsed JSON `stats.characters_for_tts` | TTS character budget |
+
+### Data flow
+
+```mermaid
+flowchart TD
+    PARSED["`📂 parsed/{slug}/
+    parsed_<tag>.json (all episodes)`"]
+    COLLECT["`_collect_files()
+    Glob parsed_*.json recursively
+    Skip roundtrip_ and pre_splice_ prefixes`"]
+    BUILD["`build_summary()
+    Extract show / tag / season / episode
+    title / season_title / stats
+    Count words from dialogue entries`"]
+    SORT["`Sort by show → season → episode → tag`"]
+    CSV["`📊 episode_summary.csv
+    One row per episode`"]
+
+    PARSED --> COLLECT --> BUILD --> SORT --> CSV
+```
+
+> **`--show` filter** is case-insensitive. Use `--show "THE 413"` to limit output to one show when the workspace contains multiple shows.
+> **`--stdout`** suppresses the run banner — safe to pipe to other tools.
+> **No API key required** — reads local JSON files only.
+
+---
+
 ## Man Pages
 
-All 22 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
+All 23 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
 
 ### Accessing man pages
 

@@ -83,6 +83,7 @@ xil-db-profile        = "xil_pipeline.XILU010_db_profile:main"
 xil-sfx-csv           = "xil_pipeline.XILU011_sfx_csv:main"
 xil-parsed-csv        = "xil_pipeline.XILU012_parsed_csv:main"
 xil-sfx-hydrate       = "xil_pipeline.XILU013_sfx_hydrate:main"
+xil-episode-summary   = "xil_pipeline.XILU014_episode_summary:main"
 xil-init              = "xil_pipeline.xil_init:main"
 xil-gui               = "xil_pipeline.xil_gui:main"
 

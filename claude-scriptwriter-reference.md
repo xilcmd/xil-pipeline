@@ -231,12 +231,23 @@ The format is: `[TYPE: DESCRIPTION | filename.mp3]`
 - The filename after the pipe tells the operator which file from `SFX/` to assign as the `source`
 - If no matching asset exists, omit the pipe and filename — it will be generated via API
 
-### How to find matching assets
+### How to find matching assets — VERBATIM FILENAMES ONLY
 
-Check the companion **SFX inventory JSON file** for assets. Search by:
-- **Filename**: look for keywords in the filename (e.g., "coffee", "door", "ambience")
-- **Title** (ID3 tag): the effect key stored in the file metadata
-- **Category prefixes**: `sfx_` or `sfx-` (one-shot effects), `ambience_` or `amb-` (environments), `music_` or `mus-` (musical cues), `beat` (silences/transitions)
+**⛔ Never construct or guess a filename.** Even an obvious-seeming name like
+`sfx_radio-static-click-off.mp3` may be wrong — the real file is `sfx_radio-click-off.mp3`.
+Invented filenames cause production failures ("SFX source file missing" errors).
+
+**Workflow — use this order:**
+1. Open **`sfx_pipe_hints.md`** (included in this kit) and search for the sound you need.
+   Each line is a ready-to-paste pipe-hint: `[DIRECTION TEXT | filename.mp3]`
+2. Copy the matching line **verbatim** — both the direction text and the filename. Do not paraphrase.
+3. If no match in `sfx_pipe_hints.md`: check `sfx_inventory.json` by searching the
+   `filename` and `prompt` fields for keywords.
+4. If still no match: write the direction **without a pipe-hint**. Mark the asset as `(NEW)` in
+   the cues sheet. **Do NOT guess at a filename.**
+
+**`sfx_pipe_hints.md` is the primary reference.** Use the JSON only for untitled assets
+(those that appear in the "Untitled Assets" section of the cheatsheet).
 
 ### When to reuse vs. generate new
 

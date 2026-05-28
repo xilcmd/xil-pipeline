@@ -128,6 +128,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(after parse, before produce)",
     ),
+    "episode-summary": CommandSpec(
+        "xil_pipeline.XILU014_episode_summary",
+        "write one-row-per-episode summary CSV (lines, words, TTS chars)",
+        _UTILITY,
+        "(any time)",
+    ),
 }
 """Subcommand registry. Insertion order defines display order within each group."""
 

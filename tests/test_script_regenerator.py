@@ -112,21 +112,23 @@ class TestSpeakerDisplayName:
 class TestRegenerateScript:
     def test_header_line(self, minimal_parsed):
         result = regenerate_script(minimal_parsed)
-        assert '# THE 413 Season 2: Episode 3: "The Bridge" Arc: "The Letters"' in result
+        # No markup — plain text header, no leading #
+        assert 'THE 413 Season 2: Episode 3: "The Bridge" Arc: "The Letters"' in result
+        assert '# THE 413' not in result
 
     def test_section_header(self, minimal_parsed):
         result = regenerate_script(minimal_parsed)
-        assert "## COLD OPEN" in result
+        # Section header is plain text, not a markdown heading
+        assert "COLD OPEN" in result
+        assert "## COLD OPEN" not in result
 
-    def test_divider_after_header(self, minimal_parsed):
+    def test_divider_before_header(self, minimal_parsed):
         result = regenerate_script(minimal_parsed)
         lines = result.split("\n")
-        # Find the section header, then expect === before first direction
-        header_idx = next(i for i, l in enumerate(lines) if "## COLD OPEN" in l)
-        remaining = lines[header_idx + 1:]
-        # Skip blank lines, find ===
-        non_blank = [l for l in remaining if l.strip()]
-        assert non_blank[0] == "==="
+        # Find COLD OPEN, then verify === immediately precedes it
+        header_idx = next(i for i, l in enumerate(lines) if l.strip() == "COLD OPEN")
+        preceding_non_blank = [l for l in lines[:header_idx] if l.strip()]
+        assert preceding_non_blank[-1] == "==="
 
     def test_direction_in_brackets(self, minimal_parsed):
         result = regenerate_script(minimal_parsed)
@@ -164,10 +166,20 @@ class TestRegenerateScript:
         result = regenerate_script(minimal_parsed)
         assert "Berkshire Talking Chronicle" not in result
 
-    def test_postamble_excluded(self, minimal_parsed):
-        """Postamble entries should not appear in output."""
+    def test_postamble_included(self, minimal_parsed):
+        """Postamble is a first-class script section — must appear in output."""
         minimal_parsed["entries"].append({
             "seq": 100,
+            "type": "section_header",
+            "section": "postamble",
+            "scene": None,
+            "speaker": None,
+            "direction": None,
+            "text": "POSTAMBLE",
+            "direction_type": None,
+        })
+        minimal_parsed["entries"].append({
+            "seq": 101,
             "type": "dialogue",
             "section": "postamble",
             "scene": None,
@@ -177,10 +189,11 @@ class TestRegenerateScript:
             "direction_type": None,
         })
         result = regenerate_script(minimal_parsed)
-        assert "Thank you for listening" not in result
+        assert "Thank you for listening." in result
+        assert "POSTAMBLE" in result
 
     def test_scene_header(self):
-        """Scene headers should produce ## lines."""
+        """Scene headers are plain text within a section — no ## prefix, no === divider."""
         parsed = {
             "show": "THE 413",
             "season": 1,
@@ -221,8 +234,48 @@ class TestRegenerateScript:
             "stats": {"dialogue_lines": 1, "total_entries": 3},
         }
         result = regenerate_script(parsed)
-        assert "## ACT ONE" in result
-        assert "## SCENE 1: MORRISON'S DINER" in result
+        # Section header: plain text, no ##
+        assert "ACT ONE" in result
+        assert "## ACT ONE" not in result
+        # Scene header: plain text, no ##
+        assert "SCENE 1: MORRISON'S DINER" in result
+        assert "## SCENE 1: MORRISON'S DINER" not in result
+        # === appears only once (before ACT ONE), not before the scene header
+        assert result.count("===") == 1
+
+    def test_cast_block(self):
+        """CAST block is emitted when cast config has a characters dict."""
+        parsed = {
+            "show": "THE 413",
+            "season": 1,
+            "episode": 1,
+            "title": "Test",
+            "entries": [],
+            "stats": {"dialogue_lines": 0, "total_entries": 0},
+        }
+        cast = {
+            "cast": {
+                "adam": {"full_name": "Adam", "role": "Host, late-night radio DJ"},
+                "dez": {"full_name": "Dez", "role": "Adam's sister"},
+            }
+        }
+        result = regenerate_script(parsed, cast=cast)
+        assert "CAST:" in result
+        assert "* Adam — Host, late-night radio DJ" in result
+        assert "* Dez — Adam's sister" in result
+
+    def test_no_cast_block_without_cast(self):
+        """CAST block is omitted when no cast config is provided."""
+        parsed = {
+            "show": "THE 413",
+            "season": 1,
+            "episode": 1,
+            "title": "Test",
+            "entries": [],
+            "stats": {"dialogue_lines": 0, "total_entries": 0},
+        }
+        result = regenerate_script(parsed)
+        assert "CAST:" not in result
 
     def test_no_season(self):
         """Script without season should omit 'Season N:' from header."""

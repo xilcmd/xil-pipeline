@@ -88,8 +88,31 @@ def _find_episodes() -> list[tuple[str, str]]:
     return results
 
 
+def _ep_meta(slug: str, tag: str) -> tuple[str, str]:
+    """Return (title, season_title) from the cast config, or ('', '') if not found."""
+    root = str(get_workspace_root())
+    for path in [
+        os.path.join(root, "configs", slug, f"cast_{tag}.json"),
+        os.path.join(root, f"cast_{slug}_{tag}.json"),
+    ]:
+        if os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                return data.get("title", ""), data.get("season_title", "")
+            except Exception:
+                pass
+    return "", ""
+
+
 def _ep_choice(slug: str, tag: str) -> str:
-    return f"{slug}  {tag}"
+    title, season_title = _ep_meta(slug, tag)
+    label = f"{slug}  {tag}"
+    if season_title:
+        label += f"  [{season_title}]"
+    if title:
+        label += f"  —  {title}"
+    return label
 
 
 def _episode_choices() -> list[str]:
@@ -192,7 +215,11 @@ def _refresh_episodes() -> list[list[str]]:
     rows = []
     for slug, tag in _find_episodes():
         st = _stage_status(slug, tag)
-        rows.append([tag, slug, st["parse"], st["produce"], st["daw"], st["master"]])
+        title, season_title = _ep_meta(slug, tag)
+        desc = title
+        if season_title:
+            desc = f"[{season_title}]  —  {title}" if title else f"[{season_title}]"
+        rows.append([tag, slug, desc, st["parse"], st["produce"], st["daw"], st["master"]])
     return rows
 
 
@@ -818,7 +845,7 @@ def _build_app():
             # ── Tab 4: Episodes ─────────────────────────────────────
             with gr.Tab("Episodes"):
                 ep_table = gr.Dataframe(
-                    headers=["Tag", "Slug", "Parse", "Stems", "DAW", "Master"],
+                    headers=["Tag", "Slug", "Title  [Arc]", "Parse", "Stems", "DAW", "Master"],
                     value=_refresh_episodes(),
                     interactive=False,
                     wrap=True,

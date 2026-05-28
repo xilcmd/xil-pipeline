@@ -118,8 +118,8 @@ def regenerate_script(
 
     lines: list[str] = []
 
-    # Header line
-    header = f"# {show}"
+    # Header line (no markup — parser spec requires plain text)
+    header = f"{show}"
     if season is not None:
         header += f" Season {season}:"
     header += f" Episode {episode}:"
@@ -130,13 +130,20 @@ def regenerate_script(
     lines.append(header)
     lines.append("")
 
+    # CAST block — cast config stores characters under the "cast" key
+    characters = cast.get("cast") if cast else None
+    if characters:
+        lines.append("CAST:")
+        for _key, char in characters.items():
+            display = char.get("full_name") or _key.upper()
+            role = (char.get("role") or "").split("\n")[0]  # first line only
+            lines.append(f"* {display} — {role}")
+        lines.append("")
+
     entries = parsed.get("entries", [])
 
-    # Filter out preamble/postamble (injected by XILP002, not in original script)
-    entries = [e for e in entries if e.get("seq", 0) >= 1
-               and e.get("section") != "postamble"]
-
-    after_header = False
+    # Exclude seq-0 synthetic entries (injected preamble stems from XILP002 old format)
+    entries = [e for e in entries if e.get("seq", 0) >= 1]
 
     for entry in entries:
         entry_type = entry.get("type")
@@ -145,24 +152,16 @@ def regenerate_script(
         direction = entry.get("direction")
 
         if entry_type == "section_header":
+            lines.append("===")
             lines.append("")
-            lines.append(f"## {text}")
+            lines.append(text)
             lines.append("")
-            after_header = True
             continue
 
         if entry_type == "scene_header":
+            lines.append(text)
             lines.append("")
-            lines.append(f"## {text}")
-            lines.append("")
-            after_header = True
             continue
-
-        # Insert === divider before the first direction/dialogue after a header
-        if after_header and entry_type in ("direction", "dialogue"):
-            lines.append("===")
-            lines.append("")
-            after_header = False
 
         if entry_type == "direction":
             hint = sfx_lookup.get(text)

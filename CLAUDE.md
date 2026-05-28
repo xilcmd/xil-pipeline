@@ -11,7 +11,7 @@ Automated, show-agnostic podcast/audio production pipeline using ElevenLabs TTS 
 The project is packaged as `xil-pipeline` (import name `xil_pipeline`) using hatchling. All pipeline and utility scripts live under `src/xil_pipeline/`:
 
 ```
-src/xil_pipeline/          # Python package (24 modules)
+src/xil_pipeline/          # Python package (37 modules)
   __init__.py              # version + key re-exports
   xil.py                   # Unified `xil` command dispatcher
   models.py                # Pydantic data models, slug/path resolution
@@ -20,7 +20,7 @@ src/xil_pipeline/          # Python package (24 modules)
   timeline_viz.py          # Timeline visualization
   xil_init.py              # Project scaffolding (xil-init command, --type aware)
   XILP000_*.py … XILP012_*.py   # Pipeline stages
-  XILU001_*.py … XILU009_*.py   # Utility scripts
+  XILU001_*.py … XILU014_*.py   # Utility scripts
 tests/                     # Pytest test suite
 docs/                      # MkDocs documentation
 pyproject.toml             # Packaging config (hatchling)
@@ -480,6 +480,11 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILU007_*` — MP3 hash utility (compute SHA256 checksums for stem files)
 - `XILU008_*` — stem log report (parse daily logs → chronological stem generation CSV with backend/model/hash)
 - `XILU009_*` — workspace migration tool (move pre-0.1.8 legacy layout to normalized `configs/`/`parsed/`/`daw/` structure)
+- `XILU010_*` — MP3 loudness profiler (peak, average, and minimum dBFS per stem or directory)
+- `XILU011_*` — SFX config CSV flattener (sfx_<tag>.json → one-row-per-effect CSV for audit/debug)
+- `XILU012_*` — parsed JSON CSV exporter (parsed_<tag>.json → one-row-per-entry CSV for audit/debug)
+- `XILU013_*` — SFX config hydrator (writes pipe-hint `source` fields from parsed JSON into the SFX config)
+- `XILU014_*` — episode summary CSV generator (scans all parsed JSONs → one-row-per-episode CSV with dialogue_lines, words, tts_chars)
 - `xil_gui.py` — Gradio web dashboard (`xil-gui` entry point); requires `[gui]` extra; five tabs: Episodes, Audio Preview, Run Stage, Setup (with content type selector), Timeline
 - `XILP001_*` — script parser
 - `XILP002_*` — voice generation (ElevenLabs TTS)
@@ -736,7 +741,7 @@ xil migrate-workspace --dry-run    # preview what would move
 xil migrate-workspace              # execute moves
 ```
 
-- **Episodes tab**: workspace overview — all detected episodes with parse/stems/DAW/master status
+- **Episodes tab**: workspace overview — all detected episodes with parse/stems/DAW/master status; episode dropdowns show `[Arc]  —  Title` next to the tag (read from cast config); Episodes table has a `Title [Arc]` column
 - **Audio Preview tab**: episode + filter selector (all/dialogue/sfx/music/ambience), stem dropdown, in-browser MP3 playback via `gr.Audio`; stem labels enriched from parsed JSON when available
 - **Run Stage tab**: select episode + stage (assemble/daw/master/produce/parse), dry-run checkbox (default on), extra flags field; live stdout streaming via generator + `demo.queue()`
 - **Timeline tab**: embeds the `daw/{TAG}/{TAG}_timeline.html` iframe if generated; prompts `xil daw --timeline-html` when absent
@@ -791,7 +796,7 @@ pytest tests/ -v
 
 ## Man Pages
 
-Unix man pages for all 21 CLI commands are pre-generated and committed to `man/man1/`. They are installed automatically when the package is built into a wheel and installed via pip.
+Unix man pages for all 23 CLI commands are pre-generated and committed to `man/man1/`. They are installed automatically when the package is built into a wheel and installed via pip.
 
 **Regenerating after CLI changes** (run whenever flags or descriptions change):
 

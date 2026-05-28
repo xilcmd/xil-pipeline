@@ -290,15 +290,106 @@ def print_compact_api(rec: dict) -> None:
 # Export kit — markdown reference + JSON inventory for Claude projects
 # ---------------------------------------------------------------------------
 
-def export_kit(records: list[dict], output_dir: str = ".") -> tuple[str, str]:
-    """Generate an SFX inventory JSON and copy the scriptwriter reference doc.
+def _write_pipe_hints_md(records: list[dict], output_dir: str) -> str:
+    """Generate a pipe-hint cheatsheet from titled inventory assets.
+
+    Each titled asset is emitted as a ready-to-paste script direction:
+    ``[TITLE | filename.mp3]``
+
+    Untitled assets are listed by filename in an appendix so they are
+    discoverable even without a direction-text mapping.
+
+    Returns the path of the written file.
+    """
+    import datetime
+
+    def _category(filename: str) -> str:
+        fl = filename.lower()
+        if fl.startswith(("ambience_", "amb-", "amb_")) or fl.startswith("amb"):
+            # Narrow: only AMB-prefixed short-code names (e.g. AMBGras-, AMBRoom-)
+            if fl[:3] == "amb":
+                return "AMBIENCE"
+        if fl.startswith(("ambience_",)):
+            return "AMBIENCE"
+        if fl.startswith(("music_", "mus-", "mus_")):
+            return "MUSIC"
+        if fl.startswith("beat"):
+            return "BEAT"
+        return "SFX"
+
+    # Re-implement with simpler prefix logic
+    def _cat(fn: str) -> str:
+        f = fn.lower()
+        if f.startswith("ambience_") or f.startswith("amb-") or f.startswith("amb_"):
+            return "AMBIENCE"
+        # ElevenLabs short-code ambience files: AMBxxx-
+        if f.startswith("amb") and len(f) > 3 and f[3].isalpha():
+            return "AMBIENCE"
+        if f.startswith("music_") or f.startswith("mus-") or f.startswith("mus_"):
+            return "MUSIC"
+        # ElevenLabs short-code music files: MUSxxx- or MUSICxxx-
+        if f.startswith("mus") and len(f) > 3 and f[3].isalpha():
+            return "MUSIC"
+        if f.startswith("beat"):
+            return "BEAT"
+        return "SFX"
+
+    buckets: dict[str, list[str]] = {"AMBIENCE": [], "MUSIC": [], "SFX": [], "BEAT": []}
+    untitled: list[str] = []
+
+    for rec in records:
+        fn = rec.get("filename", "")
+        title = (rec.get("title") or "").strip()
+        cat = _cat(fn)
+        if title:
+            buckets[cat].append(f"[{title} | {fn}]")
+        else:
+            untitled.append(fn)
+
+    for lines in buckets.values():
+        lines.sort()
+    untitled.sort()
+
+    today = datetime.date.today().isoformat()
+    titled_total = sum(len(v) for v in buckets.values())
+    lines_out: list[str] = [
+        "# SFX Pipe-Hint Cheatsheet",
+        f"# Generated {today} from {len(records)} assets ({titled_total} titled)",
+        "# Copy lines verbatim into script directions — do NOT modify the filename.",
+        "# If a sound you need is not listed here, omit the pipe-hint entirely.",
+        "",
+    ]
+
+    for cat in ("AMBIENCE", "MUSIC", "SFX", "BEAT"):
+        entries = buckets[cat]
+        lines_out.append(f"## {cat} ({len(entries)} titled)")
+        lines_out.append("")
+        lines_out.extend(entries)
+        lines_out.append("")
+
+    if untitled:
+        lines_out.append(f"## Untitled Assets — filename only ({len(untitled)} assets)")
+        lines_out.append("# These have no direction-text title tag.")
+        lines_out.append("# Match by filename keyword; use as bare source reference.")
+        lines_out.append("")
+        lines_out.extend(untitled)
+        lines_out.append("")
+
+    hints_path = os.path.join(output_dir, "sfx_pipe_hints.md")
+    with open(hints_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines_out))
+    return hints_path
+
+
+def export_kit(records: list[dict], output_dir: str = ".") -> tuple[str, str, str]:
+    """Generate SFX inventory JSON, pipe-hint cheatsheet, and copy the reference doc.
 
     Args:
         records: Local SFX records from ``fetch_local_records()``.
         output_dir: Directory to write output files into.
 
     Returns:
-        Tuple of (json_path, markdown_path).
+        Tuple of (json_path, hints_path, markdown_path).
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -307,6 +398,9 @@ def export_kit(records: list[dict], output_dir: str = ".") -> tuple[str, str]:
     with open(json_path, "w", encoding="utf-8") as f:
         _json.dump(records, f, indent=2)
         f.write("\n")
+
+    # Write pipe-hint cheatsheet
+    hints_path = _write_pipe_hints_md(records, output_dir)
 
     # Copy the scriptwriter reference doc
     ref_src = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "claude-scriptwriter-reference.md")
@@ -333,7 +427,7 @@ def export_kit(records: list[dict], output_dir: str = ".") -> tuple[str, str]:
             logger.warning(f"Reference doc not found at {ref_src} or {cwd_ref}")
             md_path = ""
 
-    return json_path, md_path
+    return json_path, hints_path, md_path
 
 
 # ---------------------------------------------------------------------------
@@ -444,13 +538,14 @@ def main() -> None:
 
         # --- Export kit ---
         if args.export_kit is not None:
-            json_path, md_path = export_kit(records, args.export_kit)
+            json_path, hints_path, md_path = export_kit(records, args.export_kit)
             logger.info(f"\n--- Export kit ({len(records)} assets) ---\n")
             logger.info(f"  JSON inventory : {json_path}")
+            logger.info(f"  Pipe-hint cheatsheet : {hints_path}")
             if md_path:
                 logger.info(f"  Reference doc  : {md_path}")
             logger.info("")
-            logger.info("  Attach both files to your Claude project as knowledge files.")
+            logger.info("  Attach all three files to your Claude project as knowledge files.")
             return
 
         # --- Output ---
