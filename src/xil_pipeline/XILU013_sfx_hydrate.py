@@ -13,7 +13,7 @@ end of ``xil parse`` when the SFX config already exists.  Use it after adding
 pipe-hints to an existing script and re-parsing, or to apply hints from a
 ``xil regen --sfx`` output without touching the original parsed JSON.
 
-Usage:
+**Usage:**
 
 ```bash
 xil sfx-hydrate --episode S04E04

@@ -15,7 +15,7 @@ Each output row combines::
 Missing optional fields are left blank.  Useful for spotting misconfigured
 effects, auditing prompt coverage, or importing into a spreadsheet.
 
-Usage:
+**Usage:**
 
 ```bash
 xil sfx-csv                                  # all sfx configs in workspace

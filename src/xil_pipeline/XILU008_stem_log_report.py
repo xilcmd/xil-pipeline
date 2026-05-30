@@ -8,7 +8,7 @@ Parses daily ``logs/xil_YYYY-MM-DD.log`` files and produces a CSV
 chronology of every dialogue MP3 stem that was generated, including
 its backend, SHA-256 hash, and approximate creation context.
 
-Usage:
+**Usage:**
 
 ```bash
 xil-stem-log                              # scan logs/ in CWD → stem_log_report.csv

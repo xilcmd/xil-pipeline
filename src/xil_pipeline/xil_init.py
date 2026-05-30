@@ -8,7 +8,7 @@ Creates the directory structure, project.json, speakers.json, and a
 type-specific sample production script so a first-time user can immediately
 run the pipeline stages in dry-run mode.
 
-Usage:
+**Usage:**
 
 ```bash
 xil-init                              # scaffold in current directory

@@ -11,7 +11,7 @@ Walks a directory tree, finds every *.mp3 file, and prints one line per file:
 Useful for verifying stem integrity before/after migrations, detecting duplicates
 in the shared SFX library, and producing a manifest that can be diffed over time.
 
-Usage:
+**Usage:**
 
 ```bash
 xil mp3-hash                          # scan current directory

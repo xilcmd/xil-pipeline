@@ -17,7 +17,7 @@ Two data sources are supported:
    stored in the USLT lyrics tag, duration, file size, bit-rate.  Works
    with no API key required.
 
-Usage:
+**Usage:**
 
 ```bash
 python XILU005_discover_SFX.py                  # local scan (default)

@@ -7,7 +7,7 @@
 A browser-based GUI that supplements the CLI for visual oversight,
 audio preview, and sharing episode review with collaborators.
 
-Usage:
+**Usage:**
 
 ```bash
 xil-gui                    # opens http://localhost:7860

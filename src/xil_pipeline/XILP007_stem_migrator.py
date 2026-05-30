@@ -10,7 +10,7 @@ seq-numbered filenames, and reports which entries need fresh TTS/SFX
 generation.  Run XILP002 afterwards — it skips stems that already exist
 on disk, so only the gaps get generated.
 
-Usage:
+**Usage:**
 
 ```bash
 python XILP007_stem_migrator.py --episode S02E03 [--dry-run] [--strict]

@@ -12,7 +12,7 @@ one sample MP3 per assigned voice. Each sample says:
 Outputs to ``voice_samples/<TAG>/<backend>/<actor>.mp3`` so samples from
 different backends sit side-by-side for direct comparison.
 
-Usage:
+**Usage:**
 
 ```bash
 xil-sample --episode S02E03 --dry-run

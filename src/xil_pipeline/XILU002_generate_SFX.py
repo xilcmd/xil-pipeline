@@ -13,7 +13,7 @@ Shared SFX assets are cached in the ``SFX/`` directory so that each
 unique effect is only generated once.  Episode stems are copies of the
 shared assets with sequence-numbered filenames.
 
-Usage:
+**Usage:**
 
 ```bash
 # Preview what will be generated and estimated cost

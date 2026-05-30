@@ -15,7 +15,7 @@ Post variants per episode:
 
 Output: ``posts/{slug}/{tag}_posts.md``
 
-Usage:
+**Usage:**
 
 ```bash
 xil publish --episode S04E01 --dry-run

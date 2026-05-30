@@ -9,7 +9,7 @@ After running XILP007 (stem migrator), the stems directory may contain
 files whose seq numbers now map to a different entry type in the current
 parsed JSON.  This script finds those mismatches and deletes them.
 
-Usage:
+**Usage:**
 
 ```bash
 python XILP008_stale_stem_cleanup.py --episode S02E03 --dry-run

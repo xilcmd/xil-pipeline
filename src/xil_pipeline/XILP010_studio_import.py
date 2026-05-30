@@ -13,7 +13,7 @@ directions), sequentially numbered as ``NNN_Chapter N.mp3``.  Dialogue
 entries are always extracted.  Direction entries (SFX, MUSIC, BEAT) can be
 included with ``--gen-sfx``, ``--gen-music``, ``--gen-beats``, or ``--all``.
 
-Usage:
+**Usage:**
 
 ```bash
 python XILP010_studio_import.py --episode S02E02 \\

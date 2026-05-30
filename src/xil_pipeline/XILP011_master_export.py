@@ -12,7 +12,7 @@ Output format:
     - VBR MP3, quality target 145–185 kbps (LAME VBR quality ~2)
     - Filename: ``S01E01_<slug>_YYYY-MM-DD.mp3``
 
-Usage:
+**Usage:**
 
 ```bash
 python XILP011_master_export.py --episode S02E03 --dry-run

@@ -9,7 +9,7 @@ Lists all voices returned by the API with enriched metadata drawn from
 by the SDK.  Useful for finding voice IDs and assessing voice suitability
 before configuring cast files.
 
-Usage:
+**Usage:**
 
 ```bash
 python XILU001_discover_voices_T2S.py

@@ -14,7 +14,7 @@ manifest, audits the shared SFX library, and optionally:
 Pipeline position: after XILP001 (script parse), before XILU002/XILP002
 (SFX stem generation).
 
-Usage:
+**Usage:**
 
 ```bash
 # Audit only — show library status, what needs generating, write manifest

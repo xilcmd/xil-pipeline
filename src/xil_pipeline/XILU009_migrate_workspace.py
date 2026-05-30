@@ -20,7 +20,7 @@ Old (flat) layout::
 
 ``stems/{slug}/{tag}/`` is already normalized — no move needed.
 
-Usage:
+**Usage:**
 
 ```bash
 xil migrate-workspace --dry-run    # preview what would move

@@ -23,7 +23,7 @@ An Audacity import helper script is also generated at::
 Run it to print the file paths and manual import instructions; if
 Audacity's mod-script-pipe is enabled it will attempt automation.
 
-Usage:
+**Usage:**
 
 ```bash
 python XILP005_daw_export.py --episode S01E02 --dry-run

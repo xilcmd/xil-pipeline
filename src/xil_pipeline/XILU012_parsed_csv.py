@@ -17,7 +17,7 @@ Text is truncated at 200 characters to match the XILP001 debug output.
 stdout is clean CSV (no banner) when no --output file is specified, so the
 output is safe to pipe directly to csvkit, jq (via --json), etc.
 
-Usage:
+**Usage:**
 
 ```bash
 xil parsed-csv                                       # all parsed JSONs in workspace

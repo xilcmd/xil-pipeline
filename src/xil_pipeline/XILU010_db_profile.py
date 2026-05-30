@@ -12,7 +12,7 @@ Loads each MP3 with pydub and reports three measurements per file::
 
 dBFS values are always ≤ 0.0; 0.0 means full-scale clipping, −60 is quiet.
 
-Usage:
+**Usage:**
 
 ```bash
 xil db-profile                          # scan workspace SFX/ folder
