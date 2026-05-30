@@ -13,11 +13,13 @@ After splicing, run ``XILP007_stem_migrator.py`` with ``--orig-prefix pre_splice
 to migrate stems to the new seq numbers, then ``XILP002_producer.py`` to generate
 TTS for the newly inserted entries.
 
-Usage::
+Usage:
 
-    python XILU006_splice_parsed.py --episode S02E03 --insert-after 322 \\
-        --from-parsed parsed/parsed_<slug>_S02E02.json --from-seq-range 232-233 \\
-        --section post-interview --dry-run
+```bash
+python XILU006_splice_parsed.py --episode S02E03 --insert-after 322 \\
+    --from-parsed parsed/parsed_<slug>_S02E02.json --from-seq-range 232-233 \\
+    --section post-interview --dry-run
+```
 
     python XILU006_splice_parsed.py --episode S02E03 --delete-seq-range 100-105
 

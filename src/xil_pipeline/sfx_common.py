@@ -45,11 +45,13 @@ _BAR = "=" * 70
 def run_banner(script_name: str | None = None):
     """Context manager that prints a start header and end trailer.
 
-    Usage::
+    Usage:
 
-        def main():
-            with run_banner():
-                ...  # all application logic
+```bash
+def main():
+    with run_banner():
+        ...  # all application logic
+```
 
     Args:
         script_name: Override the script name shown in the banner.

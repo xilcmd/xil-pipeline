@@ -8,15 +8,17 @@ Creates the directory structure, project.json, speakers.json, and a
 type-specific sample production script so a first-time user can immediately
 run the pipeline stages in dry-run mode.
 
-Usage::
+Usage:
 
-    xil-init                              # scaffold in current directory
-    xil-init my-show                      # scaffold in ./my-show/
-    xil-init --show "Night Owls"          # custom show name
-    xil-init --type podcast               # podcast (default)
-    xil-init --type audiobook             # audiobook (V01C01 tags)
-    xil-init --type drama                 # drama short / audio drama
-    xil-init --type special               # special / one-off
+```bash
+xil-init                              # scaffold in current directory
+xil-init my-show                      # scaffold in ./my-show/
+xil-init --show "Night Owls"          # custom show name
+xil-init --type podcast               # podcast (default)
+xil-init --type audiobook             # audiobook (V01C01 tags)
+xil-init --type drama                 # drama short / audio drama
+xil-init --type special               # special / one-off
+```
 """
 
 import argparse

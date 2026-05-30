@@ -13,12 +13,14 @@ end of ``xil parse`` when the SFX config already exists.  Use it after adding
 pipe-hints to an existing script and re-parsing, or to apply hints from a
 ``xil regen --sfx`` output without touching the original parsed JSON.
 
-Usage::
+Usage:
 
-    xil sfx-hydrate --episode S04E04
-    xil sfx-hydrate --episode S04E04 --parsed parsed/the413/parsed_the413_S04E04.json
-    xil sfx-hydrate --episode S04E04 --sfx configs/the413/sfx_S04E04.json
-    xil sfx-hydrate --episode S04E04 --dry-run
+```bash
+xil sfx-hydrate --episode S04E04
+xil sfx-hydrate --episode S04E04 --parsed parsed/the413/parsed_the413_S04E04.json
+xil sfx-hydrate --episode S04E04 --sfx configs/the413/sfx_S04E04.json
+xil sfx-hydrate --episode S04E04 --dry-run
+```
 """
 
 import argparse

@@ -13,10 +13,12 @@ Shared SFX assets are cached in the ``SFX/`` directory so that each
 unique effect is only generated once.  Episode stems are copies of the
 shared assets with sequence-numbered filenames.
 
-Usage::
+Usage:
 
-    # Preview what will be generated and estimated cost
-    python XILU002_generate_SFX.py --episode S01E01 --dry-run
+```bash
+# Preview what will be generated and estimated cost
+python XILU002_generate_SFX.py --episode S01E01 --dry-run
+```
 
     # Generate only short effects (≤5s) to limit credit usage
     python XILU002_generate_SFX.py --episode S01E01 --max-duration 5.0

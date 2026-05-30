@@ -8,10 +8,12 @@ Reads a parsed episode CSV, joins it with the SFX JSON (keyed on direction
 text) and the cast JSON (keyed on speaker), then writes an annotated output
 CSV with SFX and cast configuration columns appended.
 
-Usage::
+Usage:
 
-    python XILU003_csv_sfx_join.py --episode S02E03
-    python XILU003_csv_sfx_join.py --episode S02E03 --output my_review.csv
+```bash
+python XILU003_csv_sfx_join.py --episode S02E03
+python XILU003_csv_sfx_join.py --episode S02E03 --output my_review.csv
+```
 """
 
 import argparse

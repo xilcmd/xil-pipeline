@@ -13,14 +13,16 @@ directions), sequentially numbered as ``NNN_Chapter N.mp3``.  Dialogue
 entries are always extracted.  Direction entries (SFX, MUSIC, BEAT) can be
 included with ``--gen-sfx``, ``--gen-music``, ``--gen-beats``, or ``--all``.
 
-Usage::
+Usage:
 
-    python XILP010_studio_import.py --episode S02E02 \\
-        --zip "ElevenLabs_exports/export.zip" --dry-run
-    python XILP010_studio_import.py --episode S02E02 \\
-        --zip "ElevenLabs_exports/export.zip" --gen-sfx --gen-music --gen-beats
-    python XILP010_studio_import.py --episode S02E02 --zip "..." --all
-    python XILP010_studio_import.py --episode S02E02 --zip "..." --force
+```bash
+python XILP010_studio_import.py --episode S02E02 \\
+    --zip "ElevenLabs_exports/export.zip" --dry-run
+python XILP010_studio_import.py --episode S02E02 \\
+    --zip "ElevenLabs_exports/export.zip" --gen-sfx --gen-music --gen-beats
+python XILP010_studio_import.py --episode S02E02 --zip "..." --all
+python XILP010_studio_import.py --episode S02E02 --zip "..." --force
+```
 """
 
 import argparse

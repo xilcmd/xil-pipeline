@@ -12,10 +12,12 @@ machine runs.
 Use this to catch missing KNOWN_SPEAKERS or SECTION_MAP entries before they
 cause silent failures in XILP001.
 
-Usage::
+Usage:
 
-    python XILP000_script_scanner.py "scripts/<script>.md"
-    python XILP000_script_scanner.py "scripts/<script>.md" --json
+```bash
+python XILP000_script_scanner.py "scripts/<script>.md"
+python XILP000_script_scanner.py "scripts/<script>.md" --json
+```
 """
 
 import argparse

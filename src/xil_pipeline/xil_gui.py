@@ -8,11 +8,14 @@ A browser-based GUI that supplements the CLI for visual oversight,
 audio preview, and sharing episode review with collaborators.
 
 Usage:
-    xil-gui                    # opens http://localhost:7860
-    xil-gui --port 8080        # custom port
-    xil-gui --share            # generate public URL for partner access (72h tunnel)
 
-Install the optional [gui] extra first:
+```bash
+xil-gui                    # opens http://localhost:7860
+xil-gui --port 8080        # custom port
+xil-gui --share            # generate public URL for partner access (72h tunnel)
+```
+
+Install the optional [gui] extra first::
     pip install 'xil-pipeline[gui]'
 """
 

@@ -8,11 +8,14 @@ Scans all parsed_<tag>.json files under <workspace>/parsed/ and writes a
 one-row-per-episode summary CSV with dialogue line count, word count, and
 TTS character count.
 
-Usage::
-    xil episode-summary                          # write episode_summary.csv in workspace root
-    xil episode-summary --output summary.csv     # custom output path
-    xil episode-summary --show "THE 413"         # filter to one show
-    xil episode-summary --stdout                 # write CSV to stdout (no banner)
+Usage:
+
+```bash
+xil episode-summary                          # write episode_summary.csv in workspace root
+xil episode-summary --output summary.csv     # custom output path
+xil episode-summary --show "THE 413"         # filter to one show
+xil episode-summary --stdout                 # write CSV to stdout (no banner)
+```
 """
 
 import argparse

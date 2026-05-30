@@ -4,7 +4,7 @@
 
 """Flatten sfx_<tag>.json configs to CSV — one row per effect entry.
 
-Each output row combines:
+Each output row combines::
   • Episode metadata  — show, season, episode, tag
   • Defaults          — all defaults.* fields, prefixed with ``default_``
   • Effect identity   — effect_key (the dict key used in the effects block)
@@ -16,11 +16,14 @@ Missing optional fields are left blank.  Useful for spotting misconfigured
 effects, auditing prompt coverage, or importing into a spreadsheet.
 
 Usage:
-    xil sfx-csv                                  # all sfx configs in workspace
-    xil sfx-csv configs/the413/sfx_S04E02.json   # single file
-    xil sfx-csv configs/the413/                  # all sfx_*.json in a dir
-    xil sfx-csv --output sfx_debug.csv           # write to file
-    xil sfx-csv --json                           # JSON array to stdout
+
+```bash
+xil sfx-csv                                  # all sfx configs in workspace
+xil sfx-csv configs/the413/sfx_S04E02.json   # single file
+xil sfx-csv configs/the413/                  # all sfx_*.json in a dir
+xil sfx-csv --output sfx_debug.csv           # write to file
+xil sfx-csv --json                           # JSON array to stdout
+```
 """
 
 import argparse

@@ -15,12 +15,14 @@ Post variants per episode:
 
 Output: ``posts/{slug}/{tag}_posts.md``
 
-Usage::
+Usage:
 
-    xil publish --episode S04E01 --dry-run
-    xil publish --episode S04E01
-    xil publish --all
-    xil publish --episode S04E01 --platform instagram
+```bash
+xil publish --episode S04E01 --dry-run
+xil publish --episode S04E01
+xil publish --all
+xil publish --episode S04E01 --platform instagram
+```
 """
 
 from __future__ import annotations

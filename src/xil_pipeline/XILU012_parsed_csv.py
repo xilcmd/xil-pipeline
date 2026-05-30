@@ -9,7 +9,7 @@ markdown-source columns (``md_line_num``, ``md_raw``) that are only available
 during a live parse run.  Use this to inspect, diff, or spreadsheet-import an
 already-parsed episode without re-running the parser.
 
-Output columns:
+Output columns::
     file, tag, show, season, episode, seq, type, section, scene,
     speaker, direction, direction_type, text
 
@@ -18,11 +18,14 @@ stdout is clean CSV (no banner) when no --output file is specified, so the
 output is safe to pipe directly to csvkit, jq (via --json), etc.
 
 Usage:
-    xil parsed-csv                                       # all parsed JSONs in workspace
-    xil parsed-csv parsed/the413/parsed_S04E02.json      # single episode
-    xil parsed-csv parsed/the413/                        # all in a show directory
-    xil parsed-csv --output debug.csv                    # write to file (with banner)
-    xil parsed-csv --json | jq '[.[] | select(.type=="direction")]'
+
+```bash
+xil parsed-csv                                       # all parsed JSONs in workspace
+xil parsed-csv parsed/the413/parsed_S04E02.json      # single episode
+xil parsed-csv parsed/the413/                        # all in a show directory
+xil parsed-csv --output debug.csv                    # write to file (with banner)
+xil parsed-csv --json | jq '[.[] | select(.type=="direction")]'
+```
 """
 
 import argparse

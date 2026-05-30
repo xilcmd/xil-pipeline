@@ -17,15 +17,17 @@ Two data sources are supported:
    stored in the USLT lyrics tag, duration, file size, bit-rate.  Works
    with no API key required.
 
-Usage::
+Usage:
 
-    python XILU005_discover_SFX.py                  # local scan (default)
-    python XILU005_discover_SFX.py --api             # attempt API (endpoint may not be public)
-    python XILU005_discover_SFX.py --local           # explicit local scan
-    python XILU005_discover_SFX.py --search "phone"
-    python XILU005_discover_SFX.py --verbose
-    python XILU005_discover_SFX.py --json
-    python XILU005_discover_SFX.py --sfx-dir SFX/   # override local scan directory
+```bash
+python XILU005_discover_SFX.py                  # local scan (default)
+python XILU005_discover_SFX.py --api             # attempt API (endpoint may not be public)
+python XILU005_discover_SFX.py --local           # explicit local scan
+python XILU005_discover_SFX.py --search "phone"
+python XILU005_discover_SFX.py --verbose
+python XILU005_discover_SFX.py --json
+python XILU005_discover_SFX.py --sfx-dir SFX/   # override local scan directory
+```
 """
 
 import argparse

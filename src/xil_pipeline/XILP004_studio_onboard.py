@@ -9,11 +9,13 @@ Reads a parsed script JSON and cast configuration, then builds the
 API.  Each dialogue line is tagged with the correct ``voice_id`` so that
 speaker names never appear in TTS text.
 
-Usage::
+Usage:
 
-    python XILP004_studio_onboard.py --episode S01E02 --dry-run
-    python XILP004_studio_onboard.py --episode S01E02
-    python XILP004_studio_onboard.py --episode S01E02 --quality high
+```bash
+python XILP004_studio_onboard.py --episode S01E02 --dry-run
+python XILP004_studio_onboard.py --episode S01E02
+python XILP004_studio_onboard.py --episode S01E02 --quality high
+```
 """
 
 import argparse

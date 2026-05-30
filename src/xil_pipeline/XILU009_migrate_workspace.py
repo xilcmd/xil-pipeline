@@ -20,10 +20,12 @@ Old (flat) layout::
 
 ``stems/{slug}/{tag}/`` is already normalized — no move needed.
 
-Usage::
+Usage:
 
-    xil migrate-workspace --dry-run    # preview what would move
-    xil migrate-workspace              # execute moves
+```bash
+xil migrate-workspace --dry-run    # preview what would move
+xil migrate-workspace              # execute moves
+```
 """
 
 from __future__ import annotations

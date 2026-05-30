@@ -14,10 +14,12 @@ manifest, audits the shared SFX library, and optionally:
 Pipeline position: after XILP001 (script parse), before XILU002/XILP002
 (SFX stem generation).
 
-Usage::
+Usage:
 
-    # Audit only — show library status, what needs generating, write manifest
-    python XILP006_cues_ingester.py --episode S02E03
+```bash
+# Audit only — show library status, what needs generating, write manifest
+python XILP006_cues_ingester.py --episode S02E03
+```
 
     # Same with explicit cues file path
     python XILP006_cues_ingester.py --episode S02E03 \\

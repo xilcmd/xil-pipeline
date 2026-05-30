@@ -17,16 +17,19 @@ All four WAVs are exactly the same length (full episode duration) so
 they align perfectly when imported at t=0.  The producer controls final
 level balance and any additional processing inside the DAW.
 
-An Audacity import helper script is also generated at:
+An Audacity import helper script is also generated at::
     daw/{TAG}/{TAG}_open_in_audacity.py
 
 Run it to print the file paths and manual import instructions; if
 Audacity's mod-script-pipe is enabled it will attempt automation.
 
 Usage:
-    python XILP005_daw_export.py --episode S01E02 --dry-run
-    python XILP005_daw_export.py --episode S01E02
-    python XILP005_daw_export.py --episode S01E02 --output-dir exports/
+
+```bash
+python XILP005_daw_export.py --episode S01E02 --dry-run
+python XILP005_daw_export.py --episode S01E02
+python XILP005_daw_export.py --episode S01E02 --output-dir exports/
+```
 
 No ElevenLabs API calls are made — this stage is safe to run freely.
 """

@@ -12,12 +12,15 @@ Useful for verifying stem integrity before/after migrations, detecting duplicate
 in the shared SFX library, and producing a manifest that can be diffed over time.
 
 Usage:
-    xil mp3-hash                          # scan current directory
-    xil mp3-hash SFX/                     # scan SFX library
-    xil mp3-hash stems/S03E01/            # scan one episode's stems
-    xil mp3-hash stems/ --output hashes.txt
-    xil mp3-hash SFX/ --json
-    xil mp3-hash . --absolute
+
+```bash
+xil mp3-hash                          # scan current directory
+xil mp3-hash SFX/                     # scan SFX library
+xil mp3-hash stems/S03E01/            # scan one episode's stems
+xil mp3-hash stems/ --output hashes.txt
+xil mp3-hash SFX/ --json
+xil mp3-hash . --absolute
+```
 """
 
 import argparse

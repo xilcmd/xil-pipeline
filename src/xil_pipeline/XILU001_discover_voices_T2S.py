@@ -9,15 +9,17 @@ Lists all voices returned by the API with enriched metadata drawn from
 by the SDK.  Useful for finding voice IDs and assessing voice suitability
 before configuring cast files.
 
-Usage::
+Usage:
 
-    python XILU001_discover_voices_T2S.py
-    python XILU001_discover_voices_T2S.py --category professional
-    python XILU001_discover_voices_T2S.py --category cloned generated
-    python XILU001_discover_voices_T2S.py --search tina
-    python XILU001_discover_voices_T2S.py --verbose
-    python XILU001_discover_voices_T2S.py --json
-    python XILU001_discover_voices_T2S.py --id WtA85syCrJwasGeHGH2p
+```bash
+python XILU001_discover_voices_T2S.py
+python XILU001_discover_voices_T2S.py --category professional
+python XILU001_discover_voices_T2S.py --category cloned generated
+python XILU001_discover_voices_T2S.py --search tina
+python XILU001_discover_voices_T2S.py --verbose
+python XILU001_discover_voices_T2S.py --json
+python XILU001_discover_voices_T2S.py --id WtA85syCrJwasGeHGH2p
+```
 
 Categories returned by the API: ``premade``, ``cloned``, ``generated``,
 ``professional`` (Professional Voice Clone / PVC).

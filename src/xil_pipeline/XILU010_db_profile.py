@@ -4,7 +4,7 @@
 
 """Profile the audio loudness of MP3 files: peak, average, and minimum dBFS.
 
-Loads each MP3 with pydub and reports three measurements per file:
+Loads each MP3 with pydub and reports three measurements per file::
 
   peak_dBFS  — loudest single sample moment (segment.max_dBFS)
   avg_dBFS   — RMS loudness across the whole file (segment.dBFS)
@@ -13,13 +13,16 @@ Loads each MP3 with pydub and reports three measurements per file:
 dBFS values are always ≤ 0.0; 0.0 means full-scale clipping, −60 is quiet.
 
 Usage:
-    xil db-profile                          # scan workspace SFX/ folder
-    xil db-profile SFX/                     # explicit path
-    xil db-profile stems/the413/S04E02/     # scan one episode's stems
-    xil db-profile some.mp3                 # single-file mode
-    xil db-profile SFX/ --json             # machine-readable output
-    xil db-profile SFX/ --output report.csv
-    xil db-profile SFX/ --absolute
+
+```bash
+xil db-profile                          # scan workspace SFX/ folder
+xil db-profile SFX/                     # explicit path
+xil db-profile stems/the413/S04E02/     # scan one episode's stems
+xil db-profile some.mp3                 # single-file mode
+xil db-profile SFX/ --json             # machine-readable output
+xil db-profile SFX/ --output report.csv
+xil db-profile SFX/ --absolute
+```
 """
 
 import argparse

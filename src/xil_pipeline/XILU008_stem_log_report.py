@@ -8,16 +8,18 @@ Parses daily ``logs/xil_YYYY-MM-DD.log`` files and produces a CSV
 chronology of every dialogue MP3 stem that was generated, including
 its backend, SHA-256 hash, and approximate creation context.
 
-Usage::
+Usage:
 
-    xil-stem-log                              # scan logs/ in CWD → stem_log_report.csv
-    xil-stem-log --logs-dir logs/             # explicit log directory
-    xil-stem-log --output report.csv          # override output path
-    xil-stem-log --since 2026-04-01           # only logs on or after this date
-    xil-stem-log --episode S03E03             # filter to one episode tag
-    xil-stem-log --episode S03E03 --since 2026-04-01
-    xil-stem-log --slug the413                # filter to one show slug
-    xil-stem-log --show                       # print CSV to stdout instead of file
+```bash
+xil-stem-log                              # scan logs/ in CWD → stem_log_report.csv
+xil-stem-log --logs-dir logs/             # explicit log directory
+xil-stem-log --output report.csv          # override output path
+xil-stem-log --since 2026-04-01           # only logs on or after this date
+xil-stem-log --episode S03E03             # filter to one episode tag
+xil-stem-log --episode S03E03 --since 2026-04-01
+xil-stem-log --slug the413                # filter to one show slug
+xil-stem-log --show                       # print CSV to stdout instead of file
+```
 
 CSV columns
 -----------

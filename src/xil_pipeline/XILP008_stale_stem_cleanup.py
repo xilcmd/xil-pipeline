@@ -10,11 +10,14 @@ files whose seq numbers now map to a different entry type in the current
 parsed JSON.  This script finds those mismatches and deletes them.
 
 Usage:
-    python XILP008_stale_stem_cleanup.py --episode S02E03 --dry-run
-    python XILP008_stale_stem_cleanup.py --episode S02E03
-    python XILP008_stale_stem_cleanup.py \
-        --parsed parsed/parsed_<slug>_S02E03.json \
-        --stems stems/S02E03 [--dry-run]
+
+```bash
+python XILP008_stale_stem_cleanup.py --episode S02E03 --dry-run
+python XILP008_stale_stem_cleanup.py --episode S02E03
+python XILP008_stale_stem_cleanup.py \
+    --parsed parsed/parsed_<slug>_S02E03.json \
+    --stems stems/S02E03 [--dry-run]
+```
 """
 
 import argparse
