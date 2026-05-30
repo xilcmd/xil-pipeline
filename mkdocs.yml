@@ -3,6 +3,15 @@ site_name: xil-pipeline SDK Documentation
 # Don't fail build on warnings
 strict: false
 
+# Exclude non-documentation directories that live inside docs/
+exclude_docs: |
+  venv-chatterbox/
+  __pycache__/
+  SFX/
+  cues/
+  scripts/
+  *.py
+
 plugins:
 - search
 - awesome-pages
