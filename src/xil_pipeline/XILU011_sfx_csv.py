@@ -4,7 +4,7 @@
 
 """Flatten sfx_<tag>.json configs to CSV — one row per effect entry.
 
-Each output row combines::
+Each output row combines:
   • Episode metadata  — show, season, episode, tag
   • Defaults          — all defaults.* fields, prefixed with ``default_``
   • Effect identity   — effect_key (the dict key used in the effects block)

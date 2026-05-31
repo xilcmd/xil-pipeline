@@ -15,7 +15,7 @@ xil-gui --port 8080        # custom port
 xil-gui --share            # generate public URL for partner access (72h tunnel)
 ```
 
-Install the optional [gui] extra first::
+Install the optional [gui] extra first:
     pip install 'xil-pipeline[gui]'
 """
 
@@ -181,6 +181,51 @@ def _find_sfx_configs() -> list[str]:
         if _LEGACY_SFX_RE.match(os.path.basename(p)):
             paths.append(p)
     return paths
+
+
+def _analyze_script_header(
+    text: str,
+) -> tuple[str, str, str, str, str, str]:
+    """Parse first non-blank line; return (show, season, episode, title, arc, filename)."""
+    from xil_pipeline.models import show_slug
+    from xil_pipeline.XILP001_script_parser import parse_script_header
+
+    first_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+    if not first_line:
+        return "", "", "", "", "", ""
+
+    result = parse_script_header(first_line)
+    if result is None:
+        return "", "", "", "", "", '⚠️ Header not recognized — expected: SHOW Season N: Episode N: "Title"'
+
+    show, season, episode, title, season_title = result
+    slug = show_slug(show)
+    safe_title = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
+    season_str = f"{season:02d}" if season is not None else "XX"
+    filename = f"S{season_str}E{episode:02d}_{slug}_{safe_title}_v1.md"
+
+    return show, str(season) if season is not None else "", str(episode), title, season_title or "", filename
+
+
+def _save_script_file(text: str, filename: str) -> str:
+    """Write script to {workspace_root}/scripts/{filename}. Refuses to overwrite."""
+    if not text.strip():
+        return "⚠️ No script content to save."
+    filename = filename.strip()
+    if not filename:
+        return "⚠️ Filename is empty — run Analyze Header first."
+    if not filename.endswith(".md"):
+        filename += ".md"
+
+    scripts_dir = get_workspace_root() / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    dest = scripts_dir / filename
+
+    if dest.exists():
+        return f"⚠️ Already exists: scripts/{filename} — edit the filename above to save a new version."
+
+    dest.write_text(text, encoding="utf-8")
+    return f"✅ Saved: scripts/{filename}"
 
 
 def _parse_choice(choice: str) -> tuple[str, str]:
@@ -845,7 +890,44 @@ def _build_app():
                     outputs=sfx_status,
                 )
 
-            # ── Tab 4: Episodes ─────────────────────────────────────
+            # ── Tab 4: Scripts ───────────────────────────────────────
+            with gr.Tab("Scripts"):
+                script_editor = gr.Textbox(
+                    lines=28,
+                    label="Script Markdown",
+                    placeholder="Paste production script here…",
+                    show_copy_button=True,
+                )
+                analyze_btn = gr.Button("Analyze Header", variant="secondary")
+                gr.Markdown("**Derived metadata**")
+                with gr.Row():
+                    script_show = gr.Textbox(label="Show", interactive=False, scale=2)
+                    script_season = gr.Textbox(label="Season", interactive=False, scale=1)
+                    script_episode = gr.Textbox(label="Episode", interactive=False, scale=1)
+                with gr.Row():
+                    script_title = gr.Textbox(label="Title", interactive=False, scale=3)
+                    script_arc = gr.Textbox(label="Arc / Season Title", interactive=False, scale=3)
+                script_filename = gr.Textbox(label="Filename (editable)", interactive=True)
+                script_save_btn = gr.Button("💾 Save to scripts/", variant="primary")
+                script_status = gr.Textbox(label="Status", lines=1, interactive=False)
+
+                script_editor.change(
+                    fn=lambda t: gr.update(variant="primary" if t.strip() else "secondary"),
+                    inputs=[script_editor],
+                    outputs=[analyze_btn],
+                )
+                analyze_btn.click(
+                    fn=_analyze_script_header,
+                    inputs=[script_editor],
+                    outputs=[script_show, script_season, script_episode, script_title, script_arc, script_filename],
+                )
+                script_save_btn.click(
+                    fn=_save_script_file,
+                    inputs=[script_editor, script_filename],
+                    outputs=[script_status],
+                )
+
+            # ── Tab 5: Episodes ─────────────────────────────────────
             with gr.Tab("Episodes"):
                 ep_table = gr.Dataframe(
                     headers=["Tag", "Slug", "Title  [Arc]", "Parse", "Stems", "DAW", "Master"],
@@ -899,7 +981,9 @@ def _build_app():
                     "Run pipeline stages against an episode. "
                     "**Dry-run is on by default** — uncheck to write output files."
                 )
-                run_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices)
+                with gr.Row():
+                    run_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices, scale=3)
+                    run_ep_refresh_btn = gr.Button("⟳", size="sm", scale=0)
 
                 with gr.Tabs():
                     # ── Scan ──────────────────────────────────────────
@@ -1133,6 +1217,10 @@ def _build_app():
                     cmd = _cmd_master(slug, tag, dry_run, output, daw_dir)
                     yield from _execute_cmd(cmd)
 
+                run_ep_refresh_btn.click(
+                    fn=lambda: gr.update(choices=_episode_choices()),
+                    outputs=run_ep_dd,
+                )
                 scan_refresh_btn.click(
                     fn=lambda: gr.update(choices=_script_choices()),
                     outputs=scan_script,

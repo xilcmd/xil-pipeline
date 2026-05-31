@@ -1,8 +1,41 @@
+# SPDX-FileCopyrightText: 2026 John Brissette <xilcmd@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for xil_gui helper functions (no Gradio dependency required)."""
+
+import json
+
 import pytest
 
-from xil_pipeline.xil_gui import _sanitize_extra_flags
+from xil_pipeline.xil_gui import (
+    _analyze_script_header,
+    _ep_choice,
+    _ep_meta,
+    _parse_choice,
+    _refresh_episodes,
+    _sanitize_extra_flags,
+    _save_script_file,
+)
 
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _write_cast(root, slug, tag, title="", season_title=""):
+    cfg_dir = root / "configs" / slug
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = {"title": title, "season_title": season_title, "cast": {}}
+    (cfg_dir / f"cast_{tag}.json").write_text(json.dumps(cfg))
+
+
+def _write_parsed(root, slug, tag):
+    parsed_dir = root / "parsed" / slug
+    parsed_dir.mkdir(parents=True, exist_ok=True)
+    data = {"show": "THE 413", "entries": [], "stats": {}}
+    (parsed_dir / f"parsed_{tag}.json").write_text(json.dumps(data))
+
+
+# ── _sanitize_extra_flags ─────────────────────────────────────────────────────
 
 class TestSanitizeExtraFlags:
     def test_empty_string_returns_empty_list(self):
@@ -68,3 +101,254 @@ class TestSanitizeExtraFlags:
     def test_numeric_value(self):
         result = _sanitize_extra_flags("--start-from 5 --stop-at 10")
         assert result == ["--start-from", "5", "--stop-at", "10"]
+
+
+# ── _parse_choice ─────────────────────────────────────────────────────────────
+
+class TestParseChoice:
+    def test_slug_and_tag_extracted(self):
+        assert _parse_choice("the413  S03E03") == ("the413", "S03E03")
+
+    def test_extra_display_label_ignored(self):
+        result = _parse_choice("the413  S03E03  [The Architect]  —  The Covered Bridge")
+        assert result == ("the413", "S03E03")
+
+    def test_single_part_returns_empty_pair(self):
+        assert _parse_choice("the413") == ("", "")
+
+    def test_empty_string_returns_empty_pair(self):
+        assert _parse_choice("") == ("", "")
+
+    def test_leading_and_trailing_whitespace_ignored(self):
+        assert _parse_choice("  the413  S01E01  ") == ("the413", "S01E01")
+
+
+# ── _analyze_script_header ────────────────────────────────────────────────────
+
+class TestAnalyzeScriptHeader:
+    def test_full_header_all_fields(self):
+        text = 'THE 413 Season 3: Episode 3: "The Covered Bridge" Arc: "The Architect"\n\nCAST:'
+        show, season, episode, title, arc, filename = _analyze_script_header(text)
+        assert show == "THE 413"
+        assert season == "3"
+        assert episode == "3"
+        assert title == "The Covered Bridge"
+        assert arc == "The Architect"
+        assert filename == "S03E03_the413_The_Covered_Bridge_v1.md"
+
+    def test_episode_zero_teaser(self):
+        text = 'THE 413 Season 6: Episode 0: "Teaser — The Berkshire Ghost Train" Arc: "The Berkshire Ghost Train"'
+        show, season, episode, title, arc, filename = _analyze_script_header(text)
+        assert show == "THE 413"
+        assert season == "6"
+        assert episode == "0"
+        assert filename == "S06E00_the413_Teaser_The_Berkshire_Ghost_Train_v1.md"
+
+    def test_no_arc_title_returns_empty_arc(self):
+        text = 'THE 413 Season 1: Episode 2: "The Return"'
+        show, season, episode, title, arc, filename = _analyze_script_header(text)
+        assert arc == ""
+        assert show == "THE 413"
+        assert season == "1"
+        assert episode == "2"
+        assert title == "The Return"
+
+    def test_unrecognized_header_sets_warning_in_filename(self):
+        show, season, episode, title, arc, filename = _analyze_script_header("no episode marker here")
+        assert show == ""
+        assert season == ""
+        assert episode == ""
+        assert filename.startswith("⚠️")
+
+    def test_empty_text_returns_all_empty(self):
+        result = _analyze_script_header("")
+        assert all(v == "" for v in result)
+
+    def test_blank_lines_before_header_are_skipped(self):
+        text = "\n\n  \nTHE 413 Season 2: Episode 1: \"The Letters\" Arc: \"The Letters\"\n"
+        show, _, _, _, _, _ = _analyze_script_header(text)
+        assert show == "THE 413"
+
+    def test_filename_always_has_v1_suffix(self):
+        text = 'THE 413 Season 5: Episode 1: "October Mountain" Arc: "The Witness"'
+        _, _, _, _, _, filename = _analyze_script_header(text)
+        assert filename.endswith("_v1.md")
+
+    def test_special_chars_in_title_sanitized(self):
+        text = 'THE 413 Season 5: Episode 1: "Teaser — The Berkshire Ghost Train" Arc: "The Witness"'
+        _, _, _, _, _, filename = _analyze_script_header(text)
+        assert "/" not in filename
+        assert " " not in filename
+        assert "—" not in filename
+
+    def test_season_zero_padded_to_two_digits(self):
+        text = 'THE 413 Season 1: Episode 2: "Something"'
+        _, _, _, _, _, filename = _analyze_script_header(text)
+        assert filename.startswith("S01E02_")
+
+    def test_show_slug_lowercased_in_filename(self):
+        text = 'THE 413 Season 1: Episode 1: "The Empty Booth" Arc: "The Holiday Shift"'
+        _, _, _, _, _, filename = _analyze_script_header(text)
+        assert "the413" in filename
+        assert "THE413" not in filename
+
+
+# ── _save_script_file ────────────────────────────────────────────────────────
+
+class TestSaveScriptFile:
+    def test_saves_file_and_returns_success(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        result = _save_script_file("script content", "S01E01_test_v1.md")
+        assert result.startswith("✅")
+        assert (tmp_path / "scripts" / "S01E01_test_v1.md").read_text() == "script content"
+
+    def test_creates_scripts_dir_when_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        assert not (tmp_path / "scripts").exists()
+        _save_script_file("content", "S01E01_test_v1.md")
+        assert (tmp_path / "scripts").is_dir()
+
+    def test_refuses_overwrite_and_preserves_original(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _save_script_file("first version", "S01E01_test_v1.md")
+        result = _save_script_file("second version", "S01E01_test_v1.md")
+        assert result.startswith("⚠️ Already exists")
+        assert (tmp_path / "scripts" / "S01E01_test_v1.md").read_text() == "first version"
+
+    def test_appends_md_extension_when_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        result = _save_script_file("content", "S01E01_no_ext")
+        assert result == "✅ Saved: scripts/S01E01_no_ext.md"
+        assert (tmp_path / "scripts" / "S01E01_no_ext.md").exists()
+
+    def test_empty_content_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        result = _save_script_file("   ", "S01E01_test_v1.md")
+        assert result.startswith("⚠️ No script content")
+        assert not (tmp_path / "scripts" / "S01E01_test_v1.md").exists()
+
+    def test_empty_filename_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        result = _save_script_file("content", "")
+        assert result.startswith("⚠️ Filename is empty")
+
+    def test_whitespace_filename_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        result = _save_script_file("content", "   ")
+        assert result.startswith("⚠️ Filename is empty")
+
+    def test_v2_file_saves_after_v1_refused(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _save_script_file("v1 content", "S01E01_test_v1.md")
+        result = _save_script_file("v2 content", "S01E01_test_v2.md")
+        assert result.startswith("✅")
+        assert (tmp_path / "scripts" / "S01E01_test_v2.md").exists()
+
+
+# ── _ep_meta ──────────────────────────────────────────────────────────────────
+
+class TestEpMeta:
+    def test_reads_title_and_season_title(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S03E03", "The Covered Bridge", "The Architect")
+        title, season_title = _ep_meta("the413", "S03E03")
+        assert title == "The Covered Bridge"
+        assert season_title == "The Architect"
+
+    def test_missing_config_returns_empty_pair(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        assert _ep_meta("the413", "S99E99") == ("", "")
+
+    def test_config_missing_fields_returns_empty_strings(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "the413"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "cast_S01E01.json").write_text(json.dumps({"cast": {}}))
+        title, season_title = _ep_meta("the413", "S01E01")
+        assert title == ""
+        assert season_title == ""
+
+    def test_malformed_json_returns_empty_pair(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "the413"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "cast_S01E01.json").write_text("not json {{{")
+        assert _ep_meta("the413", "S01E01") == ("", "")
+
+
+# ── _ep_choice ────────────────────────────────────────────────────────────────
+
+class TestEpChoice:
+    def test_title_and_arc(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S03E03", "The Covered Bridge", "The Architect")
+        assert _ep_choice("the413", "S03E03") == "the413  S03E03  [The Architect]  —  The Covered Bridge"
+
+    def test_arc_only_no_em_dash(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S03E03", season_title="The Architect")
+        label = _ep_choice("the413", "S03E03")
+        assert "[The Architect]" in label
+        assert "—" not in label
+
+    def test_title_only_no_brackets(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S03E03", title="The Covered Bridge")
+        label = _ep_choice("the413", "S03E03")
+        assert "The Covered Bridge" in label
+        assert "[" not in label
+
+    def test_no_metadata_returns_slug_and_tag_only(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S03E03")
+        assert _ep_choice("the413", "S03E03") == "the413  S03E03"
+
+    def test_missing_config_returns_slug_and_tag_only(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        assert _ep_choice("the413", "S99E99") == "the413  S99E99"
+
+
+# ── _refresh_episodes ─────────────────────────────────────────────────────────
+
+class TestRefreshEpisodes:
+    def test_empty_workspace_returns_empty_list(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        assert _refresh_episodes() == []
+
+    def test_single_episode_row_structure(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S01E01", "The Empty Booth", "The Holiday Shift")
+        rows = _refresh_episodes()
+        assert len(rows) == 1
+        tag, slug, desc, parse, produce, daw, master = rows[0]
+        assert tag == "S01E01"
+        assert slug == "the413"
+        assert "The Empty Booth" in desc
+        assert "The Holiday Shift" in desc
+
+    def test_multiple_episodes_sorted_by_slug_then_tag(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        for t in ("S03E01", "S01E01", "S02E01"):
+            _write_cast(tmp_path, "the413", t)
+        tags = [row[0] for row in _refresh_episodes()]
+        assert tags == ["S01E01", "S02E01", "S03E01"]
+
+    def test_unparsed_episode_shows_open_circle(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S01E01")
+        rows = _refresh_episodes()
+        assert rows[0][3] == "○"   # parse column
+
+    def test_parsed_episode_shows_checkmark(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S01E01")
+        _write_parsed(tmp_path, "the413", "S01E01")
+        rows = _refresh_episodes()
+        assert rows[0][3] == "✓"   # parse column
+
+    def test_title_arc_combined_in_desc_column(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S01E01", "The Empty Booth", "The Holiday Shift")
+        desc = _refresh_episodes()[0][2]
+        assert "[The Holiday Shift]" in desc
+        assert "The Empty Booth" in desc
