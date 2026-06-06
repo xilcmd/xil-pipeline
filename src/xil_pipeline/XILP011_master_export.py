@@ -42,6 +42,16 @@ LAYER_SUFFIXES = ("dialogue", "ambience", "music", "sfx", "vintage_filter")
 SAMPLE_RATE = 48000
 
 
+def _find_cover_art(slug: str) -> str | None:
+    """Return the path to configs/<slug>/cover_art.* if one exists, else None."""
+    configs_dir = get_workspace_root() / "configs" / slug
+    for name in ("cover_art.PNG", "cover_art.png", "cover_art.jpg", "cover_art.jpeg"):
+        candidate = configs_dir / name
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 def load_layer_wavs(daw_dir: str, tag: str) -> list[tuple[str, str]]:
     """Locate the four layer WAV files for an episode.
 
@@ -80,6 +90,7 @@ def export_master(
     tag: str,
     title: str | None = None,
     artist: str | None = None,
+    cover_art_path: str | None = None,
 ) -> None:
     """Export the mixed audio as a stereo 48 kHz VBR MP3.
 
@@ -108,6 +119,7 @@ def export_master(
         show=show_name,
         title=title or tag,
         artist=artist,
+        cover_art_path=cover_art_path,
     )
 
 
@@ -222,12 +234,16 @@ def main() -> None:
         logger.info("--- Exporting master MP3 ---")
 
         title = f"{show_name} — {episode_title}" if episode_title else tag
+        cover_art_path = _find_cover_art(slug)
+        if cover_art_path:
+            logger.info(f"  Cover art  : {cover_art_path}")
         export_master(
             combined, output_path,
             show_name=show_name,
             tag=tag,
             title=title,
             artist=artist,
+            cover_art_path=cover_art_path,
         )
 
         file_size_mb = os.path.getsize(output_path) / (1024 * 1024)

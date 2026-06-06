@@ -27,7 +27,7 @@ import time
 
 import httpx
 from elevenlabs.core.api_error import ApiError
-from mutagen.id3 import COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, USLT, ID3NoHeaderError
+from mutagen.id3 import APIC, COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, USLT, ID3NoHeaderError, PictureType
 from mutagen.wave import WAVE
 from pydub import AudioSegment
 
@@ -198,11 +198,12 @@ def tag_mp3(
     artist: str | None = None,
     lyrics: str | None = None,
     comments: str | None = None,
+    cover_art_path: str | None = None,
 ) -> None:
     """Write ID3 metadata tags to an MP3 file.
 
-    Sets Album, Genre, and Year.  Optionally sets Title, Artist, and
-    Lyrics tags.
+    Sets Album, Genre, and Year.  Optionally sets Title, Artist, Lyrics,
+    and cover art (APIC front-cover frame).
 
     Args:
         path: Path to the MP3 file.
@@ -212,6 +213,9 @@ def tag_mp3(
         artist: Optional TPE1 artist tag (e.g. the speaker's full name).
         lyrics: Optional USLT unsynchronised lyrics tag (full dialogue
             text).
+        cover_art_path: Optional path to a PNG or JPEG image to embed as
+            the front-cover APIC frame. Silently skipped if the file does
+            not exist.
     """
     try:
         tags = ID3(path)
@@ -229,6 +233,11 @@ def tag_mp3(
         tags.add(USLT(encoding=3, lang="eng", desc="", text=lyrics))
     if comments:
         tags.add(COMM(encoding=3, lang="eng", desc="", text=comments))
+    if cover_art_path and os.path.exists(cover_art_path):
+        ext = os.path.splitext(cover_art_path)[1].lower()
+        mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
+        with open(cover_art_path, "rb") as img:
+            tags.add(APIC(encoding=3, mime=mime, type=PictureType.COVER_FRONT, desc="", data=img.read()))
     tags.save(path)
 
 

@@ -92,6 +92,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(integrity / audit)",
     ),
+    "stem-log": CommandSpec(
+        "xil_pipeline.XILU008_stem_log_report",
+        "parse daily logs → chronological stem generation CSV",
+        _UTILITY,
+        "(integrity / audit)",
+    ),
     "gui": CommandSpec(
         "xil_pipeline.xil_gui",
         "web dashboard (requires [gui] extra)",

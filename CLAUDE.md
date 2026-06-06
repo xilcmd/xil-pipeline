@@ -11,7 +11,7 @@ Automated, show-agnostic podcast/audio production pipeline using ElevenLabs TTS 
 The project is packaged as `xil-pipeline` (import name `xil_pipeline`) using hatchling. All pipeline and utility scripts live under `src/xil_pipeline/`:
 
 ```
-src/xil_pipeline/          # Python package (37 modules)
+src/xil_pipeline/          # Python package (39 modules)
   __init__.py              # version + key re-exports
   xil.py                   # Unified `xil` command dispatcher
   models.py                # Pydantic data models, slug/path resolution
@@ -19,8 +19,10 @@ src/xil_pipeline/          # Python package (37 modules)
   sfx_common.py            # SFX library management, ID3 tagging
   timeline_viz.py          # Timeline visualization
   xil_init.py              # Project scaffolding (xil-init command, --type aware)
+  chatterbox_worker.py     # Persistent Chatterbox TTS worker (venv-chatterbox subprocess)
+  whisper_worker.py        # Persistent Faster-Whisper STT worker (venv-whisper subprocess)
   XILP000_*.py … XILP012_*.py   # Pipeline stages
-  XILU001_*.py … XILU014_*.py   # Utility scripts
+  XILU001_*.py … XILU015_*.py   # Utility scripts
 tests/                     # Pytest test suite
 docs/                      # MkDocs documentation
 pyproject.toml             # Packaging config (hatchling)
@@ -259,6 +261,7 @@ xil produce --episode S01E01 --dry-run
 - Supports `--local-only` (used with `--gen-sfx`/`--gen-music`/`--gen-ambience`) to skip any effect that would require an API call — only assets already in `SFX/` (CACHED) or silence entries are placed; no credits spent
 - Supports `--backend elevenlabs|gtts|chatterbox` (default: `elevenlabs`): `gtts` routes all dialogue voice stems through Google Translate TTS at no cost — flat single voice, useful for duration checks; `chatterbox` uses local Chatterbox TTS with per-character zero-shot voice cloning from `voice_refs/<key>.wav` reference clips — near-production quality, GPU-accelerated, free after setup; SFX/music/ambience generation is unaffected by `--backend`; eleven_v3 inline tags are stripped before gTTS/Chatterbox calls
 - `--backend chatterbox` options: `--chatterbox-python PATH` (default: auto-detect `./venv-chatterbox/bin/python3`); `--voice-refs DIR` (default: `voice_refs/`) for per-speaker `.wav` reference clips; `--exaggeration FLOAT` emotion level 0.0–1.0 (default: 0.5); missing voice refs fall back to Chatterbox default voice
+- **Optional STT venv** (`venv-whisper/`): a separate virtualenv at the workspace or repo root containing `faster-whisper`. Used by `xil-stem-verify` (XILU015) for post-generation transcription verification. Worker script: `whisper_worker.py` (same JSON-over-stdin/stdout subprocess protocol as `chatterbox_worker.py`). Probes CUDA at startup and auto-falls back to CPU/int8 if `libcublas` is unavailable.
 - Intro music (`INTRO MUSIC` source entry): trimmed at copy time using `play_duration` percentage from sfx config, so the stem file reflects the actual playback length
 - Skips stems that already exist on disk
 
@@ -308,7 +311,7 @@ xil studio-onboard --episode S01E02 --quality high
 
 ### Stage 5: DAW Layer Export
 
-`XILP005_daw_export.py` — Exports four isolated, full-length WAV layers for human mixing in Audacity.
+`XILP005_daw_export.py` — Exports up to five isolated, full-length WAV layers for human mixing in Audacity.
 
 ```bash
 xil daw --episode S01E01 --dry-run
@@ -321,11 +324,12 @@ xil daw --episode S01E01 --timeline --timeline-html
 
 - `--episode` or `--tag` (one required) derives `cast_<slug>_S01E01.json` and `parsed/parsed_<slug>_S01E01.json`
 - `--show` overrides the show name used for slug derivation (see Project Configuration)
-- Outputs four WAV files to `daw/{TAG}/` — all identical duration, all aligned at t=0:
+- Outputs up to five WAV files to `daw/{TAG}/` — all identical duration, all aligned at t=0:
   - `{TAG}_layer_dialogue.wav` — spoken dialogue (audio filter chain + pan applied per speaker)
   - `{TAG}_layer_ambience.wav` — environmental background looped to fill scene durations
   - `{TAG}_layer_music.wav` — music stings/themes at cue positions
   - `{TAG}_layer_sfx.wav` — one-shot SFX and BEAT silences
+  - `{TAG}_layer_vintage_filter.wav` — vintage-filtered dialogue layer; only present when VINTAGE FILTER direction markers appear in the script
 - Each WAV is tagged with ID3 metadata (Album, Genre, Year, Title, Artist) via `tag_wav()` from `sfx_common.py`
 - Generates four Audacity label track files (`{TAG}_labels_dialogue.txt`, etc.) — tab-separated start/end/text
 - Generates `{TAG}_open_in_audacity.py` — prints WAV import instructions (labels listed separately as optional)
@@ -413,7 +417,7 @@ xil import --episode S02E02 --zip "ElevenLabs_exports/export.zip" --all --force
 
 ### Stage 9: Final Master MP3 Export
 
-`XILP011_master_export.py` — Overlays the four DAW layer WAVs from XILP005 into a single podcast-ready MP3.
+`XILP011_master_export.py` — Overlays the DAW layer WAVs from XILP005 into a single podcast-ready MP3.
 
 ```bash
 xil master --episode S02E03 --dry-run
@@ -428,8 +432,9 @@ xil master --episode S02E03 --show "Night Owls"
 - `--dry-run` shows layer summary without writing files
 - Output format: stereo, 48 kHz, VBR MP3 (~145–185 kbps, LAME quality 2)
 - Output filename: `S02E03_the413_2026-03-24.mp3` (episode tag, show slug, run date)
-- Overlays all four layers at unity gain (XILP005 handles mix balance)
+- Overlays all present DAW layers at unity gain (XILP005 handles mix balance)
 - Reads cast config for ID3 metadata (album, title, artist)
+- Auto-detects `configs/<slug>/cover_art.PNG` (also `.png`, `.jpg`, `.jpeg`) and embeds it as an ID3 APIC front-cover frame — silently skipped when absent
 - No ElevenLabs API key required — no API calls made
 
 ### Stage 10: Social Media Post Draft Generator
@@ -485,6 +490,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILU012_*` — parsed JSON CSV exporter (parsed_<tag>.json → one-row-per-entry CSV for audit/debug)
 - `XILU013_*` — SFX config hydrator (writes pipe-hint `source` fields from parsed JSON into the SFX config)
 - `XILU014_*` — episode summary CSV generator (scans all parsed JSONs → one-row-per-episode CSV with dialogue_lines, words, tts_chars)
+- `XILU015_*` — stem verifier (scans a stems folder → JSON report with filename, seq/scene/speaker parse, size, duration, bitrate, SHA-256, and optional Faster-Whisper transcription; requires `venv-whisper/`)
 - `xil_gui.py` — Gradio web dashboard (`xil-gui` entry point); requires `[gui]` extra; five tabs: Episodes, Audio Preview, Run Stage, Setup (with content type selector), Timeline
 - `XILP001_*` — script parser
 - `XILP002_*` — voice generation (ElevenLabs TTS)
@@ -496,10 +502,10 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILP008_*` — stale stem cleanup (delete stems whose seq no longer matches the current parsed JSON)
 - `XILP009_*` — reverse script generator (parsed JSON → production script markdown)
 - `XILP010_*` — Studio export importer (ElevenLabs Studio ZIP → pipeline stems)
-- `XILP011_*` — final master MP3 export (overlay 4 DAW layer WAVs → single stereo 48 kHz VBR MP3)
+- `XILP011_*` — final master MP3 export (overlay DAW layer WAVs → single stereo 48 kHz VBR MP3; embeds APIC cover art from `configs/<slug>/cover_art.PNG` when present)
 - `XILP012_*` — social media post draft generator (parsed JSON + Claude Haiku → `posts/{slug}/{tag}_posts.md`; 3 variants: Hype, Quote, Spotlight; requires `[publish]` extra + `ANTHROPIC_API_KEY`)
 - `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.scene` (str|None): scene label from parsed JSON, used for scene-scoped vintage filter; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `volume_percentage`, `ramp_in_seconds`, and `ramp_out_seconds` each fall back to the global key when no category-specific key exists (e.g. SFX/MUSIC when `sfx_volume_percentage`/`music_ramp_in_seconds` are absent from the config defaults); `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing; `apply_vintage_filter()` applies a 1960s-era HF roll-off + 1 dB reduction; `_apply_speaker_filters(segment, filter_val)` resolves the cast config `filter` string and applies the named filter chain (`false`/`None` = none, `true`/`"phone"` = phone, `"vintage"` = vintage, `"vintage,phone"` = both); `_vf_engaged_seqs(stem_plans)` returns the set of dialogue seq numbers that fall within a `VINTAGE FILTER: ENGAGES`…`VINTAGE FILTER: DISENGAGES` span — used by `build_foreground()` and `build_dialogue_layer()` to apply the vintage EQ to dialogue within those spans (script-direction spans take precedence over `vintage_scenes` list fallback)
-- `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block
+- `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_asset()` retries on 429 rate-limit errors (up to 5 times, linear backoff); `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` shows per-category credit subtotals in the SUMMARY block; `tag_mp3()` accepts optional `cover_art_path` — when supplied and file exists, reads the image and embeds an APIC front-cover frame (PNG or JPEG detected by extension) in the same `tags.save()` call as other ID3 fields
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency; HTML bar badges: `ri` (↑ ramp in, left), `ro` (↓ ramp out, right-top), `pd` (% play duration, center), `vb` (🔊 volume%, right-bottom, shown when `volume_pct != 100`); applies to music, ambience, and SFX spans
 - `models.py` — Pydantic data models plus `get_workspace_root()` (respects `XIL_PROJECTROOT` env var), `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "sample"` fallback; `ProjectConfig` model with `type`/`tag_format` fields; `TYPE_DEFAULTS` dict with gap_ms and stability per content type; `derive_paths_legacy()` returns pre-0.1.8 paths anchored to workspace root (used by migration tool); `derive_paths()` auto-detects layout (legacy if root cast config exists, normalized otherwise); `load_project_config()` / `resolve_project_type()` helpers
 - `xil.py` — unified dispatcher that maps subcommands (`scan`, `parse`, `produce`, etc.) to existing module `main()` entry points; prints command list on `xil --help`; `xil-*` commands remain supported

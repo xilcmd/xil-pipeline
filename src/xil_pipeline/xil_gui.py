@@ -322,6 +322,28 @@ def _load_stems(slug: str, tag: str, filter_type: str = "all") -> list[tuple[str
     return choices
 
 
+def _concatenate_stems(ep_choice: str, filter_type: str) -> str | None:
+    """Concatenate all stems of filter_type for ep_choice into a temp MP3. Returns path."""
+    if not ep_choice:
+        return None
+    slug, tag = _parse_choice(ep_choice)
+    stems = _load_stems(slug, tag, filter_type=filter_type)
+    if not stems:
+        return None
+    try:
+        import tempfile
+
+        from pydub import AudioSegment
+        combined = AudioSegment.empty()
+        for _, path in stems:
+            combined += AudioSegment.from_mp3(path)
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        combined.export(tmp.name, format="mp3")
+        return tmp.name
+    except Exception:
+        return None
+
+
 # ── Stage runner ───────────────────────────────────────────────────────────
 
 # Characters that have special meaning to a Unix shell; reject any token
@@ -890,44 +912,7 @@ def _build_app():
                     outputs=sfx_status,
                 )
 
-            # ── Tab 4: Scripts ───────────────────────────────────────
-            with gr.Tab("Scripts"):
-                script_editor = gr.Textbox(
-                    lines=28,
-                    label="Script Markdown",
-                    placeholder="Paste production script here…",
-                    show_copy_button=True,
-                )
-                analyze_btn = gr.Button("Analyze Header", variant="secondary")
-                gr.Markdown("**Derived metadata**")
-                with gr.Row():
-                    script_show = gr.Textbox(label="Show", interactive=False, scale=2)
-                    script_season = gr.Textbox(label="Season", interactive=False, scale=1)
-                    script_episode = gr.Textbox(label="Episode", interactive=False, scale=1)
-                with gr.Row():
-                    script_title = gr.Textbox(label="Title", interactive=False, scale=3)
-                    script_arc = gr.Textbox(label="Arc / Season Title", interactive=False, scale=3)
-                script_filename = gr.Textbox(label="Filename (editable)", interactive=True)
-                script_save_btn = gr.Button("💾 Save to scripts/", variant="primary")
-                script_status = gr.Textbox(label="Status", lines=1, interactive=False)
-
-                script_editor.change(
-                    fn=lambda t: gr.update(variant="primary" if t.strip() else "secondary"),
-                    inputs=[script_editor],
-                    outputs=[analyze_btn],
-                )
-                analyze_btn.click(
-                    fn=_analyze_script_header,
-                    inputs=[script_editor],
-                    outputs=[script_show, script_season, script_episode, script_title, script_arc, script_filename],
-                )
-                script_save_btn.click(
-                    fn=_save_script_file,
-                    inputs=[script_editor, script_filename],
-                    outputs=[script_status],
-                )
-
-            # ── Tab 5: Episodes ─────────────────────────────────────
+            # ── Tab 4: Episodes ─────────────────────────────────────
             with gr.Tab("Episodes"):
                 ep_table = gr.Dataframe(
                     headers=["Tag", "Slug", "Title  [Arc]", "Parse", "Stems", "DAW", "Master"],
@@ -936,7 +921,7 @@ def _build_app():
                     wrap=True,
                 )
 
-            # ── Tab 5: Audio Preview ─────────────────────────────────
+            # ── Tab 5: Audio Preview ────────────────────────────────
             with gr.Tab("Audio Preview"):
                 with gr.Row():
                     audio_ep_dd = gr.Dropdown(
@@ -958,6 +943,10 @@ def _build_app():
                     interactive=True,
                 )
                 audio_player = gr.Audio(label="Playback", type="filepath", autoplay=False)
+                with gr.Row():
+                    play_all_sfx_btn   = gr.Button("▶ All SFX",      size="sm")
+                    play_all_music_btn = gr.Button("▶ All Music",     size="sm")
+                    play_all_amb_btn   = gr.Button("▶ All Ambience",  size="sm")
 
                 audio_ep_dd.change(
                     fn=on_ep_or_filter_change,
@@ -974,8 +963,23 @@ def _build_app():
                     inputs=[audio_ep_dd, stem_dd, stem_filter],
                     outputs=audio_player,
                 )
+                play_all_sfx_btn.click(
+                    fn=lambda ep: _concatenate_stems(ep, "sfx"),
+                    inputs=[audio_ep_dd],
+                    outputs=[audio_player],
+                )
+                play_all_music_btn.click(
+                    fn=lambda ep: _concatenate_stems(ep, "music"),
+                    inputs=[audio_ep_dd],
+                    outputs=[audio_player],
+                )
+                play_all_amb_btn.click(
+                    fn=lambda ep: _concatenate_stems(ep, "ambience"),
+                    inputs=[audio_ep_dd],
+                    outputs=[audio_player],
+                )
 
-            # ── Tab 6: Run Stage ─────────────────────────────────────
+            # ── Tab 6: Run Stage (Scripts → Scan → Parse → Produce → Assemble → DAW → Master)
             with gr.Tab("Run Stage"):
                 gr.Markdown(
                     "Run pipeline stages against an episode. "
@@ -986,6 +990,38 @@ def _build_app():
                     run_ep_refresh_btn = gr.Button("⟳", size="sm", scale=0)
 
                 with gr.Tabs():
+                    # ── Scripts ───────────────────────────────────────
+                    with gr.Tab("Scripts"):
+                        script_editor = gr.Textbox(
+                            lines=28,
+                            label="Script Markdown",
+                            placeholder="Paste production script here…",
+                            show_copy_button=True,
+                        )
+                        analyze_btn = gr.Button("Analyze Header", variant="secondary")
+                        gr.Markdown("**Derived metadata**")
+                        with gr.Row():
+                            script_show = gr.Textbox(label="Show", interactive=False, scale=2)
+                            script_season = gr.Textbox(label="Season", interactive=False, scale=1)
+                            script_episode = gr.Textbox(label="Episode", interactive=False, scale=1)
+                        with gr.Row():
+                            script_title = gr.Textbox(label="Title", interactive=False, scale=3)
+                            script_arc = gr.Textbox(label="Arc / Season Title", interactive=False, scale=3)
+                        script_filename = gr.Textbox(label="Filename (editable)", interactive=True)
+                        script_save_btn = gr.Button("💾 Save to scripts/", variant="primary")
+                        script_status = gr.Textbox(label="Status", lines=1, interactive=False)
+
+                        script_editor.change(
+                            fn=lambda t: gr.update(variant="primary" if t.strip() else "secondary"),
+                            inputs=[script_editor],
+                            outputs=[analyze_btn],
+                        )
+                        analyze_btn.click(
+                            fn=_analyze_script_header,
+                            inputs=[script_editor],
+                            outputs=[script_show, script_season, script_episode, script_title, script_arc, script_filename],
+                        )
+
                     # ── Scan ──────────────────────────────────────────
                     with gr.Tab("Scan"):
                         with gr.Row():
@@ -1217,6 +1253,17 @@ def _build_app():
                     cmd = _cmd_master(slug, tag, dry_run, output, daw_dir)
                     yield from _execute_cmd(cmd)
 
+                script_save_btn.click(
+                    fn=_save_script_file,
+                    inputs=[script_editor, script_filename],
+                    outputs=[script_status],
+                ).then(
+                    fn=lambda: (
+                        gr.update(choices=_script_choices()),
+                        gr.update(choices=_script_choices()),
+                    ),
+                    outputs=[scan_script, parse_script],
+                )
                 run_ep_refresh_btn.click(
                     fn=lambda: gr.update(choices=_episode_choices()),
                     outputs=run_ep_dd,
@@ -1243,6 +1290,9 @@ def _build_app():
                     inputs=[parse_ep_dd, parse_script,
                              parse_preview, parse_quiet_cb, parse_debug_cb, parse_stats_cb, parse_speakers],
                     outputs=log_box,
+                ).then(
+                    fn=lambda: gr.update(choices=_episode_choices()),
+                    outputs=run_ep_dd,
                 )
                 prod_btn.click(
                     fn=run_produce,
