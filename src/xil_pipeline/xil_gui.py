@@ -821,7 +821,8 @@ def _build_app():
                     "`configs/{slug}/project.json` to resolve the show slug and season defaults."
                 )
                 with gr.Row():
-                    from xil_pipeline.models import get_active_show as _get_active_show, show_slug as _show_slug
+                    from xil_pipeline.models import get_active_show as _get_active_show
+                    from xil_pipeline.models import show_slug as _show_slug
                     _init_shows = _list_available_shows()
                     _active_name = next(
                         (name for name in _init_shows
@@ -877,7 +878,8 @@ def _build_app():
                         output = chunk
                         yield output, gr.update()
                     new_shows = _list_available_shows()
-                    from xil_pipeline.models import get_active_show as _gas, show_slug as _ss
+                    from xil_pipeline.models import get_active_show as _gas
+                    from xil_pipeline.models import show_slug as _ss
                     new_active = next((n for n in new_shows if _ss(n) == _gas()), None)
                     yield output, gr.update(choices=new_shows, value=new_active)
 
