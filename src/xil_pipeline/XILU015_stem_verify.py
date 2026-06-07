@@ -83,19 +83,24 @@ class _WhisperClient:
 
 
 def _parse_stem_filename(filename: str) -> tuple[int | None, str | None, str | None]:
-    """Extract (seq, scene, speaker) from a stem filename like '003_cold-open_adam.mp3'."""
-    name = filename
-    if name.lower().endswith(".mp3"):
-        name = name[:-4]
+    """Extract (seq, scene, speaker) from a stem filename like '003_cold-open_adam.mp3'.
+
+    Falls back to seq-only for ElevenLabs export names like '001_Chapter 1.mp3'.
+    """
+    name = filename[:-4] if filename.lower().endswith(".mp3") else filename
     parts = name.split("_", 2)
-    if len(parts) != 3:
-        return None, None, None
-    seq_str, scene, speaker = parts
-    try:
-        seq = int(seq_str)
-    except ValueError:
-        return None, None, None
-    return seq, scene, speaker
+    if len(parts) == 3:
+        seq_str, scene, speaker = parts
+        try:
+            return int(seq_str), scene, speaker
+        except ValueError:
+            pass
+    if parts:
+        try:
+            return int(parts[0]), None, None
+        except ValueError:
+            pass
+    return None, None, None
 
 
 def _mp3_metadata(path: str) -> tuple[float | None, int | None]:
@@ -164,6 +169,10 @@ def _process_files(
 
 
 def _run(args: argparse.Namespace) -> None:
+    if args.episode is None and args.stems_dir is None:
+        logger.error("--episode or --stems-dir is required")
+        sys.exit(1)
+
     workspace = get_workspace_root()
     slug = resolve_slug(args.show)
 
@@ -172,10 +181,12 @@ def _run(args: argparse.Namespace) -> None:
         logger.error("Stems directory not found: %s", stems_dir)
         sys.exit(1)
 
-    output_path = (
-        Path(args.output) if args.output
-        else workspace / "parsed" / slug / f"stem_verify_{args.episode}.json"
-    )
+    if args.output:
+        output_path = Path(args.output)
+    elif args.episode:
+        output_path = workspace / "parsed" / slug / f"stem_verify_{args.episode}.json"
+    else:
+        output_path = stems_dir / "stem_verify_report.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     mp3_files = sorted(p for p in stems_dir.iterdir() if p.suffix.lower() == ".mp3")
@@ -207,7 +218,7 @@ def _run(args: argparse.Namespace) -> None:
     total_duration = sum(r["duration_seconds"] or 0.0 for r in records)
     report = {
         "show": slug,
-        "episode": args.episode,
+        "episode": args.episode or stems_dir.name,
         "generated": datetime.now().replace(microsecond=0).isoformat(),
         "stems_dir": str(stems_dir.resolve()),
         "whisper_model": args.model if transcribe else None,
@@ -230,8 +241,8 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--show", "-s", default=None, metavar="SLUG",
                         help="Show slug (default: resolved from project.json or XIL_PROJECTROOT)")
-    parser.add_argument("--episode", "-e", required=True, metavar="TAG",
-                        help="Episode tag, e.g. S01E01")
+    parser.add_argument("--episode", "-e", default=None, metavar="TAG",
+                        help="Episode tag, e.g. S01E01 (required unless --stems-dir is set)")
     parser.add_argument("--stems-dir", default=None, metavar="DIR",
                         help="Override stems directory (default: <workspace>/stems/<slug>/<episode>/)")
     parser.add_argument("--output", "-o", default=None, metavar="FILE",

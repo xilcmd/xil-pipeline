@@ -1546,6 +1546,107 @@ flowchart TD
 
 ---
 
+## 23. XILU016 — Stem Compare
+
+Cross-references a `stem_verify` Whisper transcript report against the parsed script to flag dialogue stems where TTS produced audio that differs significantly from the scripted line. Uses `difflib.SequenceMatcher` (stdlib) — no extra dependencies beyond the main venv.
+
+```bash
+xil-stem-compare --episode S01E01                                        # auto-derives both JSON paths
+xil-stem-compare --episode S01E01 --threshold 0.70                       # stricter threshold
+xil-stem-compare --episode S01E01 --output compare_S01E01.json           # also write JSON report
+xil-stem-compare --stem-verify report.json --parsed parsed_S01E01.json   # explicit paths
+xil-stem-compare --episode S01E01 --csv                                  # CSV output to stdout
+```
+
+### CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--show` / `-s` | from `project.json` | Show slug override |
+| `--episode` / `-e` | — | Episode tag; derives both JSON paths |
+| `--stem-verify FILE` | `<workspace>/parsed/<slug>/stem_verify_<episode>.json` | Explicit stem_verify JSON path |
+| `--parsed FILE` | `<workspace>/parsed/<slug>/parsed_<episode>.json` | Explicit parsed script JSON path |
+| `--threshold FLOAT` | `0.75` | Similarity below this → `garbled` |
+| `--output` / `-o` | none | Write full JSON report to file (terminal summary always shown) |
+| `--csv` | off | Print flagged entries as CSV to stdout instead of banner summary |
+
+### Status codes
+
+| Code | Condition |
+|------|-----------|
+| `ok` | similarity ≥ threshold — not written to output |
+| `garbled` | similarity < threshold and transcript is non-empty |
+| `silent` | transcript.text is empty/whitespace — Whisper heard nothing |
+| `no_stem` | dialogue entry exists in parsed but has no matching seq in stem_verify |
+| `not_transcribed` | stem exists but transcript is null (verify ran with `--no-transcribe`) |
+
+SFX stems (`speaker == "sfx"`) are always excluded. Direction-only entries (`direction_type` not null) are also excluded.
+
+### JSON output (`--output`)
+
+```json
+{
+  "show": "the413",
+  "episode": "S01E01",
+  "generated": "2026-06-06T16:00:00",
+  "threshold": 0.75,
+  "stem_verify_path": "/abs/path/stem_verify_S01E01.json",
+  "parsed_path": "/abs/path/parsed_S01E01.json",
+  "summary": {
+    "total_dialogue": 127,
+    "ok": 125,
+    "garbled": 2,
+    "silent": 0,
+    "no_stem": 0,
+    "not_transcribed": 0
+  },
+  "flags": [
+    {
+      "seq": 156,
+      "section": "act-1",
+      "scene": null,
+      "speaker": "mr_patterson",
+      "status": "garbled",
+      "similarity": 0.71,
+      "original": "That's because she had.",
+      "transcript": "That's because Shihan."
+    }
+  ]
+}
+```
+
+### Data flow
+
+```mermaid
+flowchart TD
+    SV["`📊 stem_verify_<episode>.json
+    Whisper transcripts per stem`"]
+    PS["`📄 parsed_<episode>.json
+    Scripted dialogue entries`"]
+    JOIN["`join on seq
+    dialogue entries only`"]
+    NORM["`_normalize()
+    lowercase + strip punctuation`"]
+    SIM["`SequenceMatcher.ratio()
+    character-level similarity`"]
+    FLAGS["`flags list
+    garbled · silent · no_stem · not_transcribed`"]
+    OUT["`📊 compare_<episode>.json
+    (--output, optional)`"]
+
+    SV --> JOIN
+    PS --> JOIN
+    JOIN --> NORM
+    NORM --> SIM
+    SIM --> FLAGS
+    FLAGS --> OUT
+```
+
+> **Workflow:** Run `xil-stem-verify` with Whisper transcription first, then `xil-stem-compare` to find garbled lines. Adjust `--threshold` to taste — 0.75 catches clear substitutions; 0.90 surfaces minor discrepancies like "forty" vs "40".
+> **No ElevenLabs API key required** — reads local files only.
+
+---
+
 ## Man Pages
 
 All 23 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.

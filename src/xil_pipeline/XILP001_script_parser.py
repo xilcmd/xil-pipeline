@@ -236,6 +236,11 @@ def load_speakers(
         if display not in keys:
             known.append(display)
             keys[display] = key
+        if " " in display:
+            underscore = display.replace(" ", "_")
+            if underscore not in keys:
+                known.append(underscore)
+            keys[underscore] = key
 
     # Overlay JSON entries — adds new entries and overrides keys for existing ones
     if has_json:
@@ -247,6 +252,13 @@ def load_speakers(
             if display not in keys:
                 known.append(display)
             keys[display] = key  # JSON key always wins
+            # Also register the underscore form so scripts can write
+            # GRANDMA_ROSE or THE_CROW instead of "GRANDMA ROSE" / "THE CROW"
+            if " " in display:
+                underscore = display.replace(" ", "_")
+                if underscore not in keys:
+                    known.append(underscore)
+                keys[underscore] = key
 
     # Sort longest-first for correct compound-name matching
     known.sort(key=len, reverse=True)
@@ -296,6 +308,10 @@ SECTION_MAP = {
     "ACT 3": "act3",                            # S02E02 three-act structure
     "ACT FOUR": "act4",
     "ACT 4": "act4",
+    "ACT FIVE": "act5",
+    "ACT 5": "act5",
+    "ACT SIX": "act6",
+    "ACT 6": "act6",
     "MID-EPISODE BREAK": "mid-break",
     "CLOSING": "closing",
     "CLOSING — RADIO STATION": "closing",       # S02E01 variant
@@ -326,6 +342,10 @@ PODCAST_SECTIONS: dict[str, str] = {
     "ACT 3": "act3",
     "ACT FOUR": "act4",
     "ACT 4": "act4",
+    "ACT FIVE": "act5",
+    "ACT 5": "act5",
+    "ACT SIX": "act6",
+    "ACT 6": "act6",
     "MID-EPISODE BREAK": "mid-break",
     "CLOSING": "closing",
     "POST-CREDITS SCENE": "post-credits",
@@ -367,6 +387,10 @@ DRAMA_SECTIONS: dict[str, str] = {
     "ACT 3": "act3",
     "ACT FOUR": "act4",
     "ACT 4": "act4",
+    "ACT FIVE": "act5",
+    "ACT 5": "act5",
+    "ACT SIX": "act6",
+    "ACT 6": "act6",
     "COLD OPEN": "cold-open",
     "CLOSING": "closing",
     "POST-CREDITS SCENE": "post-credits",

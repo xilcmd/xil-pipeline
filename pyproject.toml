@@ -85,6 +85,7 @@ xil-parsed-csv        = "xil_pipeline.XILU012_parsed_csv:main"
 xil-sfx-hydrate       = "xil_pipeline.XILU013_sfx_hydrate:main"
 xil-episode-summary   = "xil_pipeline.XILU014_episode_summary:main"
 xil-stem-verify       = "xil_pipeline.XILU015_stem_verify:main"
+xil-stem-compare      = "xil_pipeline.XILU016_stem_compare:main"
 xil-init              = "xil_pipeline.xil_init:main"
 xil-gui               = "xil_pipeline.xil_gui:main"
 

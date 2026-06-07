@@ -302,7 +302,10 @@ def ensure_shared_sfx(
             generation.
     """
     path = shared_sfx_path(sfx_dir, effect_key)
-    if file_nonempty(path):
+    # Only skip generation when no explicit source is declared. If a source is
+    # specified it must always win — a stale pool file (e.g. from another show
+    # that used the same effect key) would otherwise silently shadow the source.
+    if effect.source is None and file_nonempty(path):
         return path
 
     os.makedirs(sfx_dir, exist_ok=True)

@@ -37,6 +37,7 @@ class CommandSpec:
 # Dict insertion order defines the display order within each group.
 XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
     "init": CommandSpec("xil_pipeline.xil_init", "workspace scaffolding", _PIPELINE),
+    "use": CommandSpec("xil_pipeline.xil_use", "set / show the active show context", _UTILITY, "(multi-show workspaces)"),
     "scan": CommandSpec("xil_pipeline.XILP000_script_scanner", "pre-flight script scanner", _PIPELINE),
     "parse": CommandSpec("xil_pipeline.XILP001_script_parser", "script parser", _PIPELINE),
     "cues": CommandSpec("xil_pipeline.XILP006_cues_ingester", "cues sheet ingestion", _PIPELINE),
@@ -139,6 +140,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         "write one-row-per-episode summary CSV (lines, words, TTS chars)",
         _UTILITY,
         "(any time)",
+    ),
+    "stem-verify": CommandSpec(
+        "xil_pipeline.XILU015_stem_verify",
+        "scan stems folder → JSON report with file attributes and optional Whisper transcripts",
+        _UTILITY,
+        "(after produce / import)",
     ),
 }
 """Subcommand registry. Insertion order defines display order within each group."""

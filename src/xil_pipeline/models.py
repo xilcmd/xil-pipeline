@@ -34,6 +34,18 @@ def get_workspace_root() -> Path:
         return Path(env_val).expanduser().resolve()
     return Path.cwd()
 
+
+def get_active_show() -> str | None:
+    """Return the slug from ``.active_show``, or ``None`` if not set."""
+    f = get_workspace_root() / ".active_show"
+    return f.read_text(encoding="utf-8").strip() if f.exists() else None
+
+
+def set_active_show(slug: str) -> None:
+    """Write *slug* to ``.active_show`` in the workspace root."""
+    f = get_workspace_root() / ".active_show"
+    f.write_text(slug, encoding="utf-8")
+
 # Per-type production defaults (gap_ms between dialogue stems, voice stability hint).
 TYPE_DEFAULTS: dict[str, dict] = {
     "podcast":   {"gap_ms": 600, "stability": None},
@@ -128,7 +140,16 @@ def derive_paths(slug: str, tag: str) -> dict[str, str]:
 def _read_project(project_path: str = "project.json") -> dict:
     """Return the parsed contents of *project_path*, or ``{}`` if absent."""
     if not os.path.isabs(project_path):
-        project_path = str(get_workspace_root() / project_path)
+        root = get_workspace_root()
+        if project_path == "project.json":
+            active_file = root / ".active_show"
+            if active_file.exists():
+                slug = active_file.read_text(encoding="utf-8").strip()
+                candidate = root / "configs" / slug / "project.json"
+                if candidate.exists():
+                    with open(candidate, encoding="utf-8") as f:
+                        return json.load(f)
+        project_path = str(root / project_path)
     if os.path.exists(project_path):
         with open(project_path, encoding="utf-8") as f:
             return json.load(f)

@@ -419,6 +419,7 @@ def scaffold(
     content_type: str = "podcast",
     season: int | None = None,
     season_title: str | None = None,
+    flat_layout: bool = True,
 ) -> None:
     """Create a new xil-pipeline workspace in *directory*.
 
@@ -429,22 +430,42 @@ def scaffold(
             ``"drama"``, or ``"special"``.
         season: Optional season number for project.json and the sample script header.
         season_title: Optional season/arc title for project.json.
+        flat_layout: When ``True`` (default), use the multi-show flat layout:
+            ``project.json`` is written to ``configs/{slug}/`` and per-show
+            subdirectories are created inside the shared category dirs
+            (``daw/{slug}/``, ``stems/{slug}/``, etc.).  Set to ``False`` for
+            a legacy single-show workspace where all dirs live at the root.
     """
-    from xil_pipeline.models import show_slug
+    from xil_pipeline.models import set_active_show, show_slug
 
     os.makedirs(directory, exist_ok=True)
     slug = show_slug(show_name)
 
-    # project.json
-    project_path = os.path.join(directory, "project.json")
+    project_data: dict = {"show": show_name, "type": content_type}
+    if season is not None:
+        project_data["season"] = season
+    if season_title is not None:
+        project_data["season_title"] = season_title
+    if content_type == "audiobook":
+        project_data["tag_format"] = "V{volume:02d}C{chapter:02d}"
+
+    if flat_layout:
+        # Shared dirs — one per workspace, no per-show subdir
+        for shared in ("scripts", "SFX", "voice_samples"):
+            os.makedirs(os.path.join(directory, shared), exist_ok=True)
+        # Per-show category subdirs
+        os.makedirs(os.path.join(directory, "configs", slug), exist_ok=True)
+        for category in ("daw", "stems", "masters", "parsed", "cues", "posts"):
+            os.makedirs(os.path.join(directory, category, slug), exist_ok=True)
+        # project.json lives in configs/{slug}/
+        project_path = os.path.join(directory, "configs", slug, "project.json")
+    else:
+        # Legacy single-show layout
+        for subdir in ("scripts", f"configs/{slug}", "parsed", "stems", "SFX", "daw", "masters", "cues"):
+            os.makedirs(os.path.join(directory, subdir), exist_ok=True)
+        project_path = os.path.join(directory, "project.json")
+
     if not os.path.exists(project_path):
-        project_data: dict = {"show": show_name, "type": content_type}
-        if season is not None:
-            project_data["season"] = season
-        if season_title is not None:
-            project_data["season_title"] = season_title
-        if content_type == "audiobook":
-            project_data["tag_format"] = "V{volume:02d}C{chapter:02d}"
         with open(project_path, "w", encoding="utf-8") as f:
             json.dump(project_data, f, indent=2)
             f.write("\n")
@@ -452,12 +473,7 @@ def scaffold(
     else:
         logger.info(f"  Skipped {project_path} (already exists)")
 
-    # Subdirectories (new normalized layout — configs/{slug}/ for episode configs)
-    for subdir in ("scripts", f"configs/{slug}", "parsed", "stems", "SFX", "daw", "masters", "cues"):
-        path = os.path.join(directory, subdir)
-        os.makedirs(path, exist_ok=True)
-
-    # speakers.json — lives in configs/{slug}/ so each show has its own cast list
+    # speakers.json — lives in configs/{slug}/
     speakers_path = os.path.join(directory, "configs", slug, "speakers.json")
     if not os.path.exists(speakers_path):
         speakers = SPEAKERS_BY_TYPE.get(content_type, SPEAKERS_BY_TYPE["podcast"])
@@ -484,6 +500,10 @@ def scaffold(
         logger.info(f"  Created {script_path}")
     else:
         logger.info(f"  Skipped {script_path} (already exists)")
+
+    if flat_layout:
+        set_active_show(slug)
+        logger.info(f"  Active show set to: {slug}")
 
 
 def print_getting_started(directory: str, content_type: str = "podcast") -> None:
@@ -541,6 +561,14 @@ def get_parser() -> argparse.ArgumentParser:
         "--season-title", default=None, metavar="TITLE",
         help="Season/arc title for project.json and the sample script header",
     )
+    parser.add_argument(
+        "--flat", dest="flat_layout", action="store_true", default=True,
+        help="Use multi-show flat layout: project.json in configs/{slug}/, per-show category subdirs (default)",
+    )
+    parser.add_argument(
+        "--no-flat", dest="flat_layout", action="store_false",
+        help="Use legacy single-show layout: all dirs at workspace root",
+    )
     return parser
 
 
@@ -549,22 +577,20 @@ def main() -> None:
     configure_logging()
     args = get_parser().parse_args()
 
+    from xil_pipeline.models import get_workspace_root
     if args.directory is None:
-        if os.environ.get("XIL_PROJECTROOT"):
-            from xil_pipeline.models import get_workspace_root
-            directory = str(get_workspace_root())
-        else:
-            directory = os.path.abspath(".")
+        directory = str(get_workspace_root())
     else:
         directory = os.path.abspath(args.directory)
     show_name = args.show
     content_type = args.content_type
 
     logger.info(f"\nScaffolding xil-pipeline workspace in: {directory}")
-    logger.info(f"Show: {show_name}  Type: {content_type}\n")
+    logger.info(f"Show: {show_name}  Type: {content_type}  Flat layout: {args.flat_layout}\n")
 
     scaffold(directory, show_name, content_type=content_type,
-             season=args.season, season_title=args.season_title)
+             season=args.season, season_title=args.season_title,
+             flat_layout=args.flat_layout)
     print_getting_started(args.directory, content_type=content_type)
 
 

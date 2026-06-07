@@ -643,28 +643,47 @@ def _build_app():
             gr.update(choices=new_choices),
         )
 
-    def auto_dir_from_show(show_name: str, current_dir: str) -> str:
-        if current_dir.strip():
-            return current_dir
-        import re
-        slug = re.sub(r"[^a-z0-9]+", "-", show_name.strip().lower()).strip("-")
-        return slug if slug else ""
+    def _list_available_shows() -> list[str]:
+        """Return show names found in configs/*/project.json."""
+        import json as _json
+        configs_dir = os.path.join(workspace, "configs")
+        results = []
+        if os.path.isdir(configs_dir):
+            for entry_name in sorted(os.listdir(configs_dir)):
+                entry = os.path.join(configs_dir, entry_name)
+                pj = os.path.join(entry, "project.json")
+                if os.path.isdir(entry) and os.path.exists(pj):
+                    try:
+                        with open(pj, encoding="utf-8") as _f:
+                            data = _json.load(_f)
+                        results.append(data.get("show", entry_name))
+                    except Exception:
+                        results.append(entry_name)
+        return results
 
-    def run_init(show_name: str, content_type: str, directory: str, season: str, season_title: str):
+    def run_use_show(show_name: str) -> str:
+        """Set .active_show to the selected show and return status."""
+        if not show_name:
+            return "No show selected."
+        cmd = [sys.executable, "-m", "xil_pipeline.xil_use", show_name]
+        try:
+            import subprocess as _sp
+            result = _sp.run(cmd, capture_output=True, text=True, cwd=workspace)
+            out = (result.stdout + result.stderr).strip()
+            return out if out else f"Active show set to: {show_name}"
+        except Exception as exc:
+            return f"Error: {exc}"
+
+    def run_init(show_name: str, content_type: str, season: str, season_title: str):
         if not show_name.strip():
             yield "Show name is required."
             return
-        import re
-        target_dir = directory.strip()
-        if not target_dir:
-            target_dir = re.sub(r"[^a-z0-9]+", "-", show_name.strip().lower()).strip("-")
         cmd = [sys.executable, "-m", "xil_pipeline.xil_init",
-               "--show", show_name.strip(), "--type", content_type]
+               "--show", show_name.strip(), "--type", content_type, "--flat"]
         if season.strip():
             cmd += ["--season", season.strip()]
         if season_title.strip():
             cmd += ["--season-title", season_title.strip()]
-        cmd.append(target_dir)
         yield "$ " + " ".join(cmd) + "\n\n"
         try:
             proc = subprocess.Popen(
@@ -672,7 +691,7 @@ def _build_app():
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                cwd=str(get_workspace_root()),
+                cwd=workspace,
             )
             output = "$ " + " ".join(cmd) + "\n\n"
             for line in iter(proc.stdout.readline, ""):
@@ -684,23 +703,32 @@ def _build_app():
         except Exception as exc:
             yield f"Error: {exc}"
 
-    _PROJECT_JSON_PATH = os.path.join(workspace, "project.json")
+    def _get_project_json_path() -> str:
+        from xil_pipeline.models import get_active_show as _gas
+        slug = _gas()
+        if slug:
+            candidate = os.path.join(workspace, "configs", slug, "project.json")
+            if os.path.exists(candidate):
+                return candidate
+        return os.path.join(workspace, "project.json")
 
-    def load_project_json() -> str:
-        if os.path.exists(_PROJECT_JSON_PATH):
-            with open(_PROJECT_JSON_PATH, encoding="utf-8") as f:
-                return f.read()
-        return json.dumps({"show": "", "season": 1}, indent=2)
+    def load_project_json() -> tuple[str, str]:
+        path = _get_project_json_path()
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return f.read(), path
+        return json.dumps({"show": "", "season": 1}, indent=2), path
 
     def save_project_json(text: str) -> str:
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
             return f"Invalid JSON — not saved: {exc}"
-        with open(_PROJECT_JSON_PATH, "w", encoding="utf-8") as f:
+        path = _get_project_json_path()
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
-        return f"Saved {_PROJECT_JSON_PATH}"
+        return f"Saved {path}"
 
     def cast_config_choices() -> list[str]:
         return _find_cast_configs()
@@ -785,11 +813,88 @@ def _build_app():
 
         with gr.Tabs():
 
-            # ── Tab 0: Project ───────────────────────────────────────
+            # ── Tab 0: Setup ─────────────────────────────────────────
+            with gr.Tab("Setup"):
+                gr.Markdown("### Active show")
+                gr.Markdown(
+                    "Select which show is active. All pipeline commands will use this show's "
+                    "`configs/{slug}/project.json` to resolve the show slug and season defaults."
+                )
+                with gr.Row():
+                    from xil_pipeline.models import get_active_show as _get_active_show, show_slug as _show_slug
+                    _init_shows = _list_available_shows()
+                    _active_name = next(
+                        (name for name in _init_shows
+                         if _show_slug(name) == _get_active_show()),
+                        None,
+                    )
+                    use_show_dd = gr.Dropdown(
+                        label="Show",
+                        choices=_init_shows,
+                        value=_active_name,
+                        scale=4,
+                    )
+                    use_show_btn = gr.Button("▶ Use this show", variant="primary", scale=1)
+                use_show_status = gr.Textbox(
+                    label="Status", lines=1, interactive=False,
+                )
+                # use_show_btn click is wired after the Project tab so it can
+                # update proj_editor and proj_path_display as well.
+
+                gr.Markdown("---")
+                gr.Markdown("### Initialize a new show")
+                gr.Markdown(
+                    f"Creates `configs/{{slug}}/project.json`, `speakers.json`, a type-specific "
+                    f"sample script, and per-show subdirectories inside `{workspace}`."
+                )
+                with gr.Row():
+                    init_show = gr.Textbox(
+                        label="Show name *", placeholder='e.g. "Night Owls"', scale=3,
+                    )
+                    init_type = gr.Dropdown(
+                        label="Content type",
+                        choices=["podcast", "audiobook", "drama", "special"],
+                        value="podcast",
+                        scale=1,
+                    )
+                with gr.Row():
+                    init_season = gr.Textbox(
+                        label="Season number (optional)", placeholder="e.g. 1", scale=1,
+                    )
+                    init_season_title = gr.Textbox(
+                        label="Season title (optional)",
+                        placeholder='e.g. "The Holiday Shift"',
+                        scale=3,
+                    )
+                init_btn = gr.Button("▶ Create show", variant="primary")
+                init_log = gr.Textbox(
+                    label="Output", lines=12, max_lines=12, autoscroll=True, interactive=False,
+                )
+
+                def run_init_and_refresh(show_name, content_type, season, season_title):
+                    output = ""
+                    for chunk in run_init(show_name, content_type, season, season_title):
+                        output = chunk
+                        yield output, gr.update()
+                    new_shows = _list_available_shows()
+                    from xil_pipeline.models import get_active_show as _gas, show_slug as _ss
+                    new_active = next((n for n in new_shows if _ss(n) == _gas()), None)
+                    yield output, gr.update(choices=new_shows, value=new_active)
+
+                init_btn.click(
+                    fn=run_init_and_refresh,
+                    inputs=[init_show, init_type, init_season, init_season_title],
+                    outputs=[init_log, use_show_dd],
+                )
+
+            # ── Tab 1: Project ───────────────────────────────────────
             with gr.Tab("Project"):
-                gr.Markdown(f"### `{_PROJECT_JSON_PATH}`")
+                _init_proj_content, _init_proj_path = load_project_json()
+                proj_path_display = gr.Textbox(
+                    value=_init_proj_path, label="File", interactive=False, lines=1,
+                )
                 proj_editor = gr.Code(
-                    value=load_project_json(),
+                    value=_init_proj_content,
                     language="json",
                     lines=20,
                     label="project.json",
@@ -798,7 +903,7 @@ def _build_app():
                     proj_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
                     proj_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
                 proj_status = gr.Textbox(label="Status", lines=1, interactive=False)
-                proj_reload_btn.click(fn=load_project_json, inputs=[], outputs=proj_editor)
+                proj_reload_btn.click(fn=load_project_json, inputs=[], outputs=[proj_editor, proj_path_display])
                 proj_save_btn.click(fn=save_project_json, inputs=proj_editor, outputs=proj_status)
 
             # ── Tab 1: Speakers ──────────────────────────────────────
@@ -1321,61 +1426,31 @@ def _build_app():
                     outputs=log_box,
                 )
 
-            # ── Tab 7: Setup ─────────────────────────────────────────
-            with gr.Tab("Setup"):
-                gr.Markdown("### Initialize a new show workspace")
-                gr.Markdown(
-                    "Creates `project.json`, `speakers.json`, a type-specific sample script, "
-                    "and empty subdirectories in the target directory."
-                )
-                with gr.Row():
-                    init_show = gr.Textbox(
-                        label="Show name *", placeholder='e.g. "Night Owls"', scale=3,
-                    )
-                    init_type = gr.Dropdown(
-                        label="Content type",
-                        choices=["podcast", "audiobook", "drama", "special"],
-                        value="podcast",
-                        scale=1,
-                    )
-                    init_dir = gr.Textbox(
-                        label="New workspace directory",
-                        placeholder="auto-filled from show name",
-                        scale=2,
-                    )
-                with gr.Row():
-                    init_season = gr.Textbox(
-                        label="Season number (optional)", placeholder="e.g. 1", scale=1,
-                    )
-                    init_season_title = gr.Textbox(
-                        label="Season title (optional)",
-                        placeholder='e.g. "The Holiday Shift"',
-                        scale=3,
-                    )
-                init_btn = gr.Button("▶ Create workspace", variant="primary")
-                init_log = gr.Textbox(
-                    label="Output", lines=12, max_lines=12, autoscroll=True, interactive=False,
-                )
-                init_show.change(
-                    fn=auto_dir_from_show,
-                    inputs=[init_show, init_dir],
-                    outputs=init_dir,
-                )
-                init_btn.click(
-                    fn=run_init,
-                    inputs=[init_show, init_type, init_dir, init_season, init_season_title],
-                    outputs=init_log,
-                )
-
             # ── Tab 8: Timeline ──────────────────────────────────────
             with gr.Tab("Timeline"):
                 tl_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices)
                 tl_html = gr.HTML("<p>Select an episode above.</p>")
                 tl_ep_dd.change(fn=on_timeline_ep_change, inputs=tl_ep_dd, outputs=tl_html)
 
+        def _use_show_and_reload(show_name):
+            status = run_use_show(show_name)
+            content, path = load_project_json()
+            return status, content, path
+
+        use_show_btn.click(
+            fn=_use_show_and_reload,
+            inputs=[use_show_dd],
+            outputs=[use_show_status, proj_editor, proj_path_display],
+        )
+
+        def _refresh_all_with_project():
+            rows, aud, run, tl = refresh_all()
+            content, path = load_project_json()
+            return rows, aud, run, tl, content, path
+
         refresh_btn.click(
-            fn=refresh_all,
-            outputs=[ep_table, audio_ep_dd, run_ep_dd, tl_ep_dd],
+            fn=_refresh_all_with_project,
+            outputs=[ep_table, audio_ep_dd, run_ep_dd, tl_ep_dd, proj_editor, proj_path_display],
         )
 
     demo.queue()

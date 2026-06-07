@@ -21,7 +21,8 @@ def workspace(tmp_path):
 
 
 def test_scaffold_creates_project_json(workspace):
-    path = os.path.join(workspace, "project.json")
+    # Flat layout places project.json in configs/{slug}/
+    path = os.path.join(workspace, "configs", "testshow", "project.json")
     assert os.path.exists(path)
     with open(path) as f:
         data = json.load(f)
@@ -59,14 +60,17 @@ def test_scaffold_creates_sample_script(workspace):
 
 
 def test_scaffold_creates_subdirectories(workspace):
-    for subdir in ("scripts", "parsed", "stems", "SFX", "daw", "masters", "cues"):
+    # Flat layout: shared dirs at root, per-show dirs under category/slug/
+    for subdir in ("scripts", "SFX"):
         assert os.path.isdir(os.path.join(workspace, subdir))
+    for category in ("daw", "stems", "masters", "parsed", "cues"):
+        assert os.path.isdir(os.path.join(workspace, category, "testshow"))
 
 
 def test_scaffold_custom_show_name(tmp_path):
     target = str(tmp_path / "custom")
     scaffold(target, "Night Owls")
-    with open(os.path.join(target, "project.json")) as f:
+    with open(os.path.join(target, "configs", "nightowls", "project.json")) as f:
         data = json.load(f)
     assert data["show"] == "Night Owls"
     with open(os.path.join(target, "scripts", "sample_S01E01.md")) as f:
@@ -78,7 +82,7 @@ def test_scaffold_with_season_and_title(tmp_path):
     """--season and --season-title are written to project.json and the sample script."""
     target = str(tmp_path / "arc-show")
     scaffold(target, "Night Owls", season=2, season_title="The Bridge")
-    with open(os.path.join(target, "project.json")) as f:
+    with open(os.path.join(target, "configs", "nightowls", "project.json")) as f:
         data = json.load(f)
     assert data["season"] == 2
     assert data["season_title"] == "The Bridge"
@@ -90,8 +94,8 @@ def test_scaffold_with_season_and_title(tmp_path):
 
 def test_scaffold_skips_existing_files(workspace):
     """Re-running scaffold should not overwrite existing files."""
-    # Modify project.json
-    pj_path = os.path.join(workspace, "project.json")
+    # Flat layout: project.json lives in configs/{slug}/
+    pj_path = os.path.join(workspace, "configs", "testshow", "project.json")
     with open(pj_path, "w") as f:
         json.dump({"show": "Modified"}, f)
 
@@ -108,7 +112,8 @@ def test_scaffold_into_current_dir(tmp_path, monkeypatch):
     """Scaffolding into '.' (default) works."""
     monkeypatch.chdir(tmp_path)
     scaffold(str(tmp_path), "Dot Show")
-    assert os.path.exists(os.path.join(str(tmp_path), "project.json"))
+    # Flat layout: project.json is in configs/{slug}/
+    assert os.path.exists(os.path.join(str(tmp_path), "configs", "dotshow", "project.json"))
 
 
 def test_sample_script_parses_with_speakers(workspace, monkeypatch):

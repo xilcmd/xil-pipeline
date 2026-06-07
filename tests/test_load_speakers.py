@@ -82,9 +82,13 @@ class TestLoadSpeakers:
             json.dump(speakers, f)
 
         known, keys = load_speakers(path)
-        assert known[0] == "AL CAPONE (DISGUISED)"
-        assert known[1] == "AL CAPONE"
-        assert known[2] == "AL"
+        # Underscore aliases are also registered, so use index-based ordering checks
+        # rather than exact positional assertions.
+        assert known.index("AL CAPONE (DISGUISED)") < known.index("AL CAPONE")
+        assert known.index("AL CAPONE") < known.index("AL")
+        # Underscore forms present too
+        assert "AL_CAPONE_(DISGUISED)" in known
+        assert "AL_CAPONE" in known
 
 
 class TestTryMatchSpeakerWithCustomSpeakers:
