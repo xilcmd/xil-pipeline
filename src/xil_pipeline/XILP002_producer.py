@@ -548,6 +548,7 @@ def generate_voices(
         speaker = entry["speaker"]
         text = entry["text"]
         stem_name = entry["stem_name"]
+        tts_comment = current_model if backend == "elevenlabs" else backend
 
         # Skip if stem already exists (unless --force)
         stem_file = os.path.join(stems_dir, f"{stem_name}.mp3")
@@ -568,7 +569,7 @@ def generate_voices(
                             "speed": cfg.get("speed", 1.0),
                             "stability": cfg.get("stability", 0.5),
                             "similarity_boost": cfg.get("similarity_boost", 0.75),
-                            "backend": backend, "sha256": sha256_hex,
+                            "backend": backend, "model": tts_comment, "sha256": sha256_hex,
                             "seq_at_generation": entry["seq"],
                             "stem_filename": os.path.basename(stem_file),
                             "generated_at": "",
@@ -650,7 +651,6 @@ def generate_voices(
 
         full_name = config.get(speaker, {}).get("full_name", speaker.title())
         first_five = " ".join(text.split()[:5])
-        tts_comment = current_model if backend == "elevenlabs" else backend
         tag_mp3(
             stem_file,
             show=show,
@@ -669,7 +669,7 @@ def generate_voices(
                 "speed": cfg.get("speed", 1.0),
                 "stability": cfg.get("stability", 0.5),
                 "similarity_boost": cfg.get("similarity_boost", 0.75),
-                "backend": backend, "sha256": sha256_hex,
+                "backend": backend, "model": tts_comment, "sha256": sha256_hex,
                 "seq_at_generation": entry["seq"],
                 "stem_filename": os.path.basename(stem_file),
                 "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),

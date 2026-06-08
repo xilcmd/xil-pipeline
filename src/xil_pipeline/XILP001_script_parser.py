@@ -1337,6 +1337,24 @@ def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = 
             sfx_count += 1
 
     config = {
+        "_docs": {
+            "defaults": (
+                "Episode-wide fallbacks. Category prefixes: ambience_, music_, sfx_, vintage_filter_. "
+                "E.g. 'ambience_volume_percentage': 30. "
+                "Global fallbacks: volume_percentage, ramp_in_seconds, ramp_out_seconds."
+            ),
+            "per_effect_override": (
+                "Use plain 'volume_percentage' (no prefix) inside an effect entry to override "
+                "the category default for that one cue only."
+            ),
+            "source": (
+                "Relative path from workspace root, e.g. 'SFX/filename.mp3'. "
+                "Explicit source always wins over the shared pool cache."
+            ),
+            "play_duration": "Percentage of clip to play (0–100, e.g. 50 = half). Not applicable to AMBIENCE.",
+            "prompt": "ElevenLabs SFX API natural-language description for generated effects.",
+            "type": "'sfx' for API-generated audio, 'silence' for local silence padding.",
+        },
         "show": parsed.get("show", "Unknown Show"),
         "season": None if tag_override else parsed.get("season"),
         "episode": None if tag_override else parsed.get("episode", 1),
