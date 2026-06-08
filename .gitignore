@@ -58,3 +58,6 @@ cues/
 
 # Generated reports (xil-stem-log output)
 stem_log*.csv
+
+# Active show context (workspace-local, not shared)
+.active_show
