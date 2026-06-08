@@ -314,7 +314,10 @@ def ensure_shared_sfx(
         # Resolve to a real path to prevent path-traversal via sfx config.
         src_real = os.path.realpath(effect.source)
         if os.path.isfile(src_real):
-            shutil.copy2(src_real, path)
+            # Skip copy when source already IS the pool file (source path lives
+            # in SFX/ and the slugified key maps to the same filename).
+            if not (os.path.exists(path) and os.path.samefile(src_real, path)):
+                shutil.copy2(src_real, path)
         else:
             # Source file declared but missing — fall back to API generation if a
             # prompt is available, otherwise raise an actionable error.
