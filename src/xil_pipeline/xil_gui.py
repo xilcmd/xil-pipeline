@@ -887,6 +887,7 @@ def _build_app():
                     fn=run_init_and_refresh,
                     inputs=[init_show, init_type, init_season, init_season_title],
                     outputs=[init_log, use_show_dd],
+                    api_name="setup_create_show",
                 )
 
             # ── Tab 1: Project ───────────────────────────────────────
@@ -1443,6 +1444,7 @@ def _build_app():
             fn=_use_show_and_reload,
             inputs=[use_show_dd],
             outputs=[use_show_status, proj_editor, proj_path_display],
+            api_name="setup_use_show",
         )
 
         def _refresh_all_with_project():

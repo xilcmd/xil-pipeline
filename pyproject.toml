@@ -45,6 +45,7 @@ dev = [
     "pytest-cov>=7.0,<8",
     "ruff>=0.15",
     "argparse-manpage>=4.6,<5",
+    "gradio_client>=1.3",
 ]
 docs = [
     "mkdocs>=1.6",
