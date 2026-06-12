@@ -56,6 +56,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("xil-mp3-hash", "xil_pipeline.XILU007_mp3_hash"),
     ("xil-stem-log", "xil_pipeline.XILU008_stem_log_report"),
     ("xil-migrate-workspace", "xil_pipeline.XILU009_migrate_workspace"),
+    ("xil-remove-show", "xil_pipeline.XILU017_remove_show"),
 ]
 
 SEE_ALSO_LINES = [

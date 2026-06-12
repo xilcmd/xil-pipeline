@@ -1,0 +1,58 @@
+.TH XIL\-REMOVE\-SHOW "1" "2026\-06\-12" "xil\-pipeline 0.1.9" "User Commands"
+.SH NAME
+xil\-remove\-show
+.SH SYNOPSIS
+.B xil\-remove\-show
+[-h] [--dry-run] [--yes] [--include-scripts] SHOW
+.SH DESCRIPTION
+Remove all workspace files for a given show. Shared assets (SFX/, logs/) are never touched.
+
+.TP
+\fBSHOW\fR
+Show name or slug to remove (e.g. mypodcast or 'My Podcast')
+
+.SH OPTIONS
+.TP
+\fB\-\-dry\-run\fR, \fB\-n\fR
+Show what would be removed without deleting anything
+
+.TP
+\fB\-\-yes\fR, \fB\-y\fR
+Skip the confirmation prompt
+
+.TP
+\fB\-\-include\-scripts\fR
+Also remove scripts/*_{slug}_*.md files whose filename contains the show slug (caution: source material)
+
+.SH COMMENTS
+Examples:
+  xil remove\-show mypodcast \-\-dry\-run
+  xil remove\-show mypodcast \-\-yes
+  xil remove\-show "My Podcast" \-\-dry\-run
+  xil remove\-show mypodcast \-\-include\-scripts \-\-yes
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-studio-onboard (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-migrate-workspace (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

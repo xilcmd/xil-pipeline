@@ -22,7 +22,7 @@ src/xil_pipeline/          # Python package (40 modules)
   chatterbox_worker.py     # Persistent Chatterbox TTS worker (venv-chatterbox subprocess)
   whisper_worker.py        # Persistent Faster-Whisper STT worker (venv-whisper subprocess)
   XILP000_*.py … XILP012_*.py   # Pipeline stages
-  XILU001_*.py … XILU016_*.py   # Utility scripts
+  XILU001_*.py … XILU017_*.py   # Utility scripts
 tests/                     # Pytest test suite
 docs/                      # MkDocs documentation
 pyproject.toml             # Packaging config (hatchling)
@@ -492,6 +492,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILU014_*` — episode summary CSV generator (scans all parsed JSONs → one-row-per-episode CSV with dialogue_lines, words, tts_chars)
 - `XILU015_*` — stem verifier (scans a stems folder → JSON report with filename, seq/scene/speaker parse, size, duration, bitrate, SHA-256, and optional Faster-Whisper transcription; requires `venv-whisper/`)
 - `XILU016_*` — stem compare (cross-references a `stem_verify` Whisper transcript report against the parsed script; flags garbled/silent/missing dialogue stems using `difflib.SequenceMatcher`; no extra dependencies)
+- `XILU017_*` — remove show (delete all workspace files for a given show slug; `--dry-run` safe; `--yes` skips confirmation prompt; `--include-scripts` also removes `scripts/*_{slug}_*.md` files; `SFX/` and `logs/` are never touched; accepts show name or slug; clears `.active_show` when it points to the removed show)
 - `xil_gui.py` — Gradio web dashboard (`xil-gui` entry point); requires `[gui]` extra; five tabs: Episodes, Audio Preview, Run Stage, Setup (with content type selector), Timeline
 - `XILP001_*` — script parser
 - `XILP002_*` — voice generation (ElevenLabs TTS)
