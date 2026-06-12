@@ -195,3 +195,91 @@ class TestSetupUseShow:
         )
         data = json.loads(content)
         assert data["show"] == "Night Owls"
+
+
+# ── Tests: --output activity log ─────────────────────────────────────────────
+
+class TestActivityLog:
+    """Start a separate xil-gui instance with --output and verify log content."""
+
+    _LOG_PORT = 7864
+
+    @pytest.fixture(scope="class")
+    def logged_server(self, tmp_path_factory):
+        """Start xil-gui with --output on a separate port, yield (workspace, client, log_path)."""
+        workspace = tmp_path_factory.mktemp("log_ws")
+        log_path = workspace / "activity.log"
+        env = {**os.environ, "XIL_PROJECTROOT": str(workspace)}
+        proc = subprocess.Popen(
+            [
+                sys.executable, "-m", "xil_pipeline.xil_gui",
+                "--port", str(self._LOG_PORT),
+                "--output", str(log_path),
+            ],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        deadline = time.time() + _STARTUP_TIMEOUT
+        client = None
+        while time.time() < deadline:
+            try:
+                client = Client(f"http://127.0.0.1:{self._LOG_PORT}", verbose=False)
+                break
+            except Exception:
+                time.sleep(1)
+        if client is None:
+            proc.terminate()
+            pytest.fail(f"xil-gui (--output) did not start within {_STARTUP_TIMEOUT}s")
+        yield workspace, client, log_path
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    def test_log_file_created(self, logged_server):
+        """The activity log file is created when --output is given."""
+        _workspace, _client, log_path = logged_server
+        assert log_path.exists(), f"Activity log not found at {log_path}"
+
+    def test_create_show_writes_cmd_to_log(self, logged_server):
+        """Running 'Create show' writes a CMD: line to the activity log."""
+        workspace, client, log_path = logged_server
+        job = client.submit("Log Test Show", "podcast", "", "",
+                            api_name="/setup_create_show")
+        for _ in job:
+            pass
+        content = log_path.read_text(encoding="utf-8")
+        assert "CMD:" in content
+        assert "xil_init" in content
+
+    def test_create_show_writes_exit_to_log(self, logged_server):
+        """Running 'Create show' writes an [exit 0] line after completion."""
+        _workspace, _client, log_path = logged_server
+        content = log_path.read_text(encoding="utf-8")
+        assert "[exit 0]" in content
+
+    def test_use_show_writes_use_to_log(self, logged_server):
+        """Selecting a show writes a USE show line to the activity log."""
+        workspace, client, log_path = logged_server
+        pj = workspace / "configs" / "logtestshow" / "project.json"
+        if not pj.exists():
+            job = client.submit("Log Test Show", "podcast", "", "",
+                                api_name="/setup_create_show")
+            for _ in job:
+                pass
+        client.predict("Log Test Show", api_name="/setup_use_show")
+        content = log_path.read_text(encoding="utf-8")
+        assert "USE show" in content
+        assert "Log Test Show" in content
+
+    def test_log_has_timestamps(self, logged_server):
+        """Every line in the activity log starts with an ISO timestamp."""
+        _workspace, _client, log_path = logged_server
+        lines = [ln for ln in log_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        assert lines, "Activity log is empty"
+        import re
+        ts_re = re.compile(r"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\]")
+        for line in lines:
+            assert ts_re.match(line), f"Missing timestamp on line: {line!r}"

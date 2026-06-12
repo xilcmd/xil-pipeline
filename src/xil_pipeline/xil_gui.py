@@ -10,9 +10,10 @@ audio preview, and sharing episode review with collaborators.
 **Usage:**
 
 ```bash
-xil-gui                    # opens http://localhost:7860
-xil-gui --port 8080        # custom port
-xil-gui --share            # generate public URL for partner access (72h tunnel)
+xil-gui                              # opens http://localhost:7860
+xil-gui --port 8080                  # custom port
+xil-gui --share                      # generate public URL for partner access (72h tunnel)
+xil-gui --output session.log         # append timestamped activity log to file
 ```
 
 Install the optional [gui] extra first:
@@ -23,14 +24,28 @@ from __future__ import annotations
 
 import argparse
 import glob
+import io
 import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+from datetime import datetime
 
 from xil_pipeline.models import get_workspace_root
+
+# ── Optional activity log (set by --output in main()) ─────────────────────────
+
+_activity_log: io.TextIOWrapper | None = None
+
+
+def _log_activity(msg: str) -> None:
+    """Write a timestamped line to the activity log. No-op when --output not set."""
+    if _activity_log is not None:
+        ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        _activity_log.write(f"[{ts}] {msg}\n")
+        _activity_log.flush()
 
 # ── Episode detection ──────────────────────────────────────────────────────
 
@@ -225,6 +240,7 @@ def _save_script_file(text: str, filename: str) -> str:
         return f"⚠️ Already exists: scripts/{filename} — edit the filename above to save a new version."
 
     dest.write_text(text, encoding="utf-8")
+    _log_activity(f"SAVE script → scripts/{filename}")
     return f"✅ Saved: scripts/{filename}"
 
 
@@ -404,6 +420,7 @@ def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str)
             return
 
     header = "$ " + " ".join(cmd) + "\n\n"
+    _log_activity("CMD: " + " ".join(cmd))
     yield header
 
     try:
@@ -416,18 +433,22 @@ def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str)
         )
         output = header
         for line in iter(proc.stdout.readline, ""):
+            _log_activity(line.rstrip("\n"))
             output += line
             yield output
         proc.wait()
+        _log_activity(f"[exit {proc.returncode}]")
         output += f"\n[exit {proc.returncode}]"
         yield output
     except Exception as exc:
+        _log_activity(f"[ERROR] {exc}")
         yield f"{header}\nError: {exc}"
 
 
 def _execute_cmd(cmd: list[str]):
     """Generator: run cmd, yield accumulated stdout to a log box."""
     header = "$ " + " ".join(cmd) + "\n\n"
+    _log_activity("CMD: " + " ".join(cmd))
     yield header
     try:
         proc = subprocess.Popen(
@@ -439,12 +460,15 @@ def _execute_cmd(cmd: list[str]):
         )
         buf = header
         for line in iter(proc.stdout.readline, ""):
+            _log_activity(line.rstrip("\n"))
             buf += line
             yield buf
         proc.wait()
+        _log_activity(f"[exit {proc.returncode}]")
         buf += f"\n[exit {proc.returncode}]"
         yield buf
     except Exception as exc:
+        _log_activity(f"[ERROR] {exc}")
         yield header + f"\n[ERROR] {exc}\n"
 
 
@@ -665,6 +689,7 @@ def _build_app():
         """Set .active_show to the selected show and return status."""
         if not show_name:
             return "No show selected."
+        _log_activity(f"USE show → {show_name}")
         cmd = [sys.executable, "-m", "xil_pipeline.xil_use", show_name]
         try:
             import subprocess as _sp
@@ -684,6 +709,7 @@ def _build_app():
             cmd += ["--season", season.strip()]
         if season_title.strip():
             cmd += ["--season-title", season_title.strip()]
+        _log_activity("CMD: " + " ".join(cmd))
         yield "$ " + " ".join(cmd) + "\n\n"
         try:
             proc = subprocess.Popen(
@@ -695,12 +721,15 @@ def _build_app():
             )
             output = "$ " + " ".join(cmd) + "\n\n"
             for line in iter(proc.stdout.readline, ""):
+                _log_activity(line.rstrip("\n"))
                 output += line
                 yield output
             proc.wait()
+            _log_activity(f"[exit {proc.returncode}]")
             output += f"\n[exit {proc.returncode}]"
             yield output
         except Exception as exc:
+            _log_activity(f"[ERROR] {exc}")
             yield f"Error: {exc}"
 
     def _get_project_json_path() -> str:
@@ -728,6 +757,7 @@ def _build_app():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
+        _log_activity(f"SAVE project.json → {path}")
         return f"Saved {path}"
 
     def cast_config_choices() -> list[str]:
@@ -752,6 +782,7 @@ def _build_app():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
+        _log_activity(f"SAVE cast config → {path}")
         return f"Saved {path}"
 
     def speakers_config_choices() -> list[str]:
@@ -776,6 +807,7 @@ def _build_app():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
+        _log_activity(f"SAVE speakers.json → {path}")
         return f"Saved {path}"
 
     def sfx_config_choices() -> list[str]:
@@ -800,6 +832,7 @@ def _build_app():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
+        _log_activity(f"SAVE sfx config → {path}")
         return f"Saved {path}"
 
     # ── layout ────────────────────────────────────────────────────────────
@@ -1487,18 +1520,31 @@ def get_parser() -> argparse.ArgumentParser:
         "--share", action="store_true",
         help="Generate a public ngrok URL for partner access (open, no auth)",
     )
+    parser.add_argument(
+        "--output", "-o",
+        default=None,
+        metavar="FILE",
+        help="Append a timestamped session activity log to FILE",
+    )
     return parser
 
 
 def main() -> None:
+    global _activity_log
     args = get_parser().parse_args()
-    demo = _build_app()
-    demo.launch(
-        server_name=args.host,
-        server_port=args.port,
-        share=args.share,
-        allowed_paths=[str(get_workspace_root())],
-    )
+    if args.output:
+        _activity_log = open(args.output, "a", encoding="utf-8", buffering=1)
+    try:
+        demo = _build_app()
+        demo.launch(
+            server_name=args.host,
+            server_port=args.port,
+            share=args.share,
+            allowed_paths=[str(get_workspace_root())],
+        )
+    finally:
+        if _activity_log:
+            _activity_log.close()
 
 
 if __name__ == "__main__":
