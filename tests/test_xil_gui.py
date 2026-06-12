@@ -112,8 +112,9 @@ class TestParseChoice:
         result = _parse_choice("the413  S03E03  [The Architect]  —  The Covered Bridge")
         assert result == ("the413", "S03E03")
 
-    def test_single_part_returns_empty_pair(self):
-        assert _parse_choice("the413") == ("", "")
+    def test_single_part_returns_slug_no_tag(self):
+        # Single-token choice is a show stub: slug is preserved, tag is empty
+        assert _parse_choice("the413") == ("the413", "")
 
     def test_empty_string_returns_empty_pair(self):
         assert _parse_choice("") == ("", "")

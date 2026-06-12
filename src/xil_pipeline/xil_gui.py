@@ -78,7 +78,12 @@ def _stage_key(choice: str) -> str:
 
 
 def _find_episodes() -> list[tuple[str, str]]:
-    """Return [(slug, tag), ...] sorted newest tag first, checking both layouts."""
+    """Return [(slug, tag), ...] sorted by slug then tag.
+
+    Shows with a configs/{slug}/project.json but no cast config yet are returned
+    as (slug, "") — show-level stubs so they appear in the dropdown before any
+    episode has been parsed.
+    """
     seen: set[tuple[str, str]] = set()
     results = []
     root = str(get_workspace_root())
@@ -102,6 +107,17 @@ def _find_episodes() -> list[tuple[str, str]]:
                 seen.add(pair)
                 results.append(pair)
 
+    # Show stubs: configs/{slug}/project.json with no cast config yet
+    slugs_with_episodes = {s for s, _ in results}
+    configs_dir = os.path.join(root, "configs")
+    if os.path.isdir(configs_dir):
+        for entry in sorted(os.listdir(configs_dir)):
+            if entry in slugs_with_episodes:
+                continue
+            pj = os.path.join(configs_dir, entry, "project.json")
+            if os.path.exists(pj):
+                results.append((entry, ""))
+
     results.sort(key=lambda x: (x[0], x[1]))
     return results
 
@@ -124,6 +140,15 @@ def _ep_meta(slug: str, tag: str) -> tuple[str, str]:
 
 
 def _ep_choice(slug: str, tag: str) -> str:
+    if not tag:
+        # Show stub — no episodes parsed yet; read show name from project.json
+        pj = os.path.join(str(get_workspace_root()), "configs", slug, "project.json")
+        try:
+            with open(pj, encoding="utf-8") as _f:
+                show_name = json.load(_f).get("show", slug)
+        except Exception:
+            show_name = slug
+        return f"{slug}  [show]  —  {show_name}"
     title, season_title = _ep_meta(slug, tag)
     label = f"{slug}  {tag}"
     if season_title:
@@ -245,11 +270,13 @@ def _save_script_file(text: str, filename: str) -> str:
 
 
 def _parse_choice(choice: str) -> tuple[str, str]:
-    """'the413  S03E03' → ('the413', 'S03E03')"""
+    """'the413  S03E03  [title]' → ('the413', 'S03E03')
+    'mypodcast  [show]  —  My Podcast' → ('mypodcast', '')
+    """
     parts = choice.strip().split()
-    if len(parts) >= 2:
+    if len(parts) >= 2 and re.match(r"^[A-Z][A-Z0-9]+$", parts[1]):
         return parts[0], parts[1]
-    return "", ""
+    return parts[0] if parts else "", ""
 
 
 def _stage_status(slug: str, tag: str) -> dict[str, str]:
@@ -916,7 +943,7 @@ def _build_app():
                     new_active = next((n for n in new_shows if _ss(n) == _gas()), None)
                     yield output, gr.update(choices=new_shows, value=new_active)
 
-                init_btn.click(
+                _init_click = init_btn.click(
                     fn=run_init_and_refresh,
                     inputs=[init_show, init_type, init_season, init_season_title],
                     outputs=[init_log, use_show_dd],
@@ -1333,18 +1360,22 @@ def _build_app():
                     if not ep:
                         yield "Select an episode or type a new episode tag (e.g. S04E04)."
                         return
-                    parts = ep.split()
-                    if len(parts) >= 2:
-                        # Standard dropdown choice: "the413 S03E03 — Episode Title"
-                        slug, tag = parts[0], parts[1]
-                    else:
-                        # Custom-typed tag: resolve slug from project.json
-                        from xil_pipeline.models import resolve_slug
-                        slug = resolve_slug(
-                            None,
-                            os.path.join(str(get_workspace_root()), "project.json"),
-                        )
-                        tag = ep
+                    slug, tag = _parse_choice(ep)
+                    if not tag:
+                        if re.match(r"^[A-Z][A-Z0-9]+$", ep):
+                            # User typed a raw episode tag (e.g. S01E01) — derive slug
+                            from xil_pipeline.models import resolve_slug
+                            slug = resolve_slug(
+                                None,
+                                os.path.join(str(get_workspace_root()), "project.json"),
+                            )
+                            tag = ep
+                        else:
+                            yield (
+                                "⚠️ Show selected but no episode tag. "
+                                "Type an episode tag in the field above (e.g. S01E01) and try again."
+                            )
+                            return
                     try:
                         cmd = _cmd_parse(slug, tag, script, preview or None, quiet, debug, stats, speakers)
                     except ValueError as exc:
@@ -1359,6 +1390,9 @@ def _build_app():
                         yield "Select an episode first."
                         return
                     slug, tag = _parse_choice(ep)
+                    if not tag:
+                        yield "⚠️ No episode tag — run Parse first (Run Stage → Parse tab)."
+                        return
                     cmd = _cmd_produce(slug, tag, dry_run, backend, gen_sfx, gen_music, gen_amb,
                                        local_only, terse,
                                        int(start_from) if start_from else None,
@@ -1372,6 +1406,9 @@ def _build_app():
                         yield "Select an episode first."
                         return
                     slug, tag = _parse_choice(ep)
+                    if not tag:
+                        yield "⚠️ No episode tag — run Parse first (Run Stage → Parse tab)."
+                        return
                     cmd = _cmd_assemble(slug, tag, int(gap_ms) if gap_ms else 600,
                                         parsed_path, output)
                     yield from _execute_cmd(cmd)
@@ -1382,6 +1419,9 @@ def _build_app():
                         yield "Select an episode first."
                         return
                     slug, tag = _parse_choice(ep)
+                    if not tag:
+                        yield "⚠️ No episode tag — run Parse first (Run Stage → Parse tab)."
+                        return
                     cmd = _cmd_daw(slug, tag, dry_run, int(gap_ms) if gap_ms else 600,
                                    timeline, timeline_html, macro, False, output_dir)
                     yield from _execute_cmd(cmd)
@@ -1391,6 +1431,9 @@ def _build_app():
                         yield "Select an episode first."
                         return
                     slug, tag = _parse_choice(ep)
+                    if not tag:
+                        yield "⚠️ No episode tag — run Parse first (Run Stage → Parse tab)."
+                        return
                     cmd = _cmd_master(slug, tag, dry_run, output, daw_dir)
                     yield from _execute_cmd(cmd)
 
@@ -1402,8 +1445,10 @@ def _build_app():
                     fn=lambda: (
                         gr.update(choices=_script_choices()),
                         gr.update(choices=_script_choices()),
+                        gr.update(choices=_episode_choices()),
+                        gr.update(choices=_episode_choices()),
                     ),
-                    outputs=[scan_script, parse_script],
+                    outputs=[scan_script, parse_script, run_ep_dd, parse_ep_dd],
                 )
                 run_ep_refresh_btn.click(
                     fn=lambda: gr.update(choices=_episode_choices()),
@@ -1488,6 +1533,17 @@ def _build_app():
         refresh_btn.click(
             fn=_refresh_all_with_project,
             outputs=[ep_table, audio_ep_dd, run_ep_dd, tl_ep_dd, proj_editor, proj_path_display],
+        )
+
+        # After "Create show" completes, refresh all episode dropdowns so the new
+        # show stub appears immediately without the user having to press ⟳.
+        _init_click.then(
+            fn=lambda: (
+                gr.update(choices=_episode_choices()),
+                gr.update(choices=_episode_choices()),
+                gr.update(choices=_episode_choices()),
+            ),
+            outputs=[run_ep_dd, parse_ep_dd, tl_ep_dd],
         )
 
     demo.queue()
