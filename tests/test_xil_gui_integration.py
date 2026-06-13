@@ -42,29 +42,33 @@ def gui_workspace(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def gui_client(gui_workspace):
+def gui_client(gui_workspace, tmp_path_factory):
     """Start xil-gui on _PORT, yield (workspace_path, Client), then terminate."""
     env = {**os.environ, "XIL_PROJECTROOT": str(gui_workspace)}
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "xil_pipeline.xil_gui", "--port", str(_PORT)],
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    stderr_path = tmp_path_factory.mktemp("gui_stderr") / "gui.stderr"
+    with open(stderr_path, "w") as stderr_f:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "xil_pipeline.xil_gui", "--port", str(_PORT)],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=stderr_f,
+        )
 
-    # Poll until the server is ready or timeout expires.
-    deadline = time.time() + _STARTUP_TIMEOUT
-    client = None
-    while time.time() < deadline:
-        try:
-            client = Client(_URL, verbose=False)
-            break
-        except Exception:
-            time.sleep(1)
+        # Poll until the server is ready or timeout expires.
+        deadline = time.time() + _STARTUP_TIMEOUT
+        client = None
+        while time.time() < deadline:
+            try:
+                client = Client(_URL, verbose=False)
+                break
+            except Exception:
+                time.sleep(1)
 
     if client is None:
         proc.terminate()
-        pytest.fail(f"xil-gui did not start within {_STARTUP_TIMEOUT}s on {_URL}")
+        stderr_out = stderr_path.read_text(encoding="utf-8", errors="replace").strip()
+        detail = f"\n--- stderr ---\n{stderr_out}" if stderr_out else ""
+        pytest.fail(f"xil-gui did not start within {_STARTUP_TIMEOUT}s on {_URL}{detail}")
 
     yield gui_workspace, client
 
@@ -209,28 +213,32 @@ class TestActivityLog:
         """Start xil-gui with --output on a separate port, yield (workspace, client, log_path)."""
         workspace = tmp_path_factory.mktemp("log_ws")
         log_path = workspace / "activity.log"
+        stderr_path = tmp_path_factory.mktemp("log_stderr") / "gui.stderr"
         env = {**os.environ, "XIL_PROJECTROOT": str(workspace)}
-        proc = subprocess.Popen(
-            [
-                sys.executable, "-m", "xil_pipeline.xil_gui",
-                "--port", str(self._LOG_PORT),
-                "--output", str(log_path),
-            ],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        deadline = time.time() + _STARTUP_TIMEOUT
-        client = None
-        while time.time() < deadline:
-            try:
-                client = Client(f"http://127.0.0.1:{self._LOG_PORT}", verbose=False)
-                break
-            except Exception:
-                time.sleep(1)
+        with open(stderr_path, "w") as stderr_f:
+            proc = subprocess.Popen(
+                [
+                    sys.executable, "-m", "xil_pipeline.xil_gui",
+                    "--port", str(self._LOG_PORT),
+                    "--output", str(log_path),
+                ],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_f,
+            )
+            deadline = time.time() + _STARTUP_TIMEOUT
+            client = None
+            while time.time() < deadline:
+                try:
+                    client = Client(f"http://127.0.0.1:{self._LOG_PORT}", verbose=False)
+                    break
+                except Exception:
+                    time.sleep(1)
         if client is None:
             proc.terminate()
-            pytest.fail(f"xil-gui (--output) did not start within {_STARTUP_TIMEOUT}s")
+            stderr_out = stderr_path.read_text(encoding="utf-8", errors="replace").strip()
+            detail = f"\n--- stderr ---\n{stderr_out}" if stderr_out else ""
+            pytest.fail(f"xil-gui (--output) did not start within {_STARTUP_TIMEOUT}s{detail}")
         yield workspace, client, log_path
         proc.terminate()
         try:
