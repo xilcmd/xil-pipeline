@@ -234,6 +234,7 @@ def _analyze_script_header(
     if not first_line:
         return "", "", "", "", "", ""
 
+    _log_activity("ANALYZE header")
     result = parse_script_header(first_line)
     if result is None:
         return "", "", "", "", "", '⚠️ Header not recognized — expected: SHOW Season N: Episode N: "Title"'
@@ -369,6 +370,7 @@ def _concatenate_stems(ep_choice: str, filter_type: str) -> str | None:
     """Concatenate all stems of filter_type for ep_choice into a temp MP3. Returns path."""
     if not ep_choice:
         return None
+    _log_activity(f"PLAY {filter_type} → {ep_choice}")
     slug, tag = _parse_choice(ep_choice)
     stems = _load_stems(slug, tag, filter_type=filter_type)
     if not stems:
@@ -647,6 +649,7 @@ def _build_app():
     def on_ep_or_filter_change(choice, filter_type):
         if not choice:
             return gr.update(choices=[], value=None), gr.update(value=None)
+        _log_activity(f"PREVIEW episode → {choice} [{filter_type}]")
         slug, tag = _parse_choice(choice)
         stems = _load_stems(slug, tag, filter_type)
         labels = [lbl for lbl, _ in stems]
@@ -658,6 +661,7 @@ def _build_app():
     def on_stem_select(episode_choice, stem_label, filter_type):
         if not episode_choice or not stem_label:
             return gr.update(value=None)
+        _log_activity(f"PREVIEW stem → {stem_label}")
         slug, tag = _parse_choice(episode_choice)
         for lbl, path in _load_stems(slug, tag, filter_type):
             if lbl == stem_label:
@@ -793,6 +797,7 @@ def _build_app():
     def load_cast_config(path: str) -> str:
         if not path:
             return ""
+        _log_activity(f"SELECT cast → {path}")
         if not os.path.exists(path):
             return f"// File not found: {path}"
         with open(path, encoding="utf-8") as f:
@@ -818,6 +823,7 @@ def _build_app():
     def load_speakers_config(path: str) -> str:
         if not path:
             return ""
+        _log_activity(f"SELECT speakers → {path}")
         if not os.path.exists(path):
             return f"// File not found: {path}"
         with open(path, encoding="utf-8") as f:
@@ -843,6 +849,7 @@ def _build_app():
     def load_sfx_config(path: str) -> str:
         if not path:
             return ""
+        _log_activity(f"SELECT sfx → {path}")
         if not os.path.exists(path):
             return f"// File not found: {path}"
         with open(path, encoding="utf-8") as f:

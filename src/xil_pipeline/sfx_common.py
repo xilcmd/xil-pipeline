@@ -340,6 +340,7 @@ def ensure_shared_sfx(
             if prompt_influence is None:
                 prompt_influence = defaults.get("prompt_influence", 0.3)
             tmp_path = None
+            logger.info("   [api] text-to-sound-effects → %r (%.1fs)", effect_key, effect.duration_seconds)
             try:
                 max_retries, delay = 5, 10
                 for attempt in range(1, max_retries + 1):
@@ -358,6 +359,7 @@ def ensure_shared_sfx(
                                     f.write(chunk)
                         os.rename(tmp_path, path)
                         tmp_path = None
+                        logger.info("   [api] saved %s", os.path.basename(path))
                         break
                     except (ApiError, httpx.TransportError) as exc:
                         if tmp_path is not None:
@@ -390,6 +392,7 @@ def ensure_shared_sfx(
             prompt_influence = defaults.get("prompt_influence", 0.3)
 
         tmp_path = None
+        logger.info("   [api] text-to-sound-effects → %r (%.1fs)", effect_key, effect.duration_seconds)
         try:
             max_retries, delay = 5, 10
             for attempt in range(1, max_retries + 1):
@@ -408,6 +411,7 @@ def ensure_shared_sfx(
                                 f.write(chunk)
                     os.rename(tmp_path, path)
                     tmp_path = None
+                    logger.info("   [api] saved %s", os.path.basename(path))
                     break
                 except (ApiError, httpx.TransportError) as exc:
                     if tmp_path is not None:
