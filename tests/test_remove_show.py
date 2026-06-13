@@ -63,8 +63,8 @@ class TestCollect:
     def test_collects_config_dir(self, workspace):
         _scaffold(workspace, "mypodcast", "My Podcast")
         items = _collect("mypodcast", include_scripts=False)
-        paths = [str(i.path) for i in items]
-        assert any("configs/mypodcast" in p for p in paths)
+        # Use Path comparison to stay cross-platform (Windows uses backslashes)
+        assert any(i.path.name == "mypodcast" and i.path.parent.name == "configs" for i in items)
 
     def test_collects_all_category_dirs(self, workspace):
         _scaffold(workspace, "mypodcast", "My Podcast")
