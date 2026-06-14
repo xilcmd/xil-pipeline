@@ -47,11 +47,30 @@ All internal imports use the package namespace: `from xil_pipeline.models import
 - Optional: `google-genai`, `gTTS`, `pyttsx3`, `ollama`
 - ElevenLabs API key via `ELEVENLABS_API_KEY` env var
 - Audio playback via `mpg123` in WSL
-- **Optional local SFX venv** (`venv-audioldm2/`): a separate virtualenv containing
-  `diffusers`, `transformers`, `torch`, `scipy`, `soundfile`, `pydub` for the AudioLDM 2 Large
-  sound-effect/music/ambience backend (`--sfx-backend audioldm2`). Like `venv-chatterbox/`, it
-  is auto-detected at the workspace or repo root and never installed into the main package.
-  Setup: `python -m venv venv-audioldm2 && venv-audioldm2/bin/pip install diffusers transformers accelerate torch scipy soundfile pydub`
+- **Optional local SFX venv** (`venv-audioldm2/`): a separate virtualenv for the AudioLDM 2 Large
+  sound-effect/music/ambience backend (`--sfx-backend audioldm2`). Like `venv-chatterbox/`, it is
+  auto-detected at the workspace or repo root and never installed into the main package. Setup
+  (validated on Python 3.13 + NVIDIA driver CUDA 12.6):
+
+  ```bash
+  python -m venv venv-audioldm2
+  venv-audioldm2/bin/pip install --upgrade pip
+  # GPU torch built for CUDA 12.4 (the default PyPI wheel targets CUDA 13 and is too new for a 12.6 driver → CPU-only):
+  venv-audioldm2/bin/pip install 'torch==2.6.0' --index-url https://download.pytorch.org/whl/cu124
+  venv-audioldm2/bin/pip install diffusers 'transformers==4.49.0' accelerate scipy soundfile pydub audioop-lts
+  ```
+
+  Version pins that matter:
+  - **`transformers==4.49.0`** — newer 5.x breaks the diffusers AudioLDM2 pipeline (loads the
+    language model as `GPT2Model` instead of `GPT2LMHeadModel` → `_update_model_kwargs_for_generation`
+    AttributeError); older 4.44.x has no Python 3.13 `tokenizers` wheel. 4.49.0 is the working middle.
+  - **`torch==2.6.0` from the cu124 index** — the default `pip install torch` pulls a CUDA 13 build
+    that a 12.6 driver rejects (`torch.cuda.is_available()` → False → silent CPU fallback). cu124
+    matches `venv-chatterbox/`.
+  - **`audioop-lts`** — required on Python 3.13+, where pydub's `audioop` stdlib dependency was removed.
+
+  AudioLDM 2 Large needs ~6–8 GB VRAM in fp16; the worker auto-falls back to CPU when CUDA is
+  unavailable (CPU works but is minutes-per-clip at the default 200 steps).
 
 ## Workspace Root (`XIL_PROJECTROOT`)
 
