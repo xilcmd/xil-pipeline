@@ -976,118 +976,7 @@ def _build_app():
                 proj_reload_btn.click(fn=load_project_json, inputs=[], outputs=[proj_editor, proj_path_display])
                 proj_save_btn.click(fn=save_project_json, inputs=proj_editor, outputs=proj_status)
 
-            # ── Tab 1: Speakers ──────────────────────────────────────
-            with gr.Tab("Speakers"):
-                _initial_spk = speakers_config_choices()
-                _initial_spk_val = _initial_spk[0] if _initial_spk else None
-                spk_file_dd = gr.Dropdown(
-                    label="Speakers file",
-                    choices=_initial_spk,
-                    value=_initial_spk_val,
-                    interactive=True,
-                )
-                spk_editor = gr.Code(
-                    value=load_speakers_config(_initial_spk_val) if _initial_spk_val else "",
-                    language="json",
-                    lines=20,
-                    label="speakers.json",
-                )
-                with gr.Row():
-                    spk_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
-                    spk_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
-                spk_status = gr.Textbox(label="Status", lines=1, interactive=False)
-
-                spk_file_dd.change(
-                    fn=load_speakers_config,
-                    inputs=spk_file_dd,
-                    outputs=spk_editor,
-                )
-                spk_reload_btn.click(
-                    fn=load_speakers_config,
-                    inputs=spk_file_dd,
-                    outputs=spk_editor,
-                )
-                spk_save_btn.click(
-                    fn=save_speakers_config,
-                    inputs=[spk_file_dd, spk_editor],
-                    outputs=spk_status,
-                )
-
-            # ── Tab 2: Cast Config ──────────────────────────────────
-            with gr.Tab("Cast Config"):
-                _initial_casts = cast_config_choices()
-                _initial_cast_val = _initial_casts[0] if _initial_casts else None
-                cast_file_dd = gr.Dropdown(
-                    label="Cast config file",
-                    choices=_initial_casts,
-                    value=_initial_cast_val,
-                    interactive=True,
-                )
-                cast_editor = gr.Code(
-                    value=load_cast_config(_initial_cast_val) if _initial_cast_val else "",
-                    language="json",
-                    lines=30,
-                    label="cast config",
-                )
-                with gr.Row():
-                    cast_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
-                    cast_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
-                cast_status = gr.Textbox(label="Status", lines=1, interactive=False)
-
-                cast_file_dd.change(
-                    fn=load_cast_config,
-                    inputs=cast_file_dd,
-                    outputs=cast_editor,
-                )
-                cast_reload_btn.click(
-                    fn=load_cast_config,
-                    inputs=cast_file_dd,
-                    outputs=cast_editor,
-                )
-                cast_save_btn.click(
-                    fn=save_cast_config,
-                    inputs=[cast_file_dd, cast_editor],
-                    outputs=cast_status,
-                )
-
-            # ── Tab 3: SFX Config ────────────────────────────────────
-            with gr.Tab("SFX Config"):
-                _initial_sfx = sfx_config_choices()
-                _initial_sfx_val = _initial_sfx[0] if _initial_sfx else None
-                sfx_file_dd = gr.Dropdown(
-                    label="SFX config file",
-                    choices=_initial_sfx,
-                    value=_initial_sfx_val,
-                    interactive=True,
-                )
-                sfx_editor = gr.Code(
-                    value=load_sfx_config(_initial_sfx_val) if _initial_sfx_val else "",
-                    language="json",
-                    lines=30,
-                    label="sfx config",
-                )
-                with gr.Row():
-                    sfx_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
-                    sfx_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
-                sfx_status = gr.Textbox(label="Status", lines=1, interactive=False)
-
-                sfx_file_dd.change(
-                    fn=load_sfx_config,
-                    inputs=sfx_file_dd,
-                    outputs=sfx_editor,
-                )
-                sfx_reload_btn.click(
-                    fn=load_sfx_config,
-                    inputs=sfx_file_dd,
-                    outputs=sfx_editor,
-                )
-                sfx_save_btn.click(
-                    fn=save_sfx_config,
-                    inputs=[sfx_file_dd, sfx_editor],
-                    outputs=sfx_status,
-                )
-
-            # ── Tab 4: Episodes ─────────────────────────────────────
+            # ── Tab 2: Episodes ─────────────────────────────────────
             with gr.Tab("Episodes"):
                 ep_table = gr.Dataframe(
                     headers=["Tag", "Slug", "Title  [Arc]", "Parse", "Stems", "DAW", "Master"],
@@ -1096,65 +985,7 @@ def _build_app():
                     wrap=True,
                 )
 
-            # ── Tab 5: Audio Preview ────────────────────────────────
-            with gr.Tab("Audio Preview"):
-                with gr.Row():
-                    audio_ep_dd = gr.Dropdown(
-                        label="Episode",
-                        choices=ep_choices,
-                        value=ep_choices[0] if ep_choices else None,
-                        scale=2,
-                    )
-                    stem_filter = gr.Radio(
-                        ["all", "dialogue", "sfx", "music", "ambience"],
-                        label="Filter",
-                        value="all",
-                        scale=3,
-                    )
-                stem_dd = gr.Dropdown(
-                    label="Stem",
-                    choices=initial_stem_labels,
-                    value=initial_stem_labels[0] if initial_stem_labels else None,
-                    interactive=True,
-                )
-                audio_player = gr.Audio(label="Playback", type="filepath", autoplay=False)
-                with gr.Row():
-                    play_all_sfx_btn   = gr.Button("▶ All SFX",      size="sm")
-                    play_all_music_btn = gr.Button("▶ All Music",     size="sm")
-                    play_all_amb_btn   = gr.Button("▶ All Ambience",  size="sm")
-
-                audio_ep_dd.change(
-                    fn=on_ep_or_filter_change,
-                    inputs=[audio_ep_dd, stem_filter],
-                    outputs=[stem_dd, audio_player],
-                )
-                stem_filter.change(
-                    fn=on_ep_or_filter_change,
-                    inputs=[audio_ep_dd, stem_filter],
-                    outputs=[stem_dd, audio_player],
-                )
-                stem_dd.change(
-                    fn=on_stem_select,
-                    inputs=[audio_ep_dd, stem_dd, stem_filter],
-                    outputs=audio_player,
-                )
-                play_all_sfx_btn.click(
-                    fn=lambda ep: _concatenate_stems(ep, "sfx"),
-                    inputs=[audio_ep_dd],
-                    outputs=[audio_player],
-                )
-                play_all_music_btn.click(
-                    fn=lambda ep: _concatenate_stems(ep, "music"),
-                    inputs=[audio_ep_dd],
-                    outputs=[audio_player],
-                )
-                play_all_amb_btn.click(
-                    fn=lambda ep: _concatenate_stems(ep, "ambience"),
-                    inputs=[audio_ep_dd],
-                    outputs=[audio_player],
-                )
-
-            # ── Tab 6: Run Stage (Scripts → Scan → Parse → Produce → Assemble → DAW → Master)
+            # ── Tab 3: Run Stage (Scripts → Scan → Parse → Produce → Assemble → DAW → Master)
             with gr.Tab("Run Stage"):
                 gr.Markdown(
                     "Run pipeline stages against an episode. "
@@ -1512,6 +1343,175 @@ def _build_app():
                     fn=run_master,
                     inputs=[run_ep_dd, master_dry_run_cb, master_output, master_daw_dir],
                     outputs=log_box,
+                )
+
+            # ── Tab 4: Speakers ──────────────────────────────────────
+            with gr.Tab("Speakers"):
+                _initial_spk = speakers_config_choices()
+                _initial_spk_val = _initial_spk[0] if _initial_spk else None
+                spk_file_dd = gr.Dropdown(
+                    label="Speakers file",
+                    choices=_initial_spk,
+                    value=_initial_spk_val,
+                    interactive=True,
+                )
+                spk_editor = gr.Code(
+                    value=load_speakers_config(_initial_spk_val) if _initial_spk_val else "",
+                    language="json",
+                    lines=20,
+                    label="speakers.json",
+                )
+                with gr.Row():
+                    spk_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
+                    spk_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
+                spk_status = gr.Textbox(label="Status", lines=1, interactive=False)
+
+                spk_file_dd.change(
+                    fn=load_speakers_config,
+                    inputs=spk_file_dd,
+                    outputs=spk_editor,
+                )
+                spk_reload_btn.click(
+                    fn=load_speakers_config,
+                    inputs=spk_file_dd,
+                    outputs=spk_editor,
+                )
+                spk_save_btn.click(
+                    fn=save_speakers_config,
+                    inputs=[spk_file_dd, spk_editor],
+                    outputs=spk_status,
+                )
+
+            # ── Tab 5: Cast Config ──────────────────────────────────
+            with gr.Tab("Cast Config"):
+                _initial_casts = cast_config_choices()
+                _initial_cast_val = _initial_casts[0] if _initial_casts else None
+                cast_file_dd = gr.Dropdown(
+                    label="Cast config file",
+                    choices=_initial_casts,
+                    value=_initial_cast_val,
+                    interactive=True,
+                )
+                cast_editor = gr.Code(
+                    value=load_cast_config(_initial_cast_val) if _initial_cast_val else "",
+                    language="json",
+                    lines=30,
+                    label="cast config",
+                )
+                with gr.Row():
+                    cast_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
+                    cast_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
+                cast_status = gr.Textbox(label="Status", lines=1, interactive=False)
+
+                cast_file_dd.change(
+                    fn=load_cast_config,
+                    inputs=cast_file_dd,
+                    outputs=cast_editor,
+                )
+                cast_reload_btn.click(
+                    fn=load_cast_config,
+                    inputs=cast_file_dd,
+                    outputs=cast_editor,
+                )
+                cast_save_btn.click(
+                    fn=save_cast_config,
+                    inputs=[cast_file_dd, cast_editor],
+                    outputs=cast_status,
+                )
+
+            # ── Tab 6: SFX Config ────────────────────────────────────
+            with gr.Tab("SFX Config"):
+                _initial_sfx = sfx_config_choices()
+                _initial_sfx_val = _initial_sfx[0] if _initial_sfx else None
+                sfx_file_dd = gr.Dropdown(
+                    label="SFX config file",
+                    choices=_initial_sfx,
+                    value=_initial_sfx_val,
+                    interactive=True,
+                )
+                sfx_editor = gr.Code(
+                    value=load_sfx_config(_initial_sfx_val) if _initial_sfx_val else "",
+                    language="json",
+                    lines=30,
+                    label="sfx config",
+                )
+                with gr.Row():
+                    sfx_reload_btn = gr.Button("↺ Reload", size="sm", scale=0)
+                    sfx_save_btn = gr.Button("💾 Save", variant="primary", size="sm", scale=0)
+                sfx_status = gr.Textbox(label="Status", lines=1, interactive=False)
+
+                sfx_file_dd.change(
+                    fn=load_sfx_config,
+                    inputs=sfx_file_dd,
+                    outputs=sfx_editor,
+                )
+                sfx_reload_btn.click(
+                    fn=load_sfx_config,
+                    inputs=sfx_file_dd,
+                    outputs=sfx_editor,
+                )
+                sfx_save_btn.click(
+                    fn=save_sfx_config,
+                    inputs=[sfx_file_dd, sfx_editor],
+                    outputs=sfx_status,
+                )
+
+            # ── Tab 7: Audio Preview ────────────────────────────────
+            with gr.Tab("Audio Preview"):
+                with gr.Row():
+                    audio_ep_dd = gr.Dropdown(
+                        label="Episode",
+                        choices=ep_choices,
+                        value=ep_choices[0] if ep_choices else None,
+                        scale=2,
+                    )
+                    stem_filter = gr.Radio(
+                        ["all", "dialogue", "sfx", "music", "ambience"],
+                        label="Filter",
+                        value="all",
+                        scale=3,
+                    )
+                stem_dd = gr.Dropdown(
+                    label="Stem",
+                    choices=initial_stem_labels,
+                    value=initial_stem_labels[0] if initial_stem_labels else None,
+                    interactive=True,
+                )
+                audio_player = gr.Audio(label="Playback", type="filepath", autoplay=False)
+                with gr.Row():
+                    play_all_sfx_btn   = gr.Button("▶ All SFX",      size="sm")
+                    play_all_music_btn = gr.Button("▶ All Music",     size="sm")
+                    play_all_amb_btn   = gr.Button("▶ All Ambience",  size="sm")
+
+                audio_ep_dd.change(
+                    fn=on_ep_or_filter_change,
+                    inputs=[audio_ep_dd, stem_filter],
+                    outputs=[stem_dd, audio_player],
+                )
+                stem_filter.change(
+                    fn=on_ep_or_filter_change,
+                    inputs=[audio_ep_dd, stem_filter],
+                    outputs=[stem_dd, audio_player],
+                )
+                stem_dd.change(
+                    fn=on_stem_select,
+                    inputs=[audio_ep_dd, stem_dd, stem_filter],
+                    outputs=audio_player,
+                )
+                play_all_sfx_btn.click(
+                    fn=lambda ep: _concatenate_stems(ep, "sfx"),
+                    inputs=[audio_ep_dd],
+                    outputs=[audio_player],
+                )
+                play_all_music_btn.click(
+                    fn=lambda ep: _concatenate_stems(ep, "music"),
+                    inputs=[audio_ep_dd],
+                    outputs=[audio_player],
+                )
+                play_all_amb_btn.click(
+                    fn=lambda ep: _concatenate_stems(ep, "ambience"),
+                    inputs=[audio_ep_dd],
+                    outputs=[audio_player],
                 )
 
             # ── Tab 8: Timeline ──────────────────────────────────────
