@@ -323,6 +323,13 @@ SECTION_MAP = {
     "DEZ'S CLOSING NARRATION": "dez-closing",       # S02E03 straight apostrophe
     "DEZ\u2019S CLOSING NARRATION": "dez-closing",  # S02E03 curly apostrophe
     "PRODUCTION NOTES": "production-notes",     # S02E03 preamble
+    # The Woonsocket Wonders (S01E02) intro/outro labels map onto the standard
+    # preamble/postamble construct: the [MUSIC:] theme directions they contain
+    # become the intro/outro music (cf. the413 INTRO MUSIC/OUTRO MUSIC). The
+    # EPISODE THEME epigraph is non-spoken and drops out (no speaker).
+    "EPISODE THEME": "preamble",
+    "PRE-SHOW MUSIC": "preamble",
+    "CLOSING TAG": "postamble",
     "PREAMBLE":  "preamble",
     "POSTAMBLE": "postamble",
 }
