@@ -153,6 +153,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(workspace management)",
     ),
+    "remove-episode": CommandSpec(
+        "xil_pipeline.XILU018_remove_episode",
+        "remove workspace files for one episode, preserving the source script (--dry-run safe)",
+        _UTILITY,
+        "(workspace management)",
+    ),
 }
 """Subcommand registry. Insertion order defines display order within each group."""
 

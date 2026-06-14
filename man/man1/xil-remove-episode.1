@@ -1,0 +1,57 @@
+.TH XIL\-REMOVE\-EPISODE "1" "2026\-06\-14" "xil\-pipeline 0.1.9" "User Commands"
+.SH NAME
+xil\-remove\-episode
+.SH SYNOPSIS
+.B xil\-remove\-episode
+[-h] [--show SHOW] [--dry-run] [--yes] TAG
+.SH DESCRIPTION
+Remove all workspace files for a single episode. The source production script is never touched. Shared assets (SFX/, logs/) are never touched.
+
+.TP
+\fBTAG\fR
+Episode tag to remove (e.g. S01E01)
+
+.SH OPTIONS
+.TP
+\fB\-\-show\fR \fI\,SHOW\/\fR, \fB\-s\fR \fI\,SHOW\/\fR
+Show name or slug (default: resolved from project.json / XIL_PROJECTROOT)
+
+.TP
+\fB\-\-dry\-run\fR, \fB\-n\fR
+Show what would be removed without deleting anything
+
+.TP
+\fB\-\-yes\fR, \fB\-y\fR
+Skip the confirmation prompt
+
+.SH COMMENTS
+Examples:
+  xil remove\-episode S01E01 \-\-dry\-run
+  xil remove\-episode S01E01 \-\-yes
+  xil remove\-episode S01E01 \-\-show "Night Owls" \-\-dry\-run
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-studio-onboard (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-migrate-workspace (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

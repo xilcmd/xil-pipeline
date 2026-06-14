@@ -89,6 +89,7 @@ xil-episode-summary   = "xil_pipeline.XILU014_episode_summary:main"
 xil-stem-verify       = "xil_pipeline.XILU015_stem_verify:main"
 xil-stem-compare      = "xil_pipeline.XILU016_stem_compare:main"
 xil-remove-show       = "xil_pipeline.XILU017_remove_show:main"
+xil-remove-episode    = "xil_pipeline.XILU018_remove_episode:main"
 xil-init              = "xil_pipeline.xil_init:main"
 xil-gui               = "xil_pipeline.xil_gui:main"
 
