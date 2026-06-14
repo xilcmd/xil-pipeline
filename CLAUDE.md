@@ -521,7 +521,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILU015_*` — stem verifier (scans a stems folder → JSON report with filename, seq/scene/speaker parse, size, duration, bitrate, SHA-256, and optional Faster-Whisper transcription; requires `venv-whisper/`)
 - `XILU016_*` — stem compare (cross-references a `stem_verify` Whisper transcript report against the parsed script; flags garbled/silent/missing dialogue stems using `difflib.SequenceMatcher`; no extra dependencies)
 - `XILU017_*` — remove show (delete all workspace files for a given show slug; `--dry-run` safe; `--yes` skips confirmation prompt; `--include-scripts` also removes `scripts/*_{slug}_*.md` files; `SFX/` and `logs/` are never touched; accepts show name or slug; clears `.active_show` when it points to the removed show)
-- `xil_gui.py` — Gradio web dashboard (`xil-gui` entry point); requires `[gui]` extra; five tabs: Episodes, Audio Preview, Run Stage, Setup (with content type selector), Timeline
+- `xil_gui.py` — Gradio web dashboard (`xil-gui` entry point); requires `[gui]` extra; nine tabs in order: Setup (with content type selector), Project, Episodes, Run Stage, Speakers, Cast Config, SFX Config, Audio Preview, Timeline
 - `XILP001_*` — script parser
 - `XILP002_*` — voice generation (ElevenLabs TTS)
 - `XILP003_*` — audio assembly (stems → master MP3, two-pass multi-track mix)
@@ -759,7 +759,7 @@ xil-stem-log --episode S03E03 --audit --audit-threshold 20
 
 ### Web Dashboard
 
-`xil_gui.py` — Gradio browser dashboard that supplements the CLI. Five tabs: **Episodes** (workspace overview), **Audio Preview** (browse and play stems), **Run Stage** (launch pipeline stages with live log streaming), **Setup** (initialize a new workspace with content-type selector), **Timeline** (interactive HTML timeline). Requires the `[gui]` optional extra.
+`xil_gui.py` — Gradio browser dashboard that supplements the CLI. Nine tabs, in display order: **Setup** (initialize a new workspace / select active show, with content-type selector), **Project** (edit project.json), **Episodes** (workspace overview), **Run Stage** (launch pipeline stages with live log streaming), **Speakers** / **Cast Config** / **SFX Config** (edit the respective JSON configs), **Audio Preview** (browse and play stems), **Timeline** (interactive HTML timeline). Requires the `[gui]` optional extra.
 
 ```bash
 pip install 'xil-pipeline[gui]'
