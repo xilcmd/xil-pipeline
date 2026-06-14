@@ -1,9 +1,9 @@
-.TH XIL\-PRODUCE "1" "2026\-04\-24" "xil\-pipeline 0.1.8" "User Commands"
+.TH XIL\-PRODUCE "1" "2026\-06\-13" "xil\-pipeline 0.1.9" "User Commands"
 .SH NAME
 xil\-produce
 .SH SYNOPSIS
 .B xil\-produce
-[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--start-from START_FROM] [--stop-at STOP_AT] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--exaggeration FLOAT]
+[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--reconcile] [--apply] [--force] [--start-from START_FROM] [--stop-at STOP_AT] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--exaggeration FLOAT] [--cfg-weight FLOAT] [--sfx-backend BACKEND] [--audioldm2-python PATH] [--audioldm2-guidance FLOAT] [--audioldm2-steps INT] [--audioldm2-negative-prompt STR]
 .SH DESCRIPTION
 Voice Generation — generate voice stems via ElevenLabs
 
@@ -27,6 +27,21 @@ Path to parsed script JSON (default: derived from cast config)
 .TP
 \fB\-\-dry\-run\fR
 Preview all lines and TTS cost without API calls
+
+.TP
+\fB\-\-reconcile\fR
+Re\-link existing stems to new seq filenames after a re\-parse (reads stem
+manifest, proposes renames, no TTS calls). Add \-\-apply to execute.
+
+.TP
+\fB\-\-apply\fR
+With \-\-reconcile: execute the renames instead of dry\-run preview.
+
+.TP
+\fB\-\-force\fR
+Overwrite existing stem files instead of skipping them. Use with \-\-range to
+regenerate specific lines. WARNING: incurs ElevenLabs API cost for every stem
+in range.
 
 .TP
 \fB\-\-start\-from\fR \fI\,START_FROM\/\fR
@@ -78,13 +93,47 @@ Path to the Python executable in the chatterbox venv (default: auto\-detect
 .TP
 \fB\-\-voice\-refs\fR \fI\,DIR\/\fR
 Directory of <speaker_key>.wav reference clips for Chatterbox zero\-shot voice
-cloning (default: voice_refs/). Missing refs fall back to Chatterbox's default
-voice.
+cloning (default: <workspace>/voice_refs/). Missing refs fall back to
+Chatterbox's default voice.
 
 .TP
 \fB\-\-exaggeration\fR \fI\,FLOAT\/\fR
 Chatterbox emotion exaggeration level: 0.0 = flat/monotone, 1.0 = dramatically
 expressive (default: 0.5). Used only with \-\-backend chatterbox.
+
+.TP
+\fB\-\-cfg\-weight\fR \fI\,FLOAT\/\fR
+Chatterbox CFG weight controlling pacing/delivery: lower values (e.g. 0.3)
+produce slower, more deliberate speech and help compensate for acceleration at
+high exaggeration (default: 0.5). Used only with \-\-backend chatterbox.
+
+.TP
+\fB\-\-sfx\-backend\fR \fI\,BACKEND\/\fR
+Backend for SFX/music/ambience generation, independent of the dialogue
+\-\-backend. 'elevenlabs' (default) calls the ElevenLabs Sound Effects API.
+'audioldm2' uses a local AudioLDM 2 Large diffusion model (venv\-audioldm2) —
+free, GPU\-accelerated, writes backend\-tagged assets to
+SFX/<slug>.audioldm2.mp3.
+
+.TP
+\fB\-\-audioldm2\-python\fR \fI\,PATH\/\fR
+Path to the Python executable in the AudioLDM 2 venv (default: auto\-detect
+./venv\-audioldm2/bin/python3). Used only with \-\-sfx\-backend audioldm2.
+
+.TP
+\fB\-\-audioldm2\-guidance\fR \fI\,FLOAT\/\fR
+AudioLDM 2 guidance scale — how closely generation follows the prompt
+(default: 3.5). Used only with \-\-sfx\-backend audioldm2.
+
+.TP
+\fB\-\-audioldm2\-steps\fR \fI\,INT\/\fR
+AudioLDM 2 diffusion inference steps — higher is slower but cleaner (default:
+200). Used only with \-\-sfx\-backend audioldm2.
+
+.TP
+\fB\-\-audioldm2\-negative\-prompt\fR \fI\,STR\/\fR
+AudioLDM 2 negative prompt (default: 'low quality, noise'). Used only with
+\-\-sfx\-backend audioldm2.
 
 .SH SEE ALSO
 .BR xil (1),

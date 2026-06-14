@@ -39,6 +39,7 @@ from elevenlabs.client import ElevenLabs
 
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import CastConfiguration, derive_paths, get_workspace_root, resolve_slug, show_slug
+from xil_pipeline.sfx_backends import make_sfx_backend
 from xil_pipeline.sfx_common import dry_run_sfx, generate_sfx, load_sfx_entries, run_banner
 
 logger = get_logger(__name__)
@@ -122,6 +123,36 @@ def get_parser() -> argparse.ArgumentParser:
                         help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
     parser.add_argument("--local-only", action="store_true",
                         help="Only place stems for effects already present in SFX/; skip API generation")
+    parser.add_argument("--sfx-backend", choices=["elevenlabs", "audioldm2"],
+                        default="elevenlabs", metavar="BACKEND",
+                        help=(
+                            "Backend for SFX/music/ambience generation. 'elevenlabs' (default) "
+                            "calls the ElevenLabs Sound Effects API. 'audioldm2' uses a local "
+                            "AudioLDM 2 Large diffusion model (venv-audioldm2) — free, "
+                            "GPU-accelerated, writes SFX/<slug>.audioldm2.mp3."
+                        ))
+    parser.add_argument("--audioldm2-python", default=None, metavar="PATH",
+                        help=(
+                            "Path to the Python executable in the AudioLDM 2 venv "
+                            "(default: auto-detect ./venv-audioldm2/bin/python3). "
+                            "Used only with --sfx-backend audioldm2."
+                        ))
+    parser.add_argument("--audioldm2-guidance", type=float, default=3.5, metavar="FLOAT",
+                        help=(
+                            "AudioLDM 2 guidance scale — how closely generation follows the "
+                            "prompt (default: 3.5). Used only with --sfx-backend audioldm2."
+                        ))
+    parser.add_argument("--audioldm2-steps", type=int, default=200, metavar="INT",
+                        help=(
+                            "AudioLDM 2 diffusion inference steps — higher is slower but "
+                            "cleaner (default: 200). Used only with --sfx-backend audioldm2."
+                        ))
+    parser.add_argument("--audioldm2-negative-prompt", default="low quality, noise",
+                        metavar="STR",
+                        help=(
+                            "AudioLDM 2 negative prompt (default: 'low quality, noise'). "
+                            "Used only with --sfx-backend audioldm2."
+                        ))
     return parser
 
 
@@ -131,7 +162,7 @@ def main() -> None:
     with run_banner():
         args = get_parser().parse_args()
 
-        if not args.dry_run and not os.environ.get("ELEVENLABS_API_KEY"):
+        if not args.dry_run and args.sfx_backend == "elevenlabs" and not os.environ.get("ELEVENLABS_API_KEY"):
             sys.exit("Error: ELEVENLABS_API_KEY environment variable is not set.")
 
         # Derive config paths from --episode / --tag
@@ -173,11 +204,23 @@ def main() -> None:
             sfx_config_data = json.load(f)
 
         if args.dry_run:
-            dry_run_sfx(entries, sfx_config_data, stems_dir)
+            dry_run_sfx(entries, sfx_config_data, stems_dir, backend_name=args.sfx_backend)
         else:
-            generate_sfx(
-                entries, sfx_config_data, stems_dir, client=client,
+            sfx_backend = make_sfx_backend(
+                args.sfx_backend,
+                client=client,
+                audioldm2_python=args.audioldm2_python,
+                guidance=args.audioldm2_guidance,
+                steps=args.audioldm2_steps,
+                negative_prompt=args.audioldm2_negative_prompt,
             )
+            try:
+                generate_sfx(
+                    entries, sfx_config_data, stems_dir, client=client,
+                    backend=sfx_backend,
+                )
+            finally:
+                sfx_backend.close()
 
 
 if __name__ == "__main__":

@@ -290,6 +290,17 @@ sequenceDiagram
 > spending ElevenLabs credits. No API key required. eleven_v3 inline tags are stripped automatically.
 > SFX/music/ambience generation is unaffected. Requires: `pip install xil-pipeline[tts-alt]`
 
+> **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs|audioldm2` (default
+> `elevenlabs`) selects the generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue
+> `--backend`. `audioldm2` runs a local **AudioLDM 2 Large** diffusion model in its own
+> `venv-audioldm2/` (driven by `audioldm2_worker.py`, same persistent JSON-over-stdio subprocess
+> pattern as Chatterbox) — free, GPU-accelerated, no API credits. Model-generated assets are
+> stored backend-tagged (`SFX/<slug>.audioldm2.mp3`) so ElevenLabs and AudioLDM 2 audio coexist
+> and a backend switch never silently reuses the wrong file. Tunables: `--audioldm2-guidance`
+> (prompt adherence, default 3.5), `--audioldm2-steps` (default 200), `--audioldm2-negative-prompt`,
+> `--audioldm2-python` (auto-detected). Generation is delegated through the `SfxBackend` adapter in
+> `sfx_backends.py`, which both `xil-produce` and `xil-sfx` share.
+
 ---
 
 ## 4. XILP003 — Audio Assembly (Two-Pass Multi-Track Mix)
@@ -758,6 +769,9 @@ xil sfx --episode S02E03 --gen-sfx --dry-run
 xil sfx --episode S02E03 --gen-music --dry-run
 xil sfx --episode S02E03 --gen-ambience --dry-run
 xil sfx --episode S02E03
+# Or generate SFX/music/ambience locally for free with AudioLDM 2 (needs venv-audioldm2/):
+xil sfx --episode S02E03 --sfx-backend audioldm2 --gen-sfx --dry-run
+xil sfx --episode S02E03 --sfx-backend audioldm2
 
 # 6. Assemble master MP3 or export DAW layers
 xil assemble --episode S02E03
