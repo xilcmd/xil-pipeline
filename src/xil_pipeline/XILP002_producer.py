@@ -41,6 +41,7 @@ from xil_pipeline.models import (
     derive_paths,
     get_workspace_root,
     resolve_slug,
+    resolve_venv_python,
 )
 from xil_pipeline.sfx_backends import make_sfx_backend
 from xil_pipeline.sfx_common import (
@@ -1233,24 +1234,16 @@ def main() -> None:
             # --- Chatterbox client (backend=chatterbox only) ---
             chatterbox_client: _ChatterboxClient | None = None
             if args.backend == "chatterbox":
-                cb_python = args.chatterbox_python
+                # Resolution: --chatterbox-python → $XIL_CODEROOT/venv-chatterbox
+                # (exclusive when set) → auto-detect (workspace root, then repo root).
+                cb_python = resolve_venv_python("venv-chatterbox", args.chatterbox_python)
                 if cb_python is None:
-                    # Auto-detect: workspace root first, then repo root next to running venv
-                    from pathlib import Path as _Path
-                    _candidates = [
-                        get_workspace_root() / "venv-chatterbox" / "bin" / "python3",
-                        _Path(sys.executable).parent.parent.parent / "venv-chatterbox" / "bin" / "python3",
-                    ]
-                    for _c in _candidates:
-                        if _c.exists():
-                            cb_python = str(_c)
-                            break
-                    if cb_python is None:
-                        logger.error(
-                            "Cannot find chatterbox venv Python. "
-                            "Pass --chatterbox-python PATH or create venv-chatterbox/ in the project root."
-                        )
-                        sys.exit(1)
+                    logger.error(
+                        "Cannot find chatterbox venv Python. Pass --chatterbox-python PATH, "
+                        "set XIL_CODEROOT to the directory containing venv-chatterbox/, "
+                        "or create venv-chatterbox/ in the workspace or repo root."
+                    )
+                    sys.exit(1)
                 chatterbox_client = _ChatterboxClient(
                     python_path=cb_python,
                     voice_refs_dir=args.voice_refs,

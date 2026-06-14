@@ -1165,3 +1165,59 @@ class TestResolveSeason:
         pj.write_text(json.dumps({"season": 0}))
         # 0 is falsy but technically a valid JSON value — resolver returns it as-is
         assert models.resolve_season(None, project_path=str(pj)) == 0
+
+
+# ---------------------------------------------------------------------------
+# Code root (XIL_CODEROOT) + model-venv resolution
+# ---------------------------------------------------------------------------
+
+def _make_venv_python(root, venv_name):
+    """Create a fake <root>/<venv_name>/bin/python3 and return its path string."""
+    p = root / venv_name / "bin" / "python3"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("#!/bin/sh\n")
+    return str(p)
+
+
+class TestGetCodeRoot:
+    def test_unset_returns_none(self, monkeypatch):
+        monkeypatch.delenv("XIL_CODEROOT", raising=False)
+        assert models.get_code_root() is None
+
+    def test_set_returns_path(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("XIL_CODEROOT", str(tmp_path))
+        assert models.get_code_root() == tmp_path.resolve()
+
+
+class TestResolveVenvPython:
+    def test_explicit_wins(self, monkeypatch, tmp_path):
+        # Explicit path is returned verbatim, even when XIL_CODEROOT is set.
+        monkeypatch.setenv("XIL_CODEROOT", str(tmp_path))
+        assert models.resolve_venv_python("venv-audioldm2", "/custom/python3") == "/custom/python3"
+
+    def test_code_root_exclusive_hit(self, monkeypatch, tmp_path):
+        py = _make_venv_python(tmp_path, "venv-audioldm2")
+        monkeypatch.setenv("XIL_CODEROOT", str(tmp_path))
+        assert models.resolve_venv_python("venv-audioldm2") == py
+
+    def test_code_root_exclusive_no_fallback(self, monkeypatch, tmp_path):
+        # XIL_CODEROOT set but venv absent there → None, even though the workspace HAS it.
+        ws = tmp_path / "ws"
+        code = tmp_path / "code"
+        code.mkdir()
+        _make_venv_python(ws, "venv-whisper")
+        monkeypatch.setenv("XIL_PROJECTROOT", str(ws))
+        monkeypatch.setenv("XIL_CODEROOT", str(code))
+        assert models.resolve_venv_python("venv-whisper") is None
+
+    def test_auto_detect_workspace(self, monkeypatch, tmp_path):
+        # No XIL_CODEROOT → auto-detect finds it at the workspace root.
+        monkeypatch.delenv("XIL_CODEROOT", raising=False)
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        py = _make_venv_python(tmp_path, "venv-testxyz")  # name absent at repo root
+        assert models.resolve_venv_python("venv-testxyz") == py
+
+    def test_auto_detect_miss_returns_none(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("XIL_CODEROOT", raising=False)
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        assert models.resolve_venv_python("venv-testxyz") is None

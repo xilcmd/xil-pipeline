@@ -30,7 +30,7 @@ from pathlib import Path
 from mutagen.mp3 import MP3  # type: ignore[import]
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import get_workspace_root, resolve_slug
+from xil_pipeline.models import get_workspace_root, resolve_slug, resolve_venv_python
 from xil_pipeline.sfx_common import run_banner
 from xil_pipeline.XILU007_mp3_hash import hash_file
 
@@ -114,18 +114,6 @@ def _mp3_metadata(path: str) -> tuple[float | None, int | None]:
         return None, None
 
 
-def _detect_whisper_python(workspace: Path) -> str | None:
-    """Auto-detect venv-whisper/bin/python3 at workspace root or repo root."""
-    candidates = [
-        workspace / "venv-whisper" / "bin" / "python3",
-        Path(__file__).parent.parent.parent / "venv-whisper" / "bin" / "python3",
-    ]
-    for c in candidates:
-        if c.exists():
-            return str(c)
-    return None
-
-
 def _process_files(
     mp3_files: list[Path],
     whisper: "_WhisperClient | None",
@@ -198,11 +186,12 @@ def _run(args: argparse.Namespace) -> None:
     transcribe = not args.no_transcribe
     whisper_python = None
     if transcribe:
-        whisper_python = args.whisper_python or _detect_whisper_python(workspace)
+        whisper_python = resolve_venv_python("venv-whisper", args.whisper_python)
         if whisper_python is None:
             logger.error(
-                "Cannot find venv-whisper Python. "
-                "Pass --whisper-python PATH or create venv-whisper/ at workspace/repo root. "
+                "Cannot find venv-whisper Python. Pass --whisper-python PATH, "
+                "set XIL_CODEROOT to the directory containing venv-whisper/, "
+                "or create venv-whisper/ at the workspace or repo root. "
                 "Use --no-transcribe to skip transcription."
             )
             sys.exit(1)

@@ -13,6 +13,7 @@ type annotations that render as rich API documentation via mkdocstrings.
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -33,6 +34,60 @@ def get_workspace_root() -> Path:
     if env_val:
         return Path(env_val).expanduser().resolve()
     return Path.cwd()
+
+
+def get_code_root() -> Path | None:
+    """Return the **code root** — the directory that holds the optional local-model
+    virtualenvs (``venv-chatterbox``, ``venv-whisper``, ``venv-audioldm2``).
+
+    Resolves the ``XIL_CODEROOT`` environment variable (absolute path, tilde-expanded),
+    or ``None`` when it is unset.  This is distinct from :func:`get_workspace_root`
+    (``XIL_PROJECTROOT``): the code root tracks where the *software* and its heavy
+    model venvs live, while the workspace root tracks the show *content*.  They differ
+    when the package is installed once and pointed at a separate content directory.
+    """
+    env_val = os.environ.get("XIL_CODEROOT")
+    return Path(env_val).expanduser().resolve() if env_val else None
+
+
+def resolve_venv_python(venv_name: str, explicit: str | None = None) -> str | None:
+    """Resolve the ``python3`` interpreter for an optional local-model venv.
+
+    Used to locate ``venv-chatterbox`` / ``venv-whisper`` / ``venv-audioldm2``, which
+    carry heavy ML dependencies and are never installed into the main package.
+
+    Resolution order:
+
+    1. *explicit* — a caller-supplied interpreter path (e.g. the per-command
+       ``--chatterbox-python`` / ``--whisper-python`` / ``--audioldm2-python`` flag).
+       Wins when provided.
+    2. ``XIL_CODEROOT`` — when set, ``$XIL_CODEROOT/<venv_name>/bin/python3`` is used
+       **exclusively**: it overrides auto-detection entirely and there is **no
+       fallback** (returns ``None`` if the interpreter is absent there).
+    3. Auto-detect — ``<workspace>/<venv_name>/bin/python3``, then the repo root next
+       to the running install.
+
+    Args:
+        venv_name: Directory name of the venv (e.g. ``"venv-audioldm2"``).
+        explicit: An interpreter path that takes precedence over all detection.
+
+    Returns:
+        The interpreter path string, or ``None`` if none was found.
+    """
+    if explicit:
+        return explicit
+    code_root = get_code_root()
+    if code_root is not None:
+        cand = code_root / venv_name / "bin" / "python3"
+        return str(cand) if cand.exists() else None
+    for cand in (
+        get_workspace_root() / venv_name / "bin" / "python3",
+        Path(__file__).resolve().parent.parent.parent / venv_name / "bin" / "python3",
+        Path(sys.executable).resolve().parent.parent.parent / venv_name / "bin" / "python3",
+    ):
+        if cand.exists():
+            return str(cand)
+    return None
 
 
 def get_active_show() -> str | None:

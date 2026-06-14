@@ -49,7 +49,8 @@ All internal imports use the package namespace: `from xil_pipeline.models import
 - Audio playback via `mpg123` in WSL
 - **Optional local SFX venv** (`venv-audioldm2/`): a separate virtualenv for the AudioLDM 2 Large
   sound-effect/music/ambience backend (`--sfx-backend audioldm2`). Like `venv-chatterbox/`, it is
-  auto-detected at the workspace or repo root and never installed into the main package. Setup
+  auto-detected at the workspace or repo root (or located via `XIL_CODEROOT` — see Code Root) and
+  never installed into the main package. Setup
   (validated on Python 3.13 + NVIDIA driver CUDA 12.6):
 
   ```bash
@@ -90,6 +91,39 @@ Resolution order for `get_workspace_root()` (in `models.py`):
 `xil-init` with no directory argument scaffolds into `XIL_PROJECTROOT` when set, otherwise into the current directory.
 
 `logs/`, `configs/`, `parsed/`, `stems/`, `SFX/`, `daw/`, `masters/`, `cues/`, `scripts/`, `posts/` all resolve under the workspace root. This enables a clean separation of the installed software from user content — install `xil-pipeline` once via `pip`, point `XIL_PROJECTROOT` at a content-only directory.
+
+## Code Root (`XIL_CODEROOT`)
+
+The **code root** is where the optional local-model virtualenvs live —
+`venv-chatterbox/` (Chatterbox TTS), `venv-whisper/` (Faster-Whisper STT), and
+`venv-audioldm2/` (AudioLDM 2 SFX/music/ambience). These carry heavy ML dependencies and
+are **never installed into the main package**; each pipeline command auto-detects them at
+run time.
+
+`XIL_CODEROOT` decouples *where the venvs live* from `XIL_PROJECTROOT` (*where the show
+content lives*). When you install `xil-pipeline` once and point `XIL_PROJECTROOT` at a
+separate content-only directory, the model venvs stay next to the code — set
+`XIL_CODEROOT` so the pipeline finds them regardless of the active workspace:
+
+```bash
+export XIL_CODEROOT=/path/to/xil-pipeline     # holds venv-chatterbox/, venv-whisper/, venv-audioldm2/
+export XIL_PROJECTROOT=/path/to/xil-content   # holds scripts/, configs/, stems/, …
+xil produce --episode S04E02 --backend chatterbox --sfx-backend audioldm2
+```
+
+Resolution order for each model venv's `python3` (`resolve_venv_python()` in `models.py`):
+
+1. The explicit per-command flag — `--chatterbox-python` / `--whisper-python` /
+   `--audioldm2-python`. Wins when provided.
+2. `XIL_CODEROOT` — when set, `$XIL_CODEROOT/<venv-name>/bin/python3` is used
+   **exclusively**: it overrides auto-detection entirely and there is **no fallback**
+   (the command errors if the interpreter is absent there).
+3. Auto-detect — `<workspace>/<venv-name>/bin/python3`, then the repo root next to the
+   running install.
+
+`XIL_CODEROOT` is optional; when unset, detection falls back to the workspace-root /
+repo-root search (existing behaviour). It is consulted only for locating these venvs —
+all content paths still resolve under `XIL_PROJECTROOT`.
 
 ## Project Configuration
 
