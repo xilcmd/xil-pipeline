@@ -22,17 +22,14 @@ import os
 import re
 import shutil
 import sys
-import tempfile
-import time
 
-import httpx
-from elevenlabs.core.api_error import ApiError
 from mutagen.id3 import APIC, COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, USLT, ID3NoHeaderError, PictureType
 from mutagen.wave import WAVE
 from pydub import AudioSegment
 
 from xil_pipeline.log_config import get_logger
 from xil_pipeline.models import SfxConfiguration, SfxEntry, get_workspace_root
+from xil_pipeline.sfx_backends import ElevenLabsSfxBackend, SfxBackend
 
 logger = get_logger(__name__)
 
@@ -178,17 +175,29 @@ def file_nonempty(path: str) -> bool:
         return False
 
 
-def shared_sfx_path(sfx_dir: str, effect_key: str) -> str:
+def shared_sfx_path(sfx_dir: str, effect_key: str, backend: str = "elevenlabs") -> str:
     """Return the shared library file path for an effect key.
+
+    Model-generated assets are tagged with the backend name so audio from
+    different generators can coexist in the same ``SFX/`` library without one
+    silently shadowing another.  The default backend (``elevenlabs``) keeps the
+    plain, historical filename for backward compatibility; other backends get a
+    ``.<backend>`` infix.  Backend-independent assets (``silence``, ``source``
+    copies) should always pass the default so they are never regenerated on a
+    backend switch.
 
     Args:
         sfx_dir: Base directory for shared SFX assets.
         effect_key: Direction text key (e.g. ``'BEAT'``).
+        backend: Generating backend name (``'elevenlabs'`` or ``'audioldm2'``).
 
     Returns:
-        Full path like ``SFX/beat.mp3``.
+        Full path like ``SFX/beat.mp3`` (elevenlabs) or
+        ``SFX/sfx_door-opens.audioldm2.mp3`` (audioldm2).
     """
-    return os.path.join(sfx_dir, f"{slugify_effect_key(effect_key)}.mp3")
+    slug = slugify_effect_key(effect_key)
+    suffix = "" if backend == "elevenlabs" else f".{backend}"
+    return os.path.join(sfx_dir, f"{slug}{suffix}.mp3")
 
 
 def tag_mp3(
@@ -277,31 +286,48 @@ def ensure_shared_sfx(
     defaults: dict,
     client=None,
     show: str = "Sample Show",
+    backend: SfxBackend | None = None,
 ) -> str:
     """Ensure the shared SFX asset exists, generating if needed.
 
     For ``type='silence'`` effects, generates silent audio locally via
-    pydub.  For ``type='sfx'`` effects, calls the ElevenLabs Sound
-    Effects API via the provided *client*.  In both cases, ID3 metadata
-    tags (Album, Genre, Year, Title) are written to the resulting MP3.
+    pydub.  For ``type='sfx'`` effects, generates audio via the supplied
+    *backend* (ElevenLabs API or local AudioLDM 2).  In both cases, ID3
+    metadata tags (Album, Genre, Year, Title) are written to the resulting MP3.
+
+    Model-generated ``type='sfx'`` assets are stored under a backend-tagged
+    filename (e.g. ``sfx_door-opens.audioldm2.mp3``) so audio from different
+    generators can coexist; ``silence`` and ``source`` copies keep the plain
+    name and are never regenerated on a backend switch.
 
     Args:
         effect_key: Direction text key.
         effect: The ``SfxEntry`` model instance.
         sfx_dir: Shared SFX library directory.
         defaults: Config-level defaults (e.g. ``prompt_influence``).
-        client: ElevenLabs client instance.  Required for ``type='sfx'``
-            effects; may be ``None`` for silence-only generation.
+        client: ElevenLabs client instance.  Used only when *backend* is
+            ``None`` (a default :class:`ElevenLabsSfxBackend` is built from it).
         show: Show name for the Album ID3 tag.
+        backend: SFX generation backend.  Defaults to an ElevenLabs backend
+            wrapping *client* for backward compatibility.
 
     Returns:
         The path to the shared asset file.
 
     Raises:
-        ValueError: If *client* is ``None`` and the effect requires API
-            generation.
+        ValueError: If the effect requires model generation but no usable
+            backend/client is available.
     """
-    path = shared_sfx_path(sfx_dir, effect_key)
+    if backend is None:
+        backend = ElevenLabsSfxBackend(client)
+
+    # Model-generated SFX assets are backend-tagged; silence and source copies
+    # are backend-independent and keep the plain, historical filename.
+    is_model_sfx = effect.type == "sfx" and effect.source is None
+    path = shared_sfx_path(
+        sfx_dir, effect_key, backend.name if is_model_sfx else "elevenlabs"
+    )
+
     # Only skip generation when no explicit source is declared. If a source is
     # specified it must always win — a stale pool file (e.g. from another show
     # that used the same effect key) would otherwise silently shadow the source.
@@ -319,63 +345,22 @@ def ensure_shared_sfx(
             if not (os.path.exists(path) and os.path.samefile(src_real, path)):
                 shutil.copy2(src_real, path)
         else:
-            # Source file declared but missing — fall back to API generation if a
-            # prompt is available, otherwise raise an actionable error.
+            # Source file declared but missing — fall back to model generation if
+            # a prompt is available, otherwise raise an actionable error.
             if effect.prompt is None:
                 raise FileNotFoundError(
                     f"Source file not found: '{effect.source}' "
                     f"(key: '{effect_key}'). "
-                    "Add the file or add a 'prompt' field to generate it via the API."
+                    "Add the file or add a 'prompt' field to generate it."
                 )
             print(
                 f"   [warn] source '{effect.source}' not found — "
-                f"generating via API for '{effect_key}'"
+                f"generating via {backend.name} for '{effect_key}'"
             )
-            # fall through to API generation branch below
-            if client is None:
-                raise ValueError(
-                    f"client is required to generate SFX for '{effect_key}'"
-                )
             prompt_influence = effect.prompt_influence
             if prompt_influence is None:
                 prompt_influence = defaults.get("prompt_influence", 0.3)
-            tmp_path = None
-            logger.info("   [api] text-to-sound-effects → %r (%.1fs)", effect_key, effect.duration_seconds)
-            try:
-                max_retries, delay = 5, 10
-                for attempt in range(1, max_retries + 1):
-                    try:
-                        audio_stream = client.text_to_sound_effects.convert(
-                            text=effect.prompt,
-                            duration_seconds=effect.duration_seconds,
-                            prompt_influence=prompt_influence,
-                        )
-                        tmp_fd, tmp_path = tempfile.mkstemp(
-                            dir=os.path.dirname(path) or ".", suffix=".tmp"
-                        )
-                        with os.fdopen(tmp_fd, "wb") as f:
-                            for chunk in audio_stream:
-                                if chunk:
-                                    f.write(chunk)
-                        os.rename(tmp_path, path)
-                        tmp_path = None
-                        logger.info("   [api] saved %s", os.path.basename(path))
-                        break
-                    except (ApiError, httpx.TransportError) as exc:
-                        if tmp_path is not None:
-                            with contextlib.suppress(FileNotFoundError):
-                                os.unlink(tmp_path)
-                            tmp_path = None
-                        is_rate_limit = isinstance(exc, ApiError) and exc.status_code == 429
-                        if is_rate_limit and attempt < max_retries:
-                            wait = delay * attempt
-                            print(f"   [429] rate limited — retrying in {wait}s (attempt {attempt}/{max_retries})")
-                            time.sleep(wait)
-                        else:
-                            raise
-            finally:
-                if tmp_path is not None and os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
+            backend.generate_to(path, effect.prompt, effect.duration_seconds, prompt_influence)
             tag_mp3(path, show=show, title=effect_key)
             return path
     elif effect.type == "silence":
@@ -383,66 +368,10 @@ def ensure_shared_sfx(
         silence = AudioSegment.silent(duration=duration_ms)
         silence.export(path, format="mp3")
     else:
-        if client is None:
-            raise ValueError(
-                f"client is required to generate SFX for '{effect_key}'"
-            )
         prompt_influence = effect.prompt_influence
         if prompt_influence is None:
             prompt_influence = defaults.get("prompt_influence", 0.3)
-
-        tmp_path = None
-        logger.info("   [api] text-to-sound-effects → %r (%.1fs)", effect_key, effect.duration_seconds)
-        try:
-            max_retries, delay = 5, 10
-            for attempt in range(1, max_retries + 1):
-                try:
-                    audio_stream = client.text_to_sound_effects.convert(
-                        text=effect.prompt,
-                        duration_seconds=effect.duration_seconds,
-                        prompt_influence=prompt_influence,
-                    )
-                    tmp_fd, tmp_path = tempfile.mkstemp(
-                        dir=os.path.dirname(path) or ".", suffix=".tmp"
-                    )
-                    with os.fdopen(tmp_fd, "wb") as f:
-                        for chunk in audio_stream:
-                            if chunk:
-                                f.write(chunk)
-                    os.rename(tmp_path, path)
-                    tmp_path = None
-                    logger.info("   [api] saved %s", os.path.basename(path))
-                    break
-                except (ApiError, httpx.TransportError) as exc:
-                    if tmp_path is not None:
-                        with contextlib.suppress(FileNotFoundError):
-                            os.unlink(tmp_path)
-                        tmp_path = None
-                    is_rate_limit = isinstance(exc, ApiError) and exc.status_code == 429
-                    is_server_error = (
-                        isinstance(exc, ApiError)
-                        and exc.status_code is not None
-                        and exc.status_code >= 500
-                    )
-                    is_network_error = isinstance(exc, httpx.TransportError)
-                    is_retryable = is_rate_limit or is_server_error or is_network_error
-                    if is_retryable and attempt < max_retries:
-                        wait = delay * attempt
-                        if is_rate_limit:
-                            reason = "429 rate limited"
-                        elif is_server_error:
-                            reason = f"{exc.status_code} server error"
-                        else:
-                            reason = f"network error ({type(exc).__name__})"
-                        logger.warning("[%s] — retrying in %ds (attempt %d/%d)",
-                                       reason, wait, attempt, max_retries)
-                        time.sleep(wait)
-                    else:
-                        raise
-        finally:
-            if tmp_path is not None:
-                with contextlib.suppress(FileNotFoundError):
-                    os.unlink(tmp_path)
+        backend.generate_to(path, effect.prompt, effect.duration_seconds, prompt_influence)
 
     tag_mp3(path, show=show, title=effect_key)
 
@@ -551,11 +480,12 @@ def generate_sfx(
     sfx_dir: str = SFX_DIR,
     client=None,
     start_from: int = 1,
+    backend: SfxBackend | None = None,
 ) -> None:
     """Generate SFX stems via a two-phase shared-library workflow.
 
     **Phase 1** — For each unique effect key, ensure the shared asset
-    exists in *sfx_dir* (generate via API or silence if missing).
+    exists in *sfx_dir* (generate via the backend or silence if missing).
 
     **Phase 2** — For each script entry, copy the shared asset to the
     episode stems directory with the sequence-numbered filename.
@@ -565,9 +495,13 @@ def generate_sfx(
         sfx_config: Raw SFX config dict.
         stems_dir: Episode stems output directory.
         sfx_dir: Shared SFX library directory.
-        client: ElevenLabs client (needed for API effects).
+        client: ElevenLabs client (used when *backend* is ``None``).
         start_from: Only process entries with ``seq >= start_from``.
+        backend: SFX generation backend.  Defaults to an ElevenLabs backend
+            wrapping *client*.
     """
+    if backend is None:
+        backend = ElevenLabsSfxBackend(client)
     os.makedirs(stems_dir, exist_ok=True)
     sfx_cfg = SfxConfiguration(**sfx_config)
     defaults = sfx_cfg.defaults
@@ -593,7 +527,7 @@ def generate_sfx(
     for key in unique_keys:
         effect = sfx_cfg.effects[key]
         path = ensure_shared_sfx(key, effect, sfx_dir, defaults, client,
-                                show=sfx_cfg.show)
+                                show=sfx_cfg.show, backend=backend)
         shared_paths[key] = path
         effects[key] = effect
         logger.info("   Shared: %s", path)
@@ -648,24 +582,29 @@ def dry_run_sfx(
     sfx_config: dict,
     stems_dir: str,
     sfx_dir: str = SFX_DIR,
+    backend_name: str = "elevenlabs",
 ) -> None:
     """Preview SFX generation showing status and credit estimates.
 
     Each entry is classified as one of:
     - **EXISTS** — episode stem already in ``stems/<TAG>/``
-    - **CACHED** — shared asset in ``SFX/``, will be copied (no API)
-    - **NEW** — needs API generation to ``SFX/``, then copy
+    - **CACHED** — shared asset in ``SFX/``, will be copied (no generation)
+    - **NEW** — needs generation to ``SFX/``, then copy
 
     Args:
         sfx_entries: SFX entry dicts from :func:`load_sfx_entries`.
         sfx_config: Raw SFX config dict.
         stems_dir: Episode stems directory.
         sfx_dir: Shared SFX library directory.
+        backend_name: SFX backend (``'elevenlabs'`` or ``'audioldm2'``).  Model
+            assets are matched against the backend-tagged filename, and local
+            backends report generation as free instead of an API credit estimate.
     """
     sfx_cfg = SfxConfiguration(**sfx_config)
+    is_local = backend_name != "elevenlabs"
 
     logger.info("\n%s", "=" * 70)
-    logger.info("SFX DRY RUN — %d entries", len(sfx_entries))
+    logger.info("SFX DRY RUN — %d entries  (backend: %s)", len(sfx_entries), backend_name)
     logger.info("  stems dir: %s", stems_dir)
     logger.info("  shared dir: %s", sfx_dir)
     logger.info("%s\n", "=" * 70)
@@ -690,7 +629,11 @@ def dry_run_sfx(
 
         stem_file = os.path.join(stems_dir, f"{entry['stem_name']}.mp3")
         is_source = effect.source is not None
-        shared_file = effect.source if is_source else shared_sfx_path(sfx_dir, entry["text"])
+        # Model-generated assets use the backend-tagged filename; silence/source
+        # copies are backend-independent (plain name).
+        is_model_sfx = effect.type == "sfx" and not is_source
+        shared_backend = backend_name if is_model_sfx else "elevenlabs"
+        shared_file = effect.source if is_source else shared_sfx_path(sfx_dir, entry["text"], shared_backend)
 
         if os.path.exists(stem_file):
             status = "EXISTS"
@@ -729,10 +672,16 @@ def dry_run_sfx(
             if status == "   NEW":
                 buckets[bucket_key]["new"] += 1
                 buckets[bucket_key]["dur"] += effect.duration_seconds
-            logger.info(
-                " [%s] %s | sfx     | %5.1fs | ~%5d credits | %s",
-                status, seq_label, effect.duration_seconds, credits, entry["text"],
-            )
+            if is_local:
+                logger.info(
+                    " [%s] %s | sfx     | %5.1fs | local (free)  | %s",
+                    status, seq_label, effect.duration_seconds, entry["text"],
+                )
+            else:
+                logger.info(
+                    " [%s] %s | sfx     | %5.1fs | ~%5d credits | %s",
+                    status, seq_label, effect.duration_seconds, credits, entry["text"],
+                )
             logger.info("            prompt: %s", effect.prompt)
 
         logger.info("            stem: %s.mp3", entry["stem_name"])
@@ -744,8 +693,8 @@ def dry_run_sfx(
     total_credits = int(total_new_dur * 40)
     logger.info("%s", "=" * 70)
     logger.info(
-        "SUMMARY: %d total — %d new, %d cached, %d on disk, %d MISSING",
-        len(sfx_entries), new_count, cached_count, exists_count, missing_count,
+        "SUMMARY: %d total — %d new, %d cached, %d on disk, %d MISSING  (backend: %s)",
+        len(sfx_entries), new_count, cached_count, exists_count, missing_count, backend_name,
     )
     for cat in ("MUSIC", "AMBIENCE", "SFX"):
         b = buckets[cat]
@@ -753,14 +702,23 @@ def dry_run_sfx(
             (entry.get("direction_type") or "SFX") == cat
             for entry in sfx_entries
         ):
-            cred = int(b["dur"] * 40)
-            logger.info("  %-9s: %3d new, %6.1fs, ~%6d credits", cat, b["new"], b["dur"], cred)
+            if is_local:
+                logger.info("  %-9s: %3d new, %6.1fs  (local, free)", cat, b["new"], b["dur"])
+            else:
+                cred = int(b["dur"] * 40)
+                logger.info("  %-9s: %3d new, %6.1fs, ~%6d credits", cat, b["new"], b["dur"], cred)
     if buckets["silence"]["new"]:
         logger.info("  %-9s: %3d new  (free)", "silence", buckets["silence"]["new"])
-    logger.info(
-        "  %-9s: %3d,  %.1fs, ~%d credits  (silence & cached are free)",
-        "TOTAL NEW", new_count, total_new_dur, total_credits,
-    )
+    if is_local:
+        logger.info(
+            "  %-9s: %3d,  %.1fs  (local generation — no API credits)",
+            "TOTAL NEW", new_count, total_new_dur,
+        )
+    else:
+        logger.info(
+            "  %-9s: %3d,  %.1fs, ~%d credits  (silence & cached are free)",
+            "TOTAL NEW", new_count, total_new_dur, total_credits,
+        )
     if missing_sources:
         logger.error("%d source file(s) declared but not found:", len(missing_sources))
         for msg in missing_sources:

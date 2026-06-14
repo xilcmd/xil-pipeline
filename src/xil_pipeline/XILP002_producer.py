@@ -42,6 +42,7 @@ from xil_pipeline.models import (
     get_workspace_root,
     resolve_slug,
 )
+from xil_pipeline.sfx_backends import make_sfx_backend
 from xil_pipeline.sfx_common import (
     dry_run_sfx,
     load_sfx_entries,
@@ -334,6 +335,7 @@ def dry_run(
     stop_at: int | None = None,
     sfx_entries: list[dict] | None = None, sfx_config: dict | None = None,
     stems_dir: str = "", force: bool = False,
+    sfx_backend_name: str = "elevenlabs",
 ) -> None:
     """Preview all dialogue lines and TTS cost without making API calls.
 
@@ -410,7 +412,7 @@ def dry_run(
 
     # SFX entries — delegate to sfx_common.dry_run_sfx
     if sfx_entries and sfx_config:
-        dry_run_sfx(sfx_entries, sfx_config, stems_dir)
+        dry_run_sfx(sfx_entries, sfx_config, stems_dir, backend_name=sfx_backend_name)
 
     # Summary
     chars_in_range = sum(
@@ -1079,6 +1081,37 @@ def get_parser() -> argparse.ArgumentParser:
                             "compensate for acceleration at high exaggeration (default: 0.5). "
                             "Used only with --backend chatterbox."
                         ))
+    parser.add_argument("--sfx-backend", choices=["elevenlabs", "audioldm2"],
+                        default="elevenlabs", metavar="BACKEND",
+                        help=(
+                            "Backend for SFX/music/ambience generation, independent of the "
+                            "dialogue --backend. 'elevenlabs' (default) calls the ElevenLabs "
+                            "Sound Effects API. 'audioldm2' uses a local AudioLDM 2 Large "
+                            "diffusion model (venv-audioldm2) — free, GPU-accelerated, writes "
+                            "backend-tagged assets to SFX/<slug>.audioldm2.mp3."
+                        ))
+    parser.add_argument("--audioldm2-python", default=None, metavar="PATH",
+                        help=(
+                            "Path to the Python executable in the AudioLDM 2 venv "
+                            "(default: auto-detect ./venv-audioldm2/bin/python3). "
+                            "Used only with --sfx-backend audioldm2."
+                        ))
+    parser.add_argument("--audioldm2-guidance", type=float, default=3.5, metavar="FLOAT",
+                        help=(
+                            "AudioLDM 2 guidance scale — how closely generation follows the "
+                            "prompt (default: 3.5). Used only with --sfx-backend audioldm2."
+                        ))
+    parser.add_argument("--audioldm2-steps", type=int, default=200, metavar="INT",
+                        help=(
+                            "AudioLDM 2 diffusion inference steps — higher is slower but "
+                            "cleaner (default: 200). Used only with --sfx-backend audioldm2."
+                        ))
+    parser.add_argument("--audioldm2-negative-prompt", default="low quality, noise",
+                        metavar="STR",
+                        help=(
+                            "AudioLDM 2 negative prompt (default: 'low quality, noise'). "
+                            "Used only with --sfx-backend audioldm2."
+                        ))
     return parser
 
 
@@ -1094,7 +1127,13 @@ def main() -> None:
     with run_banner():
         args = get_parser().parse_args()
 
-        if not args.dry_run and args.backend == "elevenlabs" and not os.environ.get("ELEVENLABS_API_KEY"):
+        # ElevenLabs key is needed when dialogue uses elevenlabs, or when SFX
+        # generation is requested with the elevenlabs sfx backend (audioldm2 is local).
+        _sfx_gen_requested = args.gen_sfx or args.gen_music or args.gen_ambience or args.sfx_music
+        _needs_el_key = args.backend == "elevenlabs" or (
+            args.sfx_backend == "elevenlabs" and _sfx_gen_requested
+        )
+        if not args.dry_run and _needs_el_key and not os.environ.get("ELEVENLABS_API_KEY"):
             sys.exit("Error: ELEVENLABS_API_KEY environment variable is not set.")
 
         # Derive config paths from --episode / --tag
@@ -1169,7 +1208,8 @@ def main() -> None:
             dry_run(config, dialogue_entries, start_from=args.start_from,
                     stop_at=args.stop_at,
                     sfx_entries=sfx_entries, sfx_config=sfx_config_data,
-                    stems_dir=stems_dir, force=args.force)
+                    stems_dir=stems_dir, force=args.force,
+                    sfx_backend_name=args.sfx_backend)
         else:
             if args.backend == "elevenlabs":
                 check_elevenlabs_quota()
@@ -1218,6 +1258,18 @@ def main() -> None:
                     cfg_weight=args.cfg_weight,
                 )
 
+            # --- SFX backend (built only when SFX generation is requested) ---
+            sfx_backend = None
+            if sfx_entries and sfx_config_data:
+                sfx_backend = make_sfx_backend(
+                    args.sfx_backend,
+                    client=client,
+                    audioldm2_python=args.audioldm2_python,
+                    guidance=args.audioldm2_guidance,
+                    steps=args.audioldm2_steps,
+                    negative_prompt=args.audioldm2_negative_prompt,
+                )
+
             try:
                 generate_voices(config, dialogue_entries, stems_dir,
                                 start_from=args.start_from, stop_at=args.stop_at,
@@ -1227,10 +1279,13 @@ def main() -> None:
                                 section_speed_overrides=section_speed_overrides or None)
                 if sfx_entries and sfx_config_data:
                     generate_sfx_stems(sfx_entries, sfx_config_data, stems_dir,
-                                       client=client, start_from=args.start_from)
+                                       client=client, start_from=args.start_from,
+                                       backend=sfx_backend)
             finally:
                 if chatterbox_client is not None:
                     chatterbox_client.close()
+                if sfx_backend is not None:
+                    sfx_backend.close()
 
 
 if __name__ == "__main__":
