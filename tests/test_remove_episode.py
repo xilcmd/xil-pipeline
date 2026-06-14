@@ -10,7 +10,6 @@ import pytest
 
 from xil_pipeline.XILU018_remove_episode import _collect, main
 
-
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
 
@@ -39,7 +38,7 @@ def _scaffold_episode(root, slug, tag):
     # stems
     stems = root / "stems" / slug / tag
     stems.mkdir(parents=True)
-    (stems / f"001_cold-open_host.mp3").write_bytes(b"\xff\xfb" * 100)
+    (stems / "001_cold-open_host.mp3").write_bytes(b"\xff\xfb" * 100)
 
     # daw
     daw = root / "daw" / slug / tag
@@ -183,7 +182,7 @@ class TestRemoveEpisodeCLI:
         assert (workspace / "stems" / "mypodcast" / "S01E01").is_dir()
 
     def test_yes_removes_episode_artifacts(self, workspace):
-        script = _scaffold_episode(workspace, "mypodcast", "S01E01")
+        _scaffold_episode(workspace, "mypodcast", "S01E01")
         _run_main(["xil-remove-episode", "S01E01", "--show", "mypodcast", "--yes"])
 
         assert not (workspace / "configs" / "mypodcast" / "cast_S01E01.json").exists()
