@@ -1600,6 +1600,27 @@ class TestS02Speakers:
     def test_closing_radio_station_slug(self):
         assert parser.SECTION_MAP["CLOSING — RADIO STATION"] == "closing"
 
+    def test_woonsocket_intro_outro_map_to_preamble_postamble(self):
+        # The Woonsocket Wonders (S01E02) intro/outro labels reuse the standard
+        # preamble/postamble construct so their [MUSIC:] theme directions ride
+        # the existing intro/outro-music machinery.
+        assert parser.SECTION_MAP["EPISODE THEME"] == "preamble"
+        assert parser.SECTION_MAP["PRE-SHOW MUSIC"] == "preamble"
+        assert parser.SECTION_MAP["CLOSING TAG"] == "postamble"
+
+    def test_woonsocket_section_headers_recognized(self):
+        # Recognized as section headers (not flagged as speaker candidates)
+        assert parser.is_section_header("EPISODE THEME") is True
+        assert parser.is_section_header("PRE-SHOW MUSIC") is True
+        assert parser.is_section_header("CLOSING TAG") is True
+
+    def test_woonsocket_intro_outro_in_podcast_map(self):
+        # Present in the merged map for the podcast content type
+        podcast_map = parser.get_section_map("podcast")
+        assert podcast_map["EPISODE THEME"] == "preamble"
+        assert podcast_map["PRE-SHOW MUSIC"] == "preamble"
+        assert podcast_map["CLOSING TAG"] == "postamble"
+
 
 POST_INTERVIEW_SCRIPT = """\
 # THE 413 Season 2: Episode 1: "The Return"
