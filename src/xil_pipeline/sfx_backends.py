@@ -32,14 +32,13 @@ import subprocess
 import sys
 import tempfile
 import time
-from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import httpx
 from elevenlabs.core.api_error import ApiError
 
 from xil_pipeline.log_config import get_logger
-from xil_pipeline.models import get_workspace_root
+from xil_pipeline.models import resolve_venv_python
 
 logger = get_logger(__name__)
 
@@ -282,26 +281,21 @@ class AudioLDM2SfxBackend:
 
 
 def _find_audioldm2_python(explicit: str | None) -> str:
-    """Resolve the venv-audioldm2 Python, mirroring the chatterbox auto-detect.
+    """Resolve the venv-audioldm2 Python via :func:`resolve_venv_python`.
 
-    Search order: explicit path → ``<workspace>/venv-audioldm2`` →
-    repo root next to the running venv.  Exits with an actionable error if none
-    is found.
+    Resolution: explicit path → ``$XIL_CODEROOT/venv-audioldm2`` (exclusive when set)
+    → auto-detect at workspace root, then repo root.  Exits with an actionable error
+    if none is found.
     """
-    if explicit:
-        return explicit
-    candidates = [
-        get_workspace_root() / "venv-audioldm2" / "bin" / "python3",
-        Path(sys.executable).parent.parent.parent / "venv-audioldm2" / "bin" / "python3",
-    ]
-    for c in candidates:
-        if c.exists():
-            return str(c)
-    logger.error(
-        "Cannot find AudioLDM 2 venv Python. "
-        "Pass --audioldm2-python PATH or create venv-audioldm2/ in the project root."
-    )
-    sys.exit(1)
+    py = resolve_venv_python("venv-audioldm2", explicit)
+    if py is None:
+        logger.error(
+            "Cannot find AudioLDM 2 venv Python. Pass --audioldm2-python PATH, "
+            "set XIL_CODEROOT to the directory containing venv-audioldm2/, "
+            "or create venv-audioldm2/ in the workspace or repo root."
+        )
+        sys.exit(1)
+    return py
 
 
 def make_sfx_backend(
