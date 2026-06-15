@@ -729,9 +729,11 @@ def parse_script_header(line: str) -> tuple[str, int | None, int, str, str | Non
     if not ep_match:
         return None
 
-    # Show: text before the first Season or Episode keyword
-    show_match = re.match(r"^(.+?)\s+(?:Season\s+\d+|Episode\s+\d+)", line)
-    show = show_match.group(1).strip() if show_match else "Unknown Show"
+    # Show: text before the first Season or Episode keyword.
+    # Use re.search to locate the keyword then slice — avoids polynomial
+    # backtracking that the (.+?)\s+ lazy pattern produces on long inputs.
+    kw_match = re.search(r"\b(?:Season\s+\d+|Episode\s+\d+)", line)
+    show = line[:kw_match.start()].strip() if kw_match else "Unknown Show"
 
     # Season: optional
     season_match = re.search(r"Season\s+(\d+)", line)

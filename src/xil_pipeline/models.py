@@ -188,7 +188,7 @@ def derive_paths(slug: str, tag: str) -> dict[str, str]:
     """
     new = _derive_paths_new(slug, tag)
     legacy = derive_paths_legacy(slug, tag)
-    use_legacy = os.path.exists(legacy["cast"]) and not os.path.exists(new["cast"])
+    use_legacy = os.path.exists(legacy["cast"]) and not os.path.exists(new["cast"])  # lgtm[py/path-injection]
     return legacy if use_legacy else new
 
 

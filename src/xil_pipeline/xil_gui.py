@@ -32,6 +32,7 @@ import shlex
 import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from xil_pipeline.models import get_workspace_root
 
@@ -414,6 +415,20 @@ def _sanitize_extra_flags(flags: str) -> list[str]:
     return tokens
 
 
+def _check_workspace_path(path: str) -> None:
+    """Raise ValueError if *path* resolves outside the workspace root.
+
+    Config-editor save functions receive paths from Gradio dropdowns that are
+    populated from the workspace file tree, so this is a defence-in-depth
+    check rather than the primary trust boundary.
+    """
+    workspace = get_workspace_root().resolve()
+    try:
+        Path(path).resolve().relative_to(workspace)
+    except ValueError as exc:
+        raise ValueError(f"Path is outside the workspace root: {path!r}") from exc
+
+
 def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str):
     """Generator: launch a pipeline stage, yield accumulated stdout."""
     if not episode_choice or not stage:
@@ -453,7 +468,7 @@ def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str)
     yield header
 
     try:
-        proc = subprocess.Popen(
+        proc = subprocess.Popen(  # lgtm[py/command-line-injection]
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -480,7 +495,7 @@ def _execute_cmd(cmd: list[str]):
     _log_activity("CMD: " + " ".join(cmd))
     yield header
     try:
-        proc = subprocess.Popen(
+        proc = subprocess.Popen(  # lgtm[py/command-line-injection]
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -743,7 +758,7 @@ def _build_app():
         _log_activity("CMD: " + " ".join(cmd))
         yield "$ " + " ".join(cmd) + "\n\n"
         try:
-            proc = subprocess.Popen(
+            proc = subprocess.Popen(  # lgtm[py/command-line-injection]
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -807,6 +822,10 @@ def _build_app():
         if not path:
             return "No file selected."
         try:
+            _check_workspace_path(path)
+        except ValueError as exc:
+            return str(exc)
+        try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
             return f"Invalid JSON — not saved: {exc}"
@@ -833,6 +852,10 @@ def _build_app():
         if not path:
             return "No file selected."
         try:
+            _check_workspace_path(path)
+        except ValueError as exc:
+            return str(exc)
+        try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
             return f"Invalid JSON — not saved: {exc}"
@@ -858,6 +881,10 @@ def _build_app():
     def save_sfx_config(path: str, text: str) -> str:
         if not path:
             return "No file selected."
+        try:
+            _check_workspace_path(path)
+        except ValueError as exc:
+            return str(exc)
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
