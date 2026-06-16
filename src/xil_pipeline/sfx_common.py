@@ -115,11 +115,13 @@ def _sha256_file(path: str) -> str:
 # ── SFX stem manifest helpers ─────────────────────────────────────────────────
 
 def _sfx_manifest_path(stems_dir: str) -> str:
+    """Return the SFX stem manifest JSON path inside *stems_dir*."""
     tag = os.path.basename(stems_dir.rstrip(os.sep))
     return os.path.join(stems_dir, f"{tag}_sfx_manifest.json")
 
 
 def _sfx_manifest_load(path: str) -> dict:
+    """Load the SFX manifest from *path*, returning an empty manifest when absent or corrupt."""
     if os.path.exists(path):
         try:
             with open(path, encoding="utf-8") as f:
@@ -130,6 +132,7 @@ def _sfx_manifest_load(path: str) -> dict:
 
 
 def _sfx_manifest_save(path: str, manifest: dict) -> None:
+    """Atomically write *manifest* to *path* via a temp-file rename."""
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -140,11 +143,13 @@ def _sfx_manifest_content_key(effect_key: str, sfx_type: str,
                                source_path: str | None,
                                prompt: str | None,
                                duration_seconds: float | None) -> tuple:
+    """Build a deduplication key from SFX effect parameters for manifest upsert."""
     return (effect_key, sfx_type, source_path or "", prompt or "",
             round(duration_seconds, 3) if duration_seconds is not None else None)
 
 
 def _sfx_manifest_upsert(manifest: dict, by_key: dict, entry: dict) -> None:
+    """Insert or update *entry* in *manifest*, deduplicating by content key."""
     key = _sfx_manifest_content_key(
         entry["effect_key"], entry["sfx_type"],
         entry.get("source_path"), entry.get("prompt"),

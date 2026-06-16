@@ -275,6 +275,7 @@ def migrate(workspace: str = ".", dry_run: bool = True) -> int:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-migrate-workspace."""
     parser = argparse.ArgumentParser(
         prog="xil-migrate-workspace",
         description="Migrate a pre-0.1.8 workspace to the normalized directory layout",

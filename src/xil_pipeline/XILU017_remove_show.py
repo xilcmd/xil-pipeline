@@ -258,6 +258,7 @@ def _resolve_slug(name_or_slug: str) -> str:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-remove-show."""
     parser = argparse.ArgumentParser(
         prog="xil-remove-show",
         description=(

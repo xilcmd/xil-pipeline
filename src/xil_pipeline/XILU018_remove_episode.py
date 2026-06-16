@@ -221,6 +221,7 @@ def _delete(items: list[RemovalItem]) -> int:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-remove-episode."""
     parser = argparse.ArgumentParser(
         prog="xil-remove-episode",
         description=(
