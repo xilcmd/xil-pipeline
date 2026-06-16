@@ -141,6 +141,7 @@ def _ep_meta(slug: str, tag: str) -> tuple[str, str]:
 
 
 def _ep_choice(slug: str, tag: str) -> str:
+    """Format a (slug, tag) pair as a dropdown label string."""
     if not tag:
         # Show stub — no episodes parsed yet; read show name from project.json
         pj = os.path.join(str(get_workspace_root()), "configs", slug, "project.json")
@@ -160,6 +161,7 @@ def _ep_choice(slug: str, tag: str) -> str:
 
 
 def _episode_choices() -> list[str]:
+    """Return all episode dropdown labels."""
     return [_ep_choice(slug, tag) for slug, tag in _find_episodes()]
 
 
@@ -282,6 +284,7 @@ def _parse_choice(choice: str) -> tuple[str, str]:
 
 
 def _stage_status(slug: str, tag: str) -> dict[str, str]:
+    """Return parse/produce/daw/master completion indicators for an episode."""
     from xil_pipeline.models import derive_paths
     p = derive_paths(slug, tag)
     stems_dir = p["stems"]
@@ -305,6 +308,7 @@ def _stage_status(slug: str, tag: str) -> dict[str, str]:
 
 
 def _refresh_episodes() -> list[list[str]]:
+    """Build the Episodes tab table rows from current workspace state."""
     rows = []
     for slug, tag in _find_episodes():
         st = _stage_status(slug, tag)
@@ -517,6 +521,7 @@ def _execute_cmd(cmd: list[str]):
 
 
 def _cmd_scan(slug: str, tag: str, script_path: str | None, speakers: str, as_json: bool) -> list[str]:
+    """Build the xil-scan command list."""
     if not script_path or not str(script_path).strip():
         raise ValueError("Scan requires a script — select one from the dropdown.")
     module = _STAGE_MODULES["scan"]
@@ -530,6 +535,7 @@ def _cmd_scan(slug: str, tag: str, script_path: str | None, speakers: str, as_js
 
 def _cmd_parse(slug: str, tag: str, script_path: str | None, preview: int | None,
                quiet: bool, debug: bool, stats: bool, speakers: str) -> list[str]:
+    """Build the xil-parse command list."""
     module = _STAGE_MODULES["parse"]
     if script_path and str(script_path).strip():
         cmd = [sys.executable, "-m", module, str(script_path).strip(), "--episode", tag]
@@ -559,6 +565,7 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
                  start_from: int | None, stop_at: int | None,
                  exaggeration: float, cb_python: str = "",
                  force: bool = False, cfg_weight: float = 0.5) -> list[str]:
+    """Build the xil-produce command list."""
     module = _STAGE_MODULES["produce"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
     if dry_run:
@@ -593,6 +600,7 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
 
 def _cmd_assemble(slug: str, tag: str, gap_ms: int,
                   parsed_path: str, output: str) -> list[str]:
+    """Build the xil-assemble command list."""
     module = _STAGE_MODULES["assemble"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
     if gap_ms != 600:
@@ -607,6 +615,7 @@ def _cmd_assemble(slug: str, tag: str, gap_ms: int,
 def _cmd_daw(slug: str, tag: str, dry_run: bool, gap_ms: int,
              timeline: bool, timeline_html: bool,
              macro: bool, save_aup3: bool, output_dir: str) -> list[str]:
+    """Build the xil-daw command list."""
     module = _STAGE_MODULES["daw"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
     if dry_run:
@@ -628,6 +637,7 @@ def _cmd_daw(slug: str, tag: str, dry_run: bool, gap_ms: int,
 
 def _cmd_master(slug: str, tag: str, dry_run: bool,
                 output: str, daw_dir: str) -> list[str]:
+    """Build the xil-master command list."""
     module = _STAGE_MODULES["master"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
     if dry_run:
@@ -642,6 +652,7 @@ def _cmd_master(slug: str, tag: str, dry_run: bool,
 # ── Gradio app ─────────────────────────────────────────────────────────────
 
 def _build_app():
+    """Build and return the Gradio dashboard application."""
     try:
         import gradio as gr
     except ImportError:
