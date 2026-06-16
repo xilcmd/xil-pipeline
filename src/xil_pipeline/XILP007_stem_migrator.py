@@ -319,6 +319,7 @@ def print_summary(counts: dict[str, int], dry_run: bool) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-migrate."""
     parser = argparse.ArgumentParser(
         prog="xil-migrate",
         description=(

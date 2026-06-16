@@ -1460,6 +1460,7 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-parse."""
     parser = argparse.ArgumentParser(
         prog="xil-parse",
         description="Parse production script markdown into structured JSON",

@@ -131,6 +131,7 @@ def find_stale_stems(
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-cleanup."""
     parser = argparse.ArgumentParser(
         prog="xil-cleanup",
         description=(

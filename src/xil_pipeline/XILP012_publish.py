@@ -367,6 +367,7 @@ def publish_episode(
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-publish."""
     parser = argparse.ArgumentParser(
         prog="xil-publish",
         description="Generate social media post drafts from parsed episode data",
@@ -398,6 +399,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """CLI entry point for social media post generation."""
     configure_logging()
     with run_banner():
         args = get_parser().parse_args()

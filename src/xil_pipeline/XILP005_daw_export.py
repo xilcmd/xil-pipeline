@@ -658,6 +658,7 @@ def export_daw_layers(
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-daw."""
     parser = argparse.ArgumentParser(
         prog="xil-daw",
         description="DAW Export — export episode as layered WAV files for Audacity",

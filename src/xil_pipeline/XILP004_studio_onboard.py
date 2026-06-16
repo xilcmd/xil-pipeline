@@ -270,6 +270,7 @@ def dry_run(chapters: list[dict], cast: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-studio-onboard."""
     parser = argparse.ArgumentParser(
         prog="xil-studio-onboard",
         description="Onboard an episode to an ElevenLabs Studio project.",
@@ -298,6 +299,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main():
+    """CLI entry point for Studio project onboarding."""
     configure_logging()
     with run_banner():
         parser = get_parser()

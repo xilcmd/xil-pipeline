@@ -124,6 +124,7 @@ def export_master(
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-master."""
     parser = argparse.ArgumentParser(
         prog="xil-master",
         description="Final Master MP3 Export — mix DAW layers into a single podcast-ready MP3",

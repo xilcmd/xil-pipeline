@@ -167,6 +167,7 @@ def assemble_multitrack(
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-assemble."""
     parser = argparse.ArgumentParser(
         prog="xil-assemble",
         description="Audio Assembly — assemble voice stems into master MP3",

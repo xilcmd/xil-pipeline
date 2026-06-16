@@ -189,6 +189,7 @@ def regenerate_script(
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-regen."""
     parser = argparse.ArgumentParser(
         prog="xil-regen",
         description="Regenerate a production script markdown from parsed JSON.",
@@ -214,6 +215,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main():
+    """CLI entry point for reverse script generation."""
     configure_logging()
     args = get_parser().parse_args()
     tag = args.episode or args.tag

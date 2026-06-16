@@ -658,6 +658,7 @@ def backfill_cast(
 # ---------------------------------------------------------------------------
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-scan."""
     parser = argparse.ArgumentParser(
         prog="xil-scan",
         description="Pre-flight scanner: check a production script for unknown speakers/sections.",
@@ -707,6 +708,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main():
+    """CLI entry point for the pre-flight script scanner."""
     configure_logging()
     with run_banner():
         args = get_parser().parse_args()

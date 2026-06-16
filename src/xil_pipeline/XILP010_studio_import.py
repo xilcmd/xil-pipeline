@@ -180,6 +180,7 @@ def print_summary(stats: dict, dry_run: bool = False) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-import."""
     parser = argparse.ArgumentParser(
         prog="xil-import",
         description="Import ElevenLabs Studio export ZIP into pipeline stems.",
@@ -239,6 +240,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main():
+    """CLI entry point for Studio export import."""
     configure_logging()
     args = get_parser().parse_args()
 

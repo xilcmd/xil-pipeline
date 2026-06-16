@@ -69,11 +69,13 @@ def _log_stem_hash(path: str) -> None:
 # ── Stem manifest helpers ─────────────────────────────────────────────────────
 
 def _manifest_path(stems_dir: str) -> str:
+    """Return the stem manifest JSON path inside *stems_dir*."""
     tag = os.path.basename(stems_dir.rstrip(os.sep))
     return os.path.join(stems_dir, f"{tag}_stem_manifest.json")
 
 
 def _load_manifest(path: str) -> dict:
+    """Load the stem manifest from *path*, returning an empty manifest when absent or corrupt."""
     if os.path.exists(path):
         try:
             with open(path, encoding="utf-8") as f:
@@ -84,6 +86,7 @@ def _load_manifest(path: str) -> dict:
 
 
 def _save_manifest(path: str, manifest: dict) -> None:
+    """Atomically write *manifest* to *path* via a temp-file rename."""
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -93,11 +96,13 @@ def _save_manifest(path: str, manifest: dict) -> None:
 def _manifest_content_key(text: str, voice_id: str, speed: float,
                            stability: float, similarity_boost: float,
                            backend: str) -> tuple:
+    """Build a deduplication key from TTS parameters for manifest upsert."""
     return (text, voice_id or "", round(speed or 1.0, 4), round(stability or 0.5, 4),
             round(similarity_boost or 0.75, 4), backend)
 
 
 def _manifest_upsert(manifest: dict, by_key: dict, entry: dict) -> None:
+    """Insert or update *entry* in *manifest*, deduplicating by content key."""
     key = _manifest_content_key(
         entry["text"], entry["voice_id"], entry["speed"],
         entry["stability"], entry["similarity_boost"], entry["backend"],
@@ -757,6 +762,7 @@ class _ChatterboxClient:
         self._proc: subprocess.Popen | None = None
 
     def _start(self) -> None:
+        """Spawn the Chatterbox worker subprocess and wait for its ready signal."""
         logger.info("Starting Chatterbox worker (%s, %s)…", self._python, self._device)
         self._proc = subprocess.Popen(
             [self._python, self._WORKER, self._device],
@@ -789,6 +795,7 @@ class _ChatterboxClient:
         logger.info("Chatterbox worker ready (sample_rate=%d)", msg["sr"])
 
     def _ref_for(self, speaker_key: str) -> str | None:
+        """Return the voice reference file path for *speaker_key*, or None if absent."""
         for ext in (".wav", ".mp3"):
             p = os.path.join(self._voice_refs_dir, f"{speaker_key}{ext}")
             if os.path.exists(p):
@@ -796,6 +803,7 @@ class _ChatterboxClient:
         return None
 
     def _cond_for(self, speaker_key: str) -> str:
+        """Return the Chatterbox conditioning tensor path for *speaker_key*."""
         return os.path.join(self._voice_refs_dir, f"{speaker_key}.conds.pt")
 
     def generate(self, text: str, out_path: str, speaker_key: str) -> None:
@@ -1003,6 +1011,7 @@ def reconcile(
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-produce."""
     parser = argparse.ArgumentParser(
         prog="xil-produce",
         description="Voice Generation — generate voice stems via ElevenLabs",

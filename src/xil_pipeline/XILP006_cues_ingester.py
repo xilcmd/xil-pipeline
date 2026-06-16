@@ -504,6 +504,7 @@ def find_cues_file(episode: str, slug: str | None = None, cues_dir: str = CUES_D
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-cues."""
     parser = argparse.ArgumentParser(
         prog="xil-cues",
         description=(
