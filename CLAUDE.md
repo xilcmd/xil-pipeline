@@ -845,6 +845,52 @@ After executing any plan that changes pipeline behaviour, CLI flags, file format
 
 If a plan is large enough to have its own plan file, tick this as the final step before closing the plan.
 
+### Docstring Standard
+
+Two-tier rule — pick the tier by function complexity:
+
+**Tier 1 — one-liner.** Use for boilerplate entry points and small helpers whose signature makes the purpose obvious:
+
+```python
+def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-parse."""
+
+def main() -> None:
+    """CLI entry point for the script parser."""
+
+def _sfx_manifest_path(stems_dir: str) -> str:
+    """Return the SFX stem manifest JSON path inside *stems_dir*."""
+```
+
+**Tier 2 — Google-style.** Use for public functions with non-trivial parameters or structured return values. Include a one-line summary, `Args:` block, and `Returns:` block. Show the return structure inline when it is a dict or complex type:
+
+```python
+def scan_script(
+    lines: list[str],
+    known_speakers: list[str] | None = None,
+    speaker_keys: dict[str, str] | None = None,
+) -> dict:
+    """Scan normalized *lines* and classify every ALL-CAPS candidate.
+
+    Args:
+        lines: Normalized script lines.
+        known_speakers: Ordered list of speaker display names (longest-first).
+            Defaults to the module-level speakers from XILP001.
+        speaker_keys: Mapping from display names to normalized keys.
+            Defaults to the module-level speakers from XILP001.
+
+    Returns a dict::
+
+        {
+            "sections":     [{"text": str, "slug": str, "line": int}, ...],
+            "speakers":     {key: {"display": str, "count": int, "lines": [int, ...]}, ...},
+            "unrecognized": [{"text": str, "lines": [int, ...]}, ...],
+        }
+    """
+```
+
+Private helpers (`_foo`) use Tier 1 unless their parameters genuinely need explanation. Never write multi-paragraph docstrings or repeat what the type annotations already say.
+
 ### Script Entry Point Style
 
 Always use the `if __name__ == "__main__":` idiom. All application logic that would otherwise follow it must live inside a `main()` function — the dunder-main block must contain only the call to `main()`:
