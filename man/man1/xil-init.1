@@ -1,15 +1,15 @@
-.TH XIL\-INIT "1" "2026\-04\-24" "xil\-pipeline 0.1.8" "User Commands"
+.TH XIL\-INIT "1" "2026\-06\-17" "xil\-pipeline 0.3.0" "User Commands"
 .SH NAME
 xil\-init
 .SH SYNOPSIS
 .B xil\-init
-[-h] [--show SHOW] [--type {podcast,audiobook,drama,special}] [--season SEASON] [--season-title TITLE] [directory]
+[-h] [--show SHOW] [--type {podcast,audiobook,drama,special}] [--season SEASON] [--season-title TITLE] [--flat] [--no-flat] [directory]
 .SH DESCRIPTION
 Scaffold a new xil\-pipeline project workspace
 
 .TP
 \fBdirectory\fR
-Target directory (default: current directory)
+Target directory (default: XIL_PROJECTROOT if set, else current directory)
 
 .SH OPTIONS
 .TP
@@ -27,6 +27,14 @@ Season number for project.json and the sample script header
 .TP
 \fB\-\-season\-title\fR \fI\,TITLE\/\fR
 Season/arc title for project.json and the sample script header
+
+.TP
+\fB\-\-flat\fR
+Use multi\-show flat layout: project.json in configs/{slug}/, per\-show category subdirs (default)
+
+.TP
+\fB\-\-no\-flat\fR
+Use legacy single\-show layout: all dirs at workspace root
 
 .SH SEE ALSO
 .BR xil (1),
