@@ -843,6 +843,7 @@ def _tts_segment(text: str, out_path: str, voice_id: str, speed: float | None,
                  backend: str = "elevenlabs",
                  chatterbox_client: "_ChatterboxClient | None" = None,
                  speaker_key: str | None = None) -> None:
+    """Route one TTS line to the active backend and write the stem MP3 to *out_path*."""
     """Call TTS backend and write the result to *out_path*.
 
     Uses a unique ``.tmp`` staging file so a partial write is never mistaken

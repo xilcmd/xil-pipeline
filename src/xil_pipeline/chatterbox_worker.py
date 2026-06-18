@@ -40,6 +40,7 @@ TAG_RE = re.compile(r'\[[^\]]*\]')
 
 
 def main() -> None:
+    """Load ChatterboxTTS and serve generation requests via JSON protocol."""
     device = sys.argv[1] if len(sys.argv) > 1 else "cuda"
 
     # Suppress noisy deprecation warnings from diffusers / torch internals

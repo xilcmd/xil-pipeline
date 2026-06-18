@@ -96,6 +96,7 @@ def load_sfx_plan(
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-sfx."""
     parser = argparse.ArgumentParser(
         prog="xil-sfx",
         description="Generate SFX stems from an SFX config (standalone utility)",

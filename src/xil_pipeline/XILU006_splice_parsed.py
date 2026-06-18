@@ -254,6 +254,7 @@ def _parse_range(s: str) -> tuple[int, int]:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-splice."""
     parser = argparse.ArgumentParser(
         prog="xil-splice",
         description="Splice Parsed JSON — insert/delete entries with automatic renumbering",

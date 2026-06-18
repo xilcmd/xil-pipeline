@@ -148,6 +148,7 @@ def _run(args: "argparse.Namespace") -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-parsed-csv."""
     parser = argparse.ArgumentParser(
         prog="xil-parsed-csv",
         description="Export parsed_<tag>.json entries to CSV — one row per entry",

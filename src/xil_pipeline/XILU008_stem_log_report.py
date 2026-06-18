@@ -194,6 +194,7 @@ def _audit(records: list[dict], parsed_json_path: str, threshold: int = 20) -> N
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-stem-log."""
     parser = argparse.ArgumentParser(
         prog="xil-stem-log",
         description="Parse xil-pipeline logs into a stem generation chronology CSV.",
@@ -248,6 +249,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """CLI entry point for stem generation log reporting."""
     args = get_parser().parse_args()
 
     if args.logs_dir is None:

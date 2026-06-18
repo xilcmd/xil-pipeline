@@ -141,6 +141,7 @@ def _run(args: argparse.Namespace) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-episode-summary."""
     parser = argparse.ArgumentParser(
         prog="xil-episode-summary",
         description="Write a one-row-per-episode summary CSV from all parsed_<tag>.json files.",
@@ -166,6 +167,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """CLI entry point for episode summary CSV generation."""
     configure_logging()
     args = get_parser().parse_args()
     if args.stdout:

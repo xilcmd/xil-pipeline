@@ -171,6 +171,7 @@ def _module_tag(module: str) -> str:
 
 
 def _print_help(stream: TextIO) -> None:
+    """Print the xil command list to *stream*."""
     print("Usage: xil <command> [args...]", file=stream)
     print("", file=stream)
     width = max(len(name) for name in XIL_SCRIPT_COMMANDS)
@@ -188,6 +189,7 @@ def _print_help(stream: TextIO) -> None:
 
 
 def _normalize_exit_code(code: object) -> int:
+    """Coerce a subcommand return value to an integer exit code."""
     if code is None:
         return 0
     if isinstance(code, int):

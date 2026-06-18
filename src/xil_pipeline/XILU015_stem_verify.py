@@ -224,6 +224,7 @@ def _run(args: argparse.Namespace) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-stem-verify."""
     parser = argparse.ArgumentParser(
         prog="xil-stem-verify",
         description="Scan a stems folder and produce a JSON report with file attributes and Whisper transcriptions.",

@@ -179,6 +179,7 @@ def _run(args: "argparse.Namespace") -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-sfx-csv."""
     parser = argparse.ArgumentParser(
         prog="xil-sfx-csv",
         description="Flatten sfx_<tag>.json configs to CSV — one row per effect",

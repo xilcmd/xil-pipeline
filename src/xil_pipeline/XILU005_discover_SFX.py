@@ -437,6 +437,7 @@ def export_kit(records: list[dict], output_dir: str = ".") -> tuple[str, str, st
 # ---------------------------------------------------------------------------
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-sfx-lib."""
     parser = argparse.ArgumentParser(
         prog="xil-sfx-lib",
         description="Discover personally generated Sound Effects from the ElevenLabs account or local SFX/ directory",

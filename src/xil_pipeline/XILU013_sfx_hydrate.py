@@ -91,6 +91,7 @@ def hydrate_sfx_config(
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-sfx-hydrate."""
     parser = argparse.ArgumentParser(
         prog="xil-sfx-hydrate",
         description=(
@@ -113,6 +114,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """CLI entry point for SFX config source-field hydration."""
     configure_logging()
     args = get_parser().parse_args()
     tag = args.episode or args.tag

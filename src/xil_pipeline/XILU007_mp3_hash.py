@@ -125,6 +125,7 @@ def _run(args: "argparse.Namespace") -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-mp3-hash."""
     parser = argparse.ArgumentParser(
         prog="xil-mp3-hash",
         description="Recursively hash MP3 files and log <path> : <sha256>",

@@ -42,6 +42,7 @@ _SAMPLE_RATE = 16000  # AudioLDM 2 output sample rate
 
 
 def main() -> None:
+    """Load AudioLDM 2 and serve SFX/music generation requests via JSON protocol."""
     device = sys.argv[1] if len(sys.argv) > 1 else "cuda"
 
     # Suppress noisy deprecation warnings from diffusers / torch internals

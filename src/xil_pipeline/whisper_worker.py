@@ -26,6 +26,7 @@ import sys
 
 
 def main() -> None:
+    """Load Faster-Whisper and serve transcription requests via JSON protocol."""
     device = sys.argv[1] if len(sys.argv) > 1 else "cuda"
     model_size = sys.argv[2] if len(sys.argv) > 2 else "large-v3-turbo"
 

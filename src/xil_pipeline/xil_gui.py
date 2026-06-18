@@ -1598,6 +1598,7 @@ def _build_app():
 # ── CLI entry point ────────────────────────────────────────────────────────
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-gui."""
     parser = argparse.ArgumentParser(
         prog="xil-gui",
         description="Launch the xil-pipeline web dashboard (Gradio).",
@@ -1631,6 +1632,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """CLI entry point for the Gradio web dashboard."""
     global _activity_log
     args = get_parser().parse_args()
     if args.output:

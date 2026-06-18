@@ -56,6 +56,7 @@ except ImportError:
 # ── ElevenLabs quota helpers ──────────────────────────────────────────────────
 
 def check_elevenlabs_quota() -> int | None:
+    """Display current ElevenLabs API character usage and return remaining quota."""
     try:
         user_info = client.user.get()
         sub = user_info.subscription
@@ -76,6 +77,7 @@ def check_elevenlabs_quota() -> int | None:
 
 
 def has_enough_characters(text_to_generate: str) -> bool:
+    """Return True if the ElevenLabs quota can cover *text_to_generate*."""
     try:
         user_info = client.user.get()
         remaining = user_info.subscription.character_limit - user_info.subscription.character_count
@@ -92,6 +94,7 @@ def has_enough_characters(text_to_generate: str) -> bool:
 
 
 def get_best_model_for_budget() -> str:
+    """Return the TTS model to use, always ``eleven_v3``."""
     SAFE_THRESHOLD = 5000
     try:
         user_info = client.user.get()
@@ -110,6 +113,7 @@ def get_best_model_for_budget() -> str:
 # ── Free TTS backends ─────────────────────────────────────────────────────────
 
 def _gtts_generate(text: str, out_path: str) -> None:
+    """Generate TTS via gTTS (Google Translate TTS). Strips eleven_v3 inline tags."""
     if not HAS_GTTS:
         raise RuntimeError("gTTS not installed. Run: pip install xil-pipeline[tts-alt]")
     cleaned = re.sub(r'\[[^\]]*\]', '', text).strip()
@@ -219,6 +223,7 @@ class _ChatterboxClient:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-sample."""
     parser = argparse.ArgumentParser(
         prog="xil-sample",
         description="Generate a voice sample MP3 for each cast member via the chosen TTS backend.",
@@ -279,6 +284,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """CLI entry point for cast voice sample generation."""
     configure_logging()
     with run_banner():
         args = get_parser().parse_args()

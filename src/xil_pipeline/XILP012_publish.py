@@ -237,6 +237,7 @@ def call_claude_api(
     user_message: str,
     model: str = "claude-haiku-4-5-20251001",
 ) -> str:
+    """Call the Claude API and return the generated post text."""
     """Call the Anthropic API and return the text response."""
     try:
         import anthropic

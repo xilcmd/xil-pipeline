@@ -221,6 +221,7 @@ def update_cast(cast_path: str, records_by_id: dict, dry_run: bool = False) -> N
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-voices."""
     parser = argparse.ArgumentParser(
         prog="xil-voices",
         description="List ElevenLabs voices with enriched metadata",

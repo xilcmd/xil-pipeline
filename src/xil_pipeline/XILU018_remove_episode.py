@@ -262,6 +262,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """CLI entry point for episode workspace removal."""
     configure_logging()
     args = get_parser().parse_args()
 

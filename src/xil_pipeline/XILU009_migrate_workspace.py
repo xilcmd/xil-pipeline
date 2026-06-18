@@ -292,6 +292,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """CLI entry point for workspace layout migration."""
     configure_logging()
     args = get_parser().parse_args()
     return migrate(workspace=args.workspace, dry_run=args.dry_run)

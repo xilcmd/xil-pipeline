@@ -275,6 +275,7 @@ def _run(args: argparse.Namespace) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-stem-compare."""
     parser = argparse.ArgumentParser(
         prog="xil-stem-compare",
         description="Cross-reference Whisper transcripts against parsed script dialogue to flag garbled stems.",

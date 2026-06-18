@@ -200,6 +200,7 @@ def annotate_csv(
 # ---------------------------------------------------------------------------
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-csv-join."""
     parser = argparse.ArgumentParser(
         prog="xil-csv-join",
         description="Annotate a parsed episode CSV with SFX and cast config data.",
@@ -218,6 +219,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """CLI entry point for parsed CSV + SFX/cast annotation."""
     configure_logging()
     with run_banner():
         args = get_parser().parse_args()

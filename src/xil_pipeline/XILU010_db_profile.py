@@ -161,6 +161,7 @@ def _run(args: "argparse.Namespace") -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-db-profile."""
     parser = argparse.ArgumentParser(
         prog="xil-db-profile",
         description="Profile MP3 audio levels: peak, average, and minimum dBFS",
