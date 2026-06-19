@@ -1045,12 +1045,16 @@ def _build_app():
 
             # ── Tab 2: Episodes ─────────────────────────────────────
             with gr.Tab("Episodes"):
+                # Populated by demo.load() on first connect — see below. The
+                # staleness scan stats files across every episode, so we keep it
+                # off the app-construction path and show a placeholder meanwhile.
                 ep_table = gr.Dataframe(
                     headers=[
                         "Tag", "Slug", "Title  [Arc]",
                         "Parse", "Stems", "DAW", "Master", "Overall",
                     ],
-                    value=_refresh_episodes(),
+                    value=[["", "", "⏳ Collecting episode status — please wait…",
+                            "", "", "", "", ""]],
                     interactive=False,
                     wrap=True,
                 )
@@ -1614,6 +1618,11 @@ def _build_app():
             fn=_refresh_all_with_project,
             outputs=[ep_table, audio_ep_dd, run_ep_dd, tl_ep_dd, proj_editor, proj_path_display],
         )
+
+        # Fill the Episodes table after the page loads rather than during app
+        # construction, so xil-gui startup stays snappy even on large workspaces.
+        # The placeholder row shows "Collecting episode status…" until this resolves.
+        demo.load(fn=_refresh_episodes, outputs=ep_table)
 
         # After "Create show" completes, refresh all episode dropdowns so the new
         # show stub appears immediately without the user having to press ⟳.
