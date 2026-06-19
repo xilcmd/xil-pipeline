@@ -115,6 +115,23 @@ def test_gdoc_newer_makes_script_stale(ws, tmp_path):
     assert by_name["script"].status == status._STALE
 
 
+def test_parse_suggestion_uses_newest_script_draft(ws):
+    """With multiple drafts on disk, the parse hint points at the newest one."""
+    _build_fresh(ws)
+    scripts = ws / "scripts"
+    # Older drafts that sort *after* the build-fresh script alphabetically but
+    # are older by mtime; and one newer draft. Newest must win regardless of name.
+    _touch(scripts / f"{_TAG}_{_SLUG}_bridge_v1.md", 900)
+    _touch(scripts / f"{_TAG}_{_SLUG}_diner_v3.md", 9000)  # newest
+    # Make parsed older than the newest script so the parse stage is flagged.
+    os.utime(ws / "parsed" / _SLUG / f"parsed_{_TAG}.json", (1500, 1500))
+
+    stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
+    by_name = {s.name: s for s in stages}
+    assert by_name["parsed"].status == status._STALE
+    assert by_name["parsed"].refresh.endswith(f"_diner_v3.md --episode {_TAG}")
+
+
 # ── --all discovery ───────────────────────────────────────────────────────────
 
 

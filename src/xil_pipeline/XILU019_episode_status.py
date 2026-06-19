@@ -187,9 +187,13 @@ def evaluate_episode(slug: str, tag: str, gdoc_dir: Path) -> list[StageStatus]:
 
     # script refresh has no CLI equivalent — it is imported via xil-gui.
     script_refresh = "(re-import the production doc in xil-gui)"
+    # Suggest the most recently modified script: with multiple drafts on disk
+    # (e.g. *_v1, *_v2, *_v3), the newest is the one that triggered staleness
+    # and the one the user most likely wants to (re)parse.
+    newest_script = max(scripts, key=lambda p: p.stat().st_mtime) if scripts else None
     parse_refresh = (
-        f"xil parse {scripts[0].relative_to(root)} --episode {tag}"
-        if scripts
+        f"xil parse {newest_script.relative_to(root)} --episode {tag}"
+        if newest_script
         else f"xil parse <script> --episode {tag}"
     )
 
