@@ -130,13 +130,23 @@ def _glob_in(path_str: str, pattern: str) -> list[Path]:
 
 
 def _master_files(root: Path, slug: str, tag: str) -> list[Path]:
-    """All master MP3s for *tag* (date-tagged variants plus canonical name)."""
-    masters = root / "masters" / slug
-    if not masters.is_dir():
-        # Legacy: single master at workspace root.
-        legacy = root / f"{slug}_{tag}_master.mp3"
-        return [legacy] if legacy.is_file() else []
-    return sorted(masters.glob(f"{tag}_*.mp3"))
+    """All master MP3s for *tag*, across every known layout.
+
+    XILP011 writes ``masters/{tag}_{slug}_{date}.mp3`` flat under ``masters/``
+    (see XILP011_master_export.py); older/canonical variants live in a slug
+    subdirectory or at the workspace root.  Collect them all and de-dup.
+    """
+    masters = root / "masters"
+    found: list[Path] = []
+    if masters.is_dir():
+        found += masters.glob(f"{tag}_*.mp3")          # flat: {tag}_{slug}_{date}.mp3, {tag}_master.mp3
+        sub = masters / slug
+        if sub.is_dir():
+            found += sub.glob(f"{tag}_*.mp3")           # slug-subdir variant
+    legacy = root / f"{slug}_{tag}_master.mp3"          # pre-0.1.8 root layout
+    if legacy.is_file():
+        found.append(legacy)
+    return sorted({p for p in found if p.is_file()})
 
 
 # ── Stage evaluation ──────────────────────────────────────────────────────────
@@ -326,11 +336,18 @@ def _discover_tags(slug: str) -> list[str]:
                 if child.is_dir() and (m := _TAG_RE.fullmatch(child.name)):
                     tags.add(m.group(0).upper())
 
-    masters_dir = root / "masters" / slug
+    masters_dir = root / "masters"
     if masters_dir.is_dir():
-        for p in masters_dir.glob("*.mp3"):
+        # flat XILP011 output: {tag}_{slug}_{date}.mp3 — scope by slug to avoid
+        # pulling in other shows' masters from the shared masters/ directory.
+        for p in masters_dir.glob(f"*_{slug}_*.mp3"):
             if m := _TAG_RE.search(p.stem):
                 tags.add(m.group(0).upper())
+        sub = masters_dir / slug
+        if sub.is_dir():
+            for p in sub.glob("*.mp3"):
+                if m := _TAG_RE.search(p.stem):
+                    tags.add(m.group(0).upper())
 
     return sorted(tags)
 

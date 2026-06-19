@@ -49,7 +49,8 @@ def _build_fresh(root, *, base=1000):
     _touch(root / "stems" / _SLUG / _TAG / "001_intro_host.mp3", base + 3)
     _touch(root / "stems" / _SLUG / _TAG / f"{_TAG}_stem_manifest.json", base + 3)
     _touch(root / "daw" / _SLUG / _TAG / f"{_TAG}_layer_dialogue.wav", base + 4)
-    _touch(root / "masters" / _SLUG / f"{_TAG}_{_SLUG}_2026-06-18.mp3", base + 5)
+    # XILP011 writes the master flat under masters/ as {tag}_{slug}_{date}.mp3.
+    _touch(root / "masters" / f"{_TAG}_{_SLUG}_2026-06-18.mp3", base + 5)
 
 
 def _no_gdoc_dir(tmp_path):
@@ -148,10 +149,19 @@ def test_stale_stage_exposes_oldest_output(ws):
     assert stems.oldest_output == 100
 
 
+def test_flat_master_is_found(ws):
+    """The flat masters/{tag}_{slug}_{date}.mp3 written by XILP011 is detected."""
+    _build_fresh(ws)
+    stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
+    master = next(s for s in stages if s.name == "master")
+    assert master.status == status._OK
+    assert master.output_count == 1
+
+
 def test_missing_master_is_missing(ws):
     _build_fresh(ws)
-    # Remove the master.
-    for p in (ws / "masters" / _SLUG).glob("*.mp3"):
+    # Remove the master (flat under masters/, per XILP011).
+    for p in (ws / "masters").glob("*.mp3"):
         p.unlink()
 
     stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
