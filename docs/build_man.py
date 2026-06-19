@@ -58,6 +58,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("xil-migrate-workspace", "xil_pipeline.XILU009_migrate_workspace"),
     ("xil-remove-show", "xil_pipeline.XILU017_remove_show"),
     ("xil-remove-episode", "xil_pipeline.XILU018_remove_episode"),
+    ("xil-status", "xil_pipeline.XILU019_episode_status"),
 ]
 
 SEE_ALSO_LINES = [

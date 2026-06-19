@@ -159,6 +159,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(workspace management)",
     ),
+    "status": CommandSpec(
+        "xil_pipeline.XILU019_episode_status",
+        "make-style staleness check of an episode's pipeline artifacts (report only)",
+        _UTILITY,
+        "(workspace management)",
+    ),
 }
 """Subcommand registry. Insertion order defines display order within each group."""
 

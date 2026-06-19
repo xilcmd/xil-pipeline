@@ -1,0 +1,66 @@
+.TH XIL\-STATUS "1" "2026\-06\-18" "xil\-pipeline 0.3.0" "User Commands"
+.SH NAME
+xil\-status
+.SH SYNOPSIS
+.B xil\-status
+[-h] [--episode TAG] [--show SHOW] [--all] [--gdoc-dir DIR] [--json] [TAG]
+.SH DESCRIPTION
+Make\-style staleness checker for episode pipeline artifacts. Reports, per stage, whether outputs are up to date with their inputs, and prints the xil commands needed to refresh anything stale. Nothing is rebuilt.
+
+.TP
+\fBTAG\fR
+Episode tag to check (e.g. S01E01). Omit with \-\-all.
+
+.SH OPTIONS
+.TP
+\fB\-\-episode\fR \fI\,TAG\/\fR, \fB\-e\fR \fI\,TAG\/\fR
+Episode tag (alternative to the positional argument)
+
+.TP
+\fB\-\-show\fR \fI\,SHOW\/\fR, \fB\-s\fR \fI\,SHOW\/\fR
+Show name or slug (default: resolved from project.json / XIL_PROJECTROOT)
+
+.TP
+\fB\-\-all\fR, \fB\-a\fR
+Check every episode of the show (summary row per episode)
+
+.TP
+\fB\-\-gdoc\-dir\fR \fI\,DIR\/\fR
+Google Drive dir holding the source .gdoc (default: /mnt/i/My Drive)
+
+.TP
+\fB\-\-json\fR
+Emit results as JSON (single\-episode mode only)
+
+.SH COMMENTS
+Examples:
+  xil status \-\-episode S01E01
+  xil status S01E01 \-\-show "Night Owls"
+  xil status \-\-all
+  xil status \-\-episode S01E01 \-\-json
+
+.SH SEE ALSO
+.BR xil (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-studio-onboard (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-migrate-workspace (1),
+.BR xil-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>
