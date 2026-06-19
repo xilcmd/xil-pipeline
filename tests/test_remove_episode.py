@@ -45,10 +45,12 @@ def _scaffold_episode(root, slug, tag):
     daw.mkdir(parents=True)
     (daw / f"{tag}_layer_dialogue.wav").write_bytes(b"RIFF")
 
-    # masters
+    # masters — both the slug-subdir canonical name and the flat XILP011 output
     masters = root / "masters" / slug
     masters.mkdir(parents=True)
     (masters / f"{tag}_master.mp3").write_bytes(b"\xff\xfb" * 50)
+    flat_masters = root / "masters"
+    (flat_masters / f"{tag}_{slug}_2026-06-19.mp3").write_bytes(b"\xff\xfb" * 50)
 
     # cues
     cues = root / "cues" / slug
@@ -108,6 +110,22 @@ class TestCollect:
         items = _collect("mypodcast", "S01E01")
         paths = [i.path for i in items]
         assert workspace / "masters" / "mypodcast" / "S01E01_master.mp3" in paths
+
+    def test_collects_flat_master_mp3(self, workspace):
+        # XILP011 writes masters/{tag}_{slug}_{date}.mp3 flat under masters/.
+        _scaffold_episode(workspace, "mypodcast", "S01E01")
+        items = _collect("mypodcast", "S01E01")
+        paths = [i.path for i in items]
+        assert workspace / "masters" / "S01E01_mypodcast_2026-06-19.mp3" in paths
+
+    def test_flat_master_scoped_by_slug(self, workspace):
+        # A different show sharing the same tag must NOT be collected.
+        _scaffold_episode(workspace, "mypodcast", "S01E01")
+        other = workspace / "masters" / "S01E01_othershow_2026-06-19.mp3"
+        other.write_bytes(b"\xff\xfb" * 50)
+        items = _collect("mypodcast", "S01E01")
+        paths = [i.path for i in items]
+        assert other not in paths
 
     def test_collects_posts(self, workspace):
         _scaffold_episode(workspace, "mypodcast", "S01E01")
@@ -189,6 +207,7 @@ class TestRemoveEpisodeCLI:
         assert not (workspace / "stems" / "mypodcast" / "S01E01").exists()
         assert not (workspace / "daw" / "mypodcast" / "S01E01").exists()
         assert not (workspace / "masters" / "mypodcast" / "S01E01_master.mp3").exists()
+        assert not (workspace / "masters" / "S01E01_mypodcast_2026-06-19.mp3").exists()
         assert not (workspace / "voice_samples" / "S01E01").exists()
 
     def test_script_survives_removal(self, workspace):

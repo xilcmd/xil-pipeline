@@ -115,6 +115,14 @@ def _collect(slug: str, tag: str) -> list[RemovalItem]:
     # canonical name without date suffix
     _file(masters / f"{tag}_master.mp3", "master")
 
+    # XILP011 writes the master flat under masters/ as {tag}_{slug}_{date}.mp3
+    # (not in the slug subdirectory). Scope the glob by slug so a shared tag
+    # across shows (e.g. two shows with an S01E01) never deletes the wrong file.
+    flat_masters = root / "masters"
+    if flat_masters.is_dir():
+        for p in sorted(flat_masters.glob(f"{tag}_{slug}_*.mp3")):
+            _file(p, "master")
+
     _file(root / "posts" / slug / f"{tag}_posts.md")
 
     # voice_samples/{tag}/ — per-tag, not per-show
