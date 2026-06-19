@@ -101,13 +101,34 @@ def test_old_stems_with_fresh_manifest_are_ok(ws):
     assert by_name["daw"].status == status._OK
 
 
-def test_stems_judged_by_manifest_not_stems(ws):
-    """Parsed newer than the manifest → STALE even if a stem file is newer (#2)."""
+def test_noop_reproduce_does_not_stale_daw(ws):
+    """A no-op re-produce bumps the manifest but not the stems; daw stays OK."""
+    _build_fresh(ws)  # stems/manifest @1003, daw @1004
+    # Later no-op produce: manifest jumps past daw, but no stem MP3 is rewritten.
+    os.utime(ws / "stems" / _SLUG / _TAG / f"{_TAG}_stem_manifest.json", (9999, 9999))
+
+    stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
+    by_name = {s.name: s for s in stages}
+    assert by_name["stems"].status == status._OK
+    # The manifest is not daw's input — a no-op bump must not invalidate daw.
+    assert by_name["daw"].status == status._OK
+
+
+def test_old_reused_stems_do_not_stale_stage(ws):
+    """Ancient dedup-reused stems coexisting with fresh ones don't trip STALE."""
+    _build_fresh(ws)  # parsed @1002, newest stem/manifest @1003
+    _touch(ws / "stems" / _SLUG / _TAG / "099_reused_sfx.mp3", 1)  # epoch-old reuse
+
+    stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
+    by_name = {s.name: s for s in stages}
+    # Newest output (1003) > parsed (1002): the stage ran after the parse.
+    assert by_name["stems"].status == status._OK
+
+
+def test_stems_stale_when_not_reproduced_after_parse(ws):
+    """Re-parse without re-produce: newest stem/manifest predates parsed → STALE."""
     _build_fresh(ws)
-    # A stem regenerated recently, but the manifest predates the re-parse.
-    os.utime(ws / "parsed" / _SLUG / f"parsed_{_TAG}.json", (5000, 5000))
-    os.utime(ws / "stems" / _SLUG / _TAG / "001_intro_host.mp3", (9000, 9000))
-    os.utime(ws / "stems" / _SLUG / _TAG / f"{_TAG}_stem_manifest.json", (3000, 3000))
+    os.utime(ws / "parsed" / _SLUG / f"parsed_{_TAG}.json", (9000, 9000))
 
     stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
     by_name = {s.name: s for s in stages}

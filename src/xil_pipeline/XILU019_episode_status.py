@@ -11,12 +11,20 @@ from the previous one::
        → stems/{slug}/{tag}/*.mp3 → daw/{slug}/{tag}/*.wav → masters/{slug}/{tag}_*.mp3
 
 This utility walks that chain and reports, per stage, whether the outputs are
-up to date with their inputs — exactly like ``make`` deciding whether a target
-needs rebuilding.  A stage is:
+up to date with their inputs — like ``make`` deciding whether a target needs
+rebuilding.  A stage is:
 
   * MISSING — no output files exist yet,
-  * STALE   — an input is newer than the oldest output (``max(inputs) > min(outputs)``),
-  * OK      — every output is at least as new as every input.
+  * STALE   — the newest input is newer than the newest output
+    (``max(inputs) > max(outputs)``), i.e. the stage has not run since its
+    input last changed,
+  * OK      — the stage ran at or after its newest input.
+
+The newest-output rule (rather than strict make's oldest-output) fits this
+pipeline's incremental, content-hash-dedup builds: a produce/daw run only
+rewrites the outputs that actually changed, so older reused outputs legitimately
+coexist with fresh ones.  What matters is whether the stage ran *after* its input
+changed, which the newest output captures.
 
 Nothing is ever rebuilt: the tool only reports, then prints the exact ``xil``
 commands needed to refresh any stale/missing stages.
@@ -162,10 +170,12 @@ def _evaluate_stage(
 ) -> StageStatus:
     """Compute a stage's freshness from its input and output files.
 
-    The STALE decision uses ``max(inputs) > min(outputs)`` (every output must be
-    at least as new as every input — the make rule).  *outputs* are the files
-    that drive that decision; pass *count* to report a different file tally in
-    the FILES column (e.g. stems are judged by their manifest but counted as MP3s).
+    The STALE decision uses ``max(inputs) > max(outputs)`` — the stage is stale
+    when its newest input is newer than its newest output, i.e. it has not run
+    since the input last changed.  Newest-output (not strict make's oldest) is
+    used so that older, dedup-reused outputs don't trigger false staleness.
+    Pass *count* to report a different file tally in the FILES column (e.g. the
+    stems stage counts MP3s but is judged against MP3s plus the manifest).
     """
     in_times = _mtimes(inputs)
     out_times = _mtimes(outputs)
@@ -176,7 +186,7 @@ def _evaluate_stage(
     if not out_times:
         status = _MISSING
         suggested = refresh
-    elif newest_in is not None and oldest_out is not None and newest_in > oldest_out:
+    elif newest_in is not None and newest_out is not None and newest_in > newest_out:
         status = _STALE
         suggested = refresh
     else:
@@ -220,24 +230,25 @@ def evaluate_episode(slug: str, tag: str, gdoc_dir: Path) -> list[StageStatus]:
         else f"xil parse <script> --episode {tag}"
     )
 
-    # The producer rewrites the stem manifest on every run (even when all stems
-    # are dedup-reused from a prior run), so the manifest mtime is the reliable
-    # "last produced" marker.  Individual stem files keep their original mtimes
-    # under content-hash dedup, so judging the stems stage by those files yields
-    # false STALE reports.  Use the manifest as the produce-stage freshness marker
-    # on both sides (stems output, daw input); fall back to the stem files when no
-    # manifest exists (older workspaces / pre-manifest produce runs).
-    produce_marker = stems_manifest if stems_manifest else stems
+    # The manifest is included in the stems stage's OUTPUTS (not daw's inputs):
+    # the producer rewrites it on every run, including no-op runs where all stems
+    # are dedup-reused, so it is the only signal that advances when re-producing
+    # an unchanged episode — without it, a stems stage made stale by a re-parse
+    # could never be cleared.  It must NOT count as daw's INPUT, though: daw
+    # consumes the stem audio, so a no-op manifest bump (produce re-run that
+    # changed nothing) must not invalidate an up-to-date daw.  Hence daw is judged
+    # against the stem MP3s only.
+    stems_outputs = stems + stems_manifest
 
     stages = [
         _evaluate_stage("source", [], gdocs, ""),
         _evaluate_stage("script", gdocs, scripts, script_refresh),
         _evaluate_stage("parsed", scripts, parsed, parse_refresh),
         _evaluate_stage(
-            "stems", parsed, produce_marker, f"xil produce --episode {tag}",
+            "stems", parsed, stems_outputs, f"xil produce --episode {tag}",
             count=len(stems),
         ),
-        _evaluate_stage("daw", produce_marker, daw, f"xil daw --episode {tag}"),
+        _evaluate_stage("daw", stems, daw, f"xil daw --episode {tag}"),
         _evaluate_stage("master", daw, masters, f"xil master --episode {tag}"),
     ]
 
@@ -276,9 +287,9 @@ def _print_episode(slug: str, tag: str, stages: list[StageStatus]) -> None:
         count = "—" if (s.name == "source" and s.status == _NONE) else str(s.output_count)
         marker = ""
         if s.status == _STALE:
-            # The decision compares against the OLDEST output, not the newest
-            # shown in the column — surface it so the row explains itself.
-            marker = f"   ← oldest output {_fmt_time(s.oldest_output)} predates input"
+            # Newest output (shown in the column) is the deciding value: the
+            # stage has not run since its input last changed.
+            marker = "   ← input is newer (stage not re-run)"
         elif s.status == _MISSING:
             marker = "   ← not built yet"
         logger.info(
