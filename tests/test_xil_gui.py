@@ -5,6 +5,7 @@
 """Tests for xil_gui helper functions (no Gradio dependency required)."""
 
 import json
+import os
 
 import pytest
 
@@ -16,6 +17,7 @@ from xil_pipeline.xil_gui import (
     _refresh_episodes,
     _sanitize_extra_flags,
     _save_script_file,
+    _stage_status,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -320,7 +322,7 @@ class TestRefreshEpisodes:
         _write_cast(tmp_path, "the413", "S01E01", "The Empty Booth", "The Holiday Shift")
         rows = _refresh_episodes()
         assert len(rows) == 1
-        tag, slug, desc, parse, produce, daw, master = rows[0]
+        tag, slug, desc, parse, produce, daw, master, overall = rows[0]
         assert tag == "S01E01"
         assert slug == "the413"
         assert "The Empty Booth" in desc
@@ -352,3 +354,58 @@ class TestRefreshEpisodes:
         desc = _refresh_episodes()[0][2]
         assert "[The Holiday Shift]" in desc
         assert "The Empty Booth" in desc
+
+
+# ── _stage_status (staleness, via the xil-status engine) ───────────────────────
+
+
+def _touch(path, mtime):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x", encoding="utf-8")
+    os.utime(path, (mtime, mtime))
+
+
+def _scaffold_fresh(root, slug, tag, *, base=1000, stems=1):
+    """Create a fully fresh parse→master chain with ascending mtimes."""
+    _touch(root / "scripts" / f"{tag}_{slug}_v1.md", base + 1)
+    _touch(root / "parsed" / slug / f"parsed_{tag}.json", base + 2)
+    for i in range(stems):
+        _touch(root / "stems" / slug / tag / f"{i + 1:03d}_intro_host.mp3", base + 3)
+    _touch(root / "stems" / slug / tag / f"{tag}_stem_manifest.json", base + 3)
+    _touch(root / "daw" / slug / tag / f"{tag}_layer_dialogue.wav", base + 4)
+    _touch(root / "masters" / f"{tag}_{slug}_2026-06-19.mp3", base + 5)
+
+
+class TestStageStatus:
+    def test_fresh_chain_all_checkmarks(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _scaffold_fresh(tmp_path, "the413", "S01E01")
+        st = _stage_status("the413", "S01E01")
+        assert st["parse"] == "✓"
+        assert st["produce"].startswith("✓")
+        assert st["daw"] == "✓"
+        assert st["master"] == "✓"
+        assert st["overall"] == "✓ OK"
+
+    def test_produce_shows_stem_count(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _scaffold_fresh(tmp_path, "the413", "S01E01", stems=3)
+        st = _stage_status("the413", "S01E01")
+        assert st["produce"] == "✓ 3"
+
+    def test_reparse_makes_stems_stale(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _scaffold_fresh(tmp_path, "the413", "S01E01")
+        # parsed re-run after the stems/manifest were produced
+        os.utime(tmp_path / "parsed" / "the413" / "parsed_S01E01.json", (9000, 9000))
+        st = _stage_status("the413", "S01E01")
+        assert st["produce"].startswith("⚠")
+        assert st["overall"] == "⚠ stale"
+
+    def test_missing_master_open_circle(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _scaffold_fresh(tmp_path, "the413", "S01E01")
+        (tmp_path / "masters" / "S01E01_the413_2026-06-19.mp3").unlink()
+        st = _stage_status("the413", "S01E01")
+        assert st["master"] == "○"
+        assert st["overall"] == "○ missing"

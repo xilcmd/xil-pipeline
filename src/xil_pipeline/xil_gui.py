@@ -284,26 +284,52 @@ def _parse_choice(choice: str) -> tuple[str, str]:
 
 
 def _stage_status(slug: str, tag: str) -> dict[str, str]:
-    """Return parse/produce/daw/master completion indicators for an episode."""
-    from xil_pipeline.models import derive_paths
-    p = derive_paths(slug, tag)
-    stems_dir = p["stems"]
-    stem_count = len(glob.glob(os.path.join(stems_dir, "*.mp3"))) if os.path.isdir(stems_dir) else 0
-    daw_dir = p["daw"]
-    has_daw = os.path.exists(os.path.join(daw_dir, f"{tag}_layer_dialogue.wav"))
-    # Master: check new layout, then legacy locations
-    root = str(get_workspace_root())
-    has_master = (
-        os.path.exists(p["master"])
-        or bool(glob.glob(os.path.join(root, "masters", f"{tag}_*.mp3")))
-        or bool(glob.glob(os.path.join(root, f"{slug}_{tag}_master.mp3")))
+    """Return parse/produce/daw/master freshness indicators for an episode.
+
+    Reuses the ``xil status`` engine (:func:`evaluate_episode`) so each cell
+    reflects *staleness*, not just file existence:
+    ``✓`` up to date · ``⚠`` stale (an input changed since the stage last ran) ·
+    ``○`` not built. The ``overall`` key is the worst of the four shown stages.
+    """
+    from xil_pipeline.XILU019_episode_status import (
+        _DEFAULT_GDOC_DIR,
+        _MISSING,
+        _OK,
+        _STALE,
+        evaluate_episode,
     )
+
+    glyph = {_OK: "✓", _STALE: "⚠", _MISSING: "○"}
+    stages = {s.name: s for s in evaluate_episode(slug, tag, Path(_DEFAULT_GDOC_DIR))}
+
+    def g(name: str) -> str:
+        s = stages.get(name)
+        return glyph.get(s.status, "○") if s else "○"
+
+    # Stems: keep the file count alongside the freshness glyph.
+    stems = stages.get("stems")
+    produce = (
+        f"{glyph.get(stems.status, '○')} {stems.output_count}"
+        if stems and stems.status != _MISSING
+        else "○"
+    )
+
+    # Overall = worst across the four displayed stages (MISSING > STALE > OK);
+    # source/script are excluded so it never disagrees with a column not shown.
+    shown = [stages[n].status for n in ("parsed", "stems", "daw", "master") if n in stages]
+    if _MISSING in shown:
+        overall = "○ missing"
+    elif _STALE in shown:
+        overall = "⚠ stale"
+    else:
+        overall = "✓ OK"
+
     return {
-        "parse":    "✓" if os.path.exists(p["parsed"]) else "○",
-        "produce":  f"✓ {stem_count}" if stem_count > 0 else "○",
-        "assemble": "✓" if has_master else "○",
-        "daw":      "✓" if has_daw else "○",
-        "master":   "✓" if has_master else "○",
+        "parse":   g("parsed"),
+        "produce": produce,
+        "daw":     g("daw"),
+        "master":  g("master"),
+        "overall": overall,
     }
 
 
@@ -316,7 +342,10 @@ def _refresh_episodes() -> list[list[str]]:
         desc = title
         if season_title:
             desc = f"[{season_title}]  —  {title}" if title else f"[{season_title}]"
-        rows.append([tag, slug, desc, st["parse"], st["produce"], st["daw"], st["master"]])
+        rows.append([
+            tag, slug, desc,
+            st["parse"], st["produce"], st["daw"], st["master"], st["overall"],
+        ])
     return rows
 
 
@@ -1017,10 +1046,16 @@ def _build_app():
             # ── Tab 2: Episodes ─────────────────────────────────────
             with gr.Tab("Episodes"):
                 ep_table = gr.Dataframe(
-                    headers=["Tag", "Slug", "Title  [Arc]", "Parse", "Stems", "DAW", "Master"],
+                    headers=[
+                        "Tag", "Slug", "Title  [Arc]",
+                        "Parse", "Stems", "DAW", "Master", "Overall",
+                    ],
                     value=_refresh_episodes(),
                     interactive=False,
                     wrap=True,
+                )
+                gr.Markdown(
+                    "✓ up to date · ⚠ stale (re-run needed) · ○ not built"
                 )
 
             # ── Tab 3: Run Stage (Scripts → Scan → Parse → Produce → Assemble → DAW → Master)
