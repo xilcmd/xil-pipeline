@@ -255,6 +255,43 @@ PRODUCTION NOTES:
 """
 
 
+class TestLeadingBlankHeader:
+    """A leading blank line must not defeat header parsing (regression).
+
+    Before the fix, parse_script only inspected lines[0]; a stray blank first
+    line made it fall back to the "Unknown Show / S01E01" defaults. A distinctive
+    Season 7 / Episode 3 header makes that fallback unmistakable.
+    """
+
+    _SCRIPT = (
+        "\n\n  \n"  # leading blank / whitespace-only lines
+        'THE 413 Season 7: Episode 3: "The Silver Frequency" Arc: "The Silver Frequency"\n'
+        "\nCAST:\n\n* ADAM — Host\n\n===\n\nCOLD OPEN\n\nADAM Hello there.\n"
+    )
+
+    @pytest.fixture
+    def parsed(self, tmp_path):
+        f = tmp_path / "S07E03_the413_test_v1.md"
+        f.write_text(self._SCRIPT, encoding="utf-8")
+        return parser.parse_script(str(f))
+
+    def test_show_read_past_leading_blanks(self, parsed):
+        assert parsed["show"] == "THE 413"
+
+    def test_season_read_past_leading_blanks(self, parsed):
+        assert parsed["season"] == 7
+
+    def test_episode_read_past_leading_blanks(self, parsed):
+        assert parsed["episode"] == 3
+
+    def test_header_line_not_emitted_as_dialogue(self, parsed):
+        # The header must be consumed, not parsed as body content.
+        texts = [e.get("text", "") for e in parsed["entries"]]
+        assert not any("Season 7" in t for t in texts)
+        # …and real body content still parses.
+        assert any("Hello there." in t for t in texts)
+
+
 class TestParseScriptIntegration:
     @pytest.fixture
     def parsed(self, tmp_path):
