@@ -999,6 +999,32 @@ class TestGenerateSfxConfig:
             config = json.load(f)
         assert config["effects"]["MUSIC: THEME"]["duration_seconds"] == 15.0
 
+    def test_defaults_include_mix_settings(self, parsed, tmp_path):
+        # generate_sfx_config seeds the mixing defaults consumed by mix_common
+        # (global volume/ramp plus ambience-specific overrides) so a freshly
+        # generated config produces audible levels without hand-editing.
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            defaults = json.load(f)["defaults"]
+        assert defaults["prompt_influence"] == 0.3
+        assert defaults["volume_percentage"] == 20
+        assert defaults["ramp_in_seconds"] == 1.0
+        assert defaults["ramp_out_seconds"] == 1.0
+        assert defaults["ambience_volume_percentage"] == 30
+        assert defaults["ambience_ramp_in_seconds"] == 1.0
+        assert defaults["ambience_ramp_out_seconds"] == 1.0
+
+    def test_generated_defaults_validate_as_sfx_config(self, parsed, tmp_path):
+        # The seeded defaults must satisfy SfxConfiguration validation (prefixed
+        # volume keys are allowed in defaults, rejected only per-effect).
+        from xil_pipeline.models import SfxConfiguration
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        SfxConfiguration.model_validate(config)  # must not raise
+
     def test_sfx_metadata_from_script(self, parsed, tmp_path):
         sfx_path = str(tmp_path / "sfx.json")
         parser.generate_sfx_config(parsed, sfx_path)

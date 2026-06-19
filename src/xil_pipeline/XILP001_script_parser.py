@@ -1367,7 +1367,15 @@ def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = 
         "show": parsed.get("show", "Unknown Show"),
         "season": None if tag_override else parsed.get("season"),
         "episode": None if tag_override else parsed.get("episode", 1),
-        "defaults": {"prompt_influence": 0.3},
+        "defaults": {
+            "prompt_influence": 0.3,
+            "volume_percentage": 20,
+            "ramp_in_seconds": 1.0,
+            "ramp_out_seconds": 1.0,
+            "ambience_volume_percentage": 30,
+            "ambience_ramp_in_seconds": 1.0,
+            "ambience_ramp_out_seconds": 1.0,
+        },
         "effects": effects,
     }
     if tag_override:
