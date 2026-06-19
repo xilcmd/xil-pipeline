@@ -82,6 +82,72 @@ def test_bumping_parsed_makes_stems_stale(ws):
     assert status._worst(stages) == status._STALE
 
 
+def test_old_stems_with_fresh_manifest_are_ok(ws):
+    """Dedup keeps old stem mtimes; the fresh manifest must keep stems OK (#2)."""
+    _build_fresh(ws)
+    # Simulate content-hash dedup: most stem MP3s are reused from a much older run.
+    for p in (ws / "stems" / _SLUG / _TAG).glob("*.mp3"):
+        os.utime(p, (1, 1))  # epoch — far older than parsed
+    # The manifest is rewritten on every produce run, so it stays fresh: newer
+    # than parsed (1002) yet still older than the downstream daw layer (1004).
+    manifest = ws / "stems" / _SLUG / _TAG / f"{_TAG}_stem_manifest.json"
+    os.utime(manifest, (1003, 1003))
+
+    stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
+    by_name = {s.name: s for s in stages}
+    assert by_name["stems"].status == status._OK
+    # daw must also stay OK: its input marker is the manifest, not the old stems.
+    assert by_name["daw"].status == status._OK
+
+
+def test_stems_judged_by_manifest_not_stems(ws):
+    """Parsed newer than the manifest → STALE even if a stem file is newer (#2)."""
+    _build_fresh(ws)
+    # A stem regenerated recently, but the manifest predates the re-parse.
+    os.utime(ws / "parsed" / _SLUG / f"parsed_{_TAG}.json", (5000, 5000))
+    os.utime(ws / "stems" / _SLUG / _TAG / "001_intro_host.mp3", (9000, 9000))
+    os.utime(ws / "stems" / _SLUG / _TAG / f"{_TAG}_stem_manifest.json", (3000, 3000))
+
+    stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
+    by_name = {s.name: s for s in stages}
+    assert by_name["stems"].status == status._STALE
+
+
+def test_stems_fall_back_to_files_without_manifest(ws):
+    """Pre-manifest workspaces still judge stems by their MP3 files (#2 fallback)."""
+    _build_fresh(ws)
+    (ws / "stems" / _SLUG / _TAG / f"{_TAG}_stem_manifest.json").unlink()
+    os.utime(ws / "parsed" / _SLUG / f"parsed_{_TAG}.json", (9000, 9000))
+
+    stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
+    by_name = {s.name: s for s in stages}
+    assert by_name["stems"].status == status._STALE
+
+
+def test_stems_file_count_excludes_manifest(ws):
+    """The FILES tally counts MP3 stems, not the manifest (#2 count override)."""
+    _build_fresh(ws)
+    _touch(ws / "stems" / _SLUG / _TAG / "002_intro_guest.mp3", 1003)
+
+    stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
+    by_name = {s.name: s for s in stages}
+    assert by_name["stems"].output_count == 2  # two MP3s, manifest not counted
+
+
+def test_stale_stage_exposes_oldest_output(ws):
+    """A STALE stage records the deciding (oldest) output value (#1)."""
+    _build_fresh(ws)
+    # Old reused stem files + a manifest that predates the re-parse → STALE.
+    for p in (ws / "stems" / _SLUG / _TAG).glob("*"):
+        os.utime(p, (100, 100))
+    os.utime(ws / "parsed" / _SLUG / f"parsed_{_TAG}.json", (9000, 9000))
+
+    stages = status.evaluate_episode(_SLUG, _TAG, _no_gdoc_dir(ws))
+    stems = next(s for s in stages if s.name == "stems")
+    assert stems.status == status._STALE
+    assert stems.oldest_output == 100
+
+
 def test_missing_master_is_missing(ws):
     _build_fresh(ws)
     # Remove the master.
@@ -195,6 +261,8 @@ def test_cli_json_output(ws, monkeypatch, capsys):
     assert {s["name"] for s in payload["stages"]} == {
         "source", "script", "parsed", "stems", "daw", "master"
     }
+    # Every stage carries the deciding (oldest) output field for scripting.
+    assert all("oldest_output" in s for s in payload["stages"])
 
 
 def test_cli_json_with_all_is_error(ws, monkeypatch):

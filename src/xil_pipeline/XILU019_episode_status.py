@@ -76,6 +76,7 @@ class StageStatus:
     status: str
     newest_input: float | None  # mtime epoch, or None
     newest_output: float | None
+    oldest_output: float | None  # the value the STALE decision compares against
     output_count: int
     note: str = ""
     refresh: str = ""  # suggested xil command (empty if none / OK)
@@ -142,9 +143,20 @@ def _master_files(root: Path, slug: str, tag: str) -> list[Path]:
 
 
 def _evaluate_stage(
-    name: str, inputs: list[Path], outputs: list[Path], refresh: str
+    name: str,
+    inputs: list[Path],
+    outputs: list[Path],
+    refresh: str,
+    *,
+    count: int | None = None,
 ) -> StageStatus:
-    """Compute a stage's freshness from its input and output files."""
+    """Compute a stage's freshness from its input and output files.
+
+    The STALE decision uses ``max(inputs) > min(outputs)`` (every output must be
+    at least as new as every input — the make rule).  *outputs* are the files
+    that drive that decision; pass *count* to report a different file tally in
+    the FILES column (e.g. stems are judged by their manifest but counted as MP3s).
+    """
     in_times = _mtimes(inputs)
     out_times = _mtimes(outputs)
     newest_in = max(in_times) if in_times else None
@@ -166,7 +178,8 @@ def _evaluate_stage(
         status=status,
         newest_input=newest_in,
         newest_output=newest_out,
-        output_count=len(out_times),
+        oldest_output=oldest_out,
+        output_count=count if count is not None else len(out_times),
         refresh=suggested,
         inputs_present=bool(in_times),
     )
@@ -197,12 +210,24 @@ def evaluate_episode(slug: str, tag: str, gdoc_dir: Path) -> list[StageStatus]:
         else f"xil parse <script> --episode {tag}"
     )
 
+    # The producer rewrites the stem manifest on every run (even when all stems
+    # are dedup-reused from a prior run), so the manifest mtime is the reliable
+    # "last produced" marker.  Individual stem files keep their original mtimes
+    # under content-hash dedup, so judging the stems stage by those files yields
+    # false STALE reports.  Use the manifest as the produce-stage freshness marker
+    # on both sides (stems output, daw input); fall back to the stem files when no
+    # manifest exists (older workspaces / pre-manifest produce runs).
+    produce_marker = stems_manifest if stems_manifest else stems
+
     stages = [
         _evaluate_stage("source", [], gdocs, ""),
         _evaluate_stage("script", gdocs, scripts, script_refresh),
         _evaluate_stage("parsed", scripts, parsed, parse_refresh),
-        _evaluate_stage("stems", parsed, stems + stems_manifest, f"xil produce --episode {tag}"),
-        _evaluate_stage("daw", stems + stems_manifest, daw, f"xil daw --episode {tag}"),
+        _evaluate_stage(
+            "stems", parsed, produce_marker, f"xil produce --episode {tag}",
+            count=len(stems),
+        ),
+        _evaluate_stage("daw", produce_marker, daw, f"xil daw --episode {tag}"),
         _evaluate_stage("master", daw, masters, f"xil master --episode {tag}"),
     ]
 
@@ -241,7 +266,9 @@ def _print_episode(slug: str, tag: str, stages: list[StageStatus]) -> None:
         count = "—" if (s.name == "source" and s.status == _NONE) else str(s.output_count)
         marker = ""
         if s.status == _STALE:
-            marker = "   ← input is newer"
+            # The decision compares against the OLDEST output, not the newest
+            # shown in the column — surface it so the row explains itself.
+            marker = f"   ← oldest output {_fmt_time(s.oldest_output)} predates input"
         elif s.status == _MISSING:
             marker = "   ← not built yet"
         logger.info(
@@ -267,6 +294,7 @@ def _emit_json(slug: str, tag: str, stages: list[StageStatus]) -> None:
                 "status": s.status,
                 "newest_input": s.newest_input,
                 "newest_output": s.newest_output,
+                "oldest_output": s.oldest_output,
                 "output_count": s.output_count,
                 "note": s.note,
                 "refresh": s.refresh,
