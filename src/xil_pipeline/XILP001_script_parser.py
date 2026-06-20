@@ -815,13 +815,19 @@ def parse_script(
     last_dialogue_idx = None  # Index into entries for continuation handling
     pending_speaker = None  # (speaker_key, direction_or_None) for multi-line dialogue
 
-    # Parse metadata from the header line, then skip it
+    # Parse metadata from the header line, then skip it. The header is the first
+    # NON-EMPTY line: a stray leading blank line (or several) must not make us
+    # fall back to the "Unknown Show / S01E01" defaults. The XILP000 scanner and
+    # the GUI header analyzer skip leading blanks too — keep parse consistent.
     start = 0
-    first_line = lines[0].strip() if lines else ""
+    hdr_idx = 0
+    while hdr_idx < len(lines) and not lines[hdr_idx].strip():
+        hdr_idx += 1
+    first_line = lines[hdr_idx].strip() if hdr_idx < len(lines) else ""
     header = parse_script_header(first_line) if first_line else None
     if header and header[2] is not None:
         show, season, episode, title, season_title = header
-        start = 1
+        start = hdr_idx + 1
     else:
         show, season, episode, title, season_title = "Unknown Show", None, 1, "", None
 
