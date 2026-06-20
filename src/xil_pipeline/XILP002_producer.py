@@ -558,10 +558,12 @@ def generate_voices(
         stem_name = entry["stem_name"]
         tts_comment = current_model if backend == "elevenlabs" else backend
 
-        # Skip if stem already exists (unless --force)
+        # Skip if a *valid* stem already exists (unless --force). A 0-byte file
+        # left by an interrupted render must be treated as missing and rebuilt,
+        # not skipped — otherwise it survives resume and crashes the DAW.
         stem_file = os.path.join(stems_dir, f"{stem_name}.mp3")
         cfg = config.get(speaker, {})
-        if os.path.exists(stem_file):
+        if os.path.exists(stem_file) and os.path.getsize(stem_file) > 0:
             if not force:
                 logger.info("   Exists: %s — skipping", stem_file)
                 mkey = _manifest_content_key(
@@ -635,27 +637,44 @@ def generate_voices(
         if next_text and current_model != "eleven_v3":
             extra_kwargs["next_text"] = next_text
 
-        if backend == "gtts":
-            logger.info(" > [%03d] %s via gTTS (%d chars)...", entry['seq'], speaker, len(text))
-            _gtts_generate(text, stem_file)
-        elif backend == "chatterbox":
-            logger.info(" > [%03d] %s via Chatterbox (%d chars)...", entry['seq'], speaker, len(text))
-            assert chatterbox_client is not None
-            chatterbox_client.generate(text, stem_file, speaker)
-        else:
-            logger.info(" > [%03d] %s with %s (%d chars)...", entry['seq'], speaker, current_model, len(text))
-            audio_stream = client.text_to_speech.convert(
-                text=text,
-                voice_id=config[speaker]["id"],
-                model_id=current_model,
-                output_format="mp3_44100_128",
-                voice_settings=voice_settings,
-                **extra_kwargs,
-            )
-            with open(stem_file, "wb") as f:
-                for chunk in audio_stream:
-                    if chunk:
-                        f.write(chunk)
+        # Generate to a temp file, then atomically move it into place. An
+        # interrupted/failed render (quota exhaustion, network drop, process
+        # kill) must never leave a 0-byte or partial stem at the final path,
+        # where the existence check would skip it on resume and the DAW would
+        # choke on it. A render that yields no bytes is treated as a failure.
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=stems_dir, suffix=".mp3.tmp")
+        os.close(tmp_fd)
+        try:
+            if backend == "gtts":
+                logger.info(" > [%03d] %s via gTTS (%d chars)...", entry['seq'], speaker, len(text))
+                _gtts_generate(text, tmp_path)
+            elif backend == "chatterbox":
+                logger.info(" > [%03d] %s via Chatterbox (%d chars)...", entry['seq'], speaker, len(text))
+                assert chatterbox_client is not None
+                chatterbox_client.generate(text, tmp_path, speaker)
+            else:
+                logger.info(" > [%03d] %s with %s (%d chars)...", entry['seq'], speaker, current_model, len(text))
+                audio_stream = client.text_to_speech.convert(
+                    text=text,
+                    voice_id=config[speaker]["id"],
+                    model_id=current_model,
+                    output_format="mp3_44100_128",
+                    voice_settings=voice_settings,
+                    **extra_kwargs,
+                )
+                with open(tmp_path, "wb") as f:
+                    for chunk in audio_stream:
+                        if chunk:
+                            f.write(chunk)
+            if os.path.getsize(tmp_path) == 0:
+                raise RuntimeError(
+                    f"TTS produced an empty file for seq {entry['seq']} "
+                    f"({speaker}) via {backend}"
+                )
+            os.replace(tmp_path, stem_file)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
         full_name = config.get(speaker, {}).get("full_name", speaker.title())
         first_five = " ".join(text.split()[:5])

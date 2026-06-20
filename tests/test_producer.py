@@ -562,7 +562,11 @@ class TestTerseMode:
         user_info = unittest.mock.MagicMock()
         user_info.subscription = sub
         producer.client.user.get.return_value = user_info
-        producer.client.text_to_speech.convert.return_value = iter([b"fake_audio"])
+        # Fresh iterator per call — the real API returns a new stream each time,
+        # and generate_voices now treats an empty stream as a failed render.
+        producer.client.text_to_speech.convert.side_effect = (
+            lambda *a, **k: iter([b"fake_audio"])
+        )
 
 
 # ─── Tests: SFX entry loading ───
@@ -909,3 +913,79 @@ class TestDryRunSpeakerTable:
         total_idx = parts.index("TOTAL")
         assert parts[total_idx + 1] == "1"   # gen lines
         assert parts[total_idx + 3] == "1"   # skip lines
+
+
+# ─── Tests: atomic stem writes + size-aware resume (regression) ───
+
+_ATOMIC_CONFIG = {
+    "narrator": {
+        "id": "voice_narrator", "speed": 1.0,
+        "stability": 0.5, "similarity_boost": 0.75, "full_name": "Narrator",
+    }
+}
+
+
+def _atomic_entry():
+    return {
+        "seq": 1, "speaker": "narrator", "text": "Hello there.",
+        "stem_name": "001_intro_narrator", "section": "intro", "direction": None,
+    }
+
+
+class TestAtomicStemWrites:
+    """A failed/interrupted render must never leave a 0-byte stem at the final
+    path, and a 0-byte leftover must be regenerated (not skipped) on resume.
+
+    Exercised via the gtts backend (no API/quota) since generate_voices writes
+    every backend through the same atomic temp-file path.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_api_no_tagging(self, monkeypatch):
+        # Keep the test off the network and off real mp3 tag parsing.
+        monkeypatch.setattr(producer, "get_best_model_for_budget", lambda: "eleven_multilingual_v2")
+        monkeypatch.setattr(producer, "tag_mp3", lambda *a, **k: None)
+
+    def test_zero_byte_leftover_is_regenerated(self, tmp_path, monkeypatch):
+        stem = tmp_path / "001_intro_narrator.mp3"
+        stem.write_bytes(b"")  # corrupt 0-byte leftover from a prior failed run
+        monkeypatch.setattr(
+            producer, "_gtts_generate",
+            lambda text, path: open(path, "wb").write(b"\xff\xfb\x90fresh-audio"),
+        )
+        producer.generate_voices(_ATOMIC_CONFIG, [_atomic_entry()], str(tmp_path), backend="gtts")
+        assert stem.stat().st_size > 0
+
+    def test_valid_existing_stem_is_skipped(self, tmp_path, monkeypatch):
+        stem = tmp_path / "001_intro_narrator.mp3"
+        stem.write_bytes(b"\xff\xfb\x90existing-audio")
+
+        def _must_not_run(text, path):
+            raise AssertionError("a valid existing stem must be skipped, not re-rendered")
+
+        monkeypatch.setattr(producer, "_gtts_generate", _must_not_run)
+        producer.generate_voices(_ATOMIC_CONFIG, [_atomic_entry()], str(tmp_path), backend="gtts")
+        assert stem.read_bytes() == b"\xff\xfb\x90existing-audio"
+
+    def test_empty_render_raises_and_leaves_no_file(self, tmp_path, monkeypatch):
+        stem = tmp_path / "001_intro_narrator.mp3"
+        # backend writes nothing → temp stays 0 bytes → must raise, leave no stem
+        monkeypatch.setattr(producer, "_gtts_generate", lambda text, path: None)
+        with pytest.raises(RuntimeError, match="empty file"):
+            producer.generate_voices(_ATOMIC_CONFIG, [_atomic_entry()], str(tmp_path), backend="gtts")
+        assert not stem.exists()
+        assert list(tmp_path.glob("*.tmp")) == []  # temp cleaned up
+
+    def test_failed_render_leaves_no_final_file(self, tmp_path, monkeypatch):
+        stem = tmp_path / "001_intro_narrator.mp3"
+
+        def _partial_then_fail(text, path):
+            with open(path, "wb") as f:
+                f.write(b"partial")
+            raise RuntimeError("network drop mid-stream")
+
+        monkeypatch.setattr(producer, "_gtts_generate", _partial_then_fail)
+        with pytest.raises(RuntimeError, match="network drop"):
+            producer.generate_voices(_ATOMIC_CONFIG, [_atomic_entry()], str(tmp_path), backend="gtts")
+        assert not stem.exists()
+        assert list(tmp_path.glob("*.tmp")) == []
