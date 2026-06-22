@@ -1552,10 +1552,23 @@ def main() -> None:
             if args.show:
                 parsed["show"] = args.show
 
-        # Write JSON output (create parent dirs for new layout e.g. parsed/{slug}/)
+        # Write JSON output — skip if content is unchanged so that a re-parse of an
+        # unmodified script does not bump the mtime and falsely mark downstream stages
+        # (stems, daw, master) as stale.
         os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-        with open(args.output, "w", encoding="utf-8") as f:
-            json.dump(parsed, f, indent=2, ensure_ascii=False)
+        new_content = json.dumps(parsed, indent=2, ensure_ascii=False)
+        _existing: str | None = None
+        if os.path.exists(args.output):
+            try:
+                with open(args.output, encoding="utf-8") as _f:
+                    _existing = _f.read()
+            except OSError:
+                pass
+        if _existing == new_content:
+            logger.info("Parsed output unchanged — skipping write (mtime preserved)")
+        else:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(new_content)
 
         if not args.quiet:
             print_summary(parsed)

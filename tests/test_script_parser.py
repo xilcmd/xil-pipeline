@@ -292,6 +292,70 @@ class TestLeadingBlankHeader:
         assert any("Hello there." in t for t in texts)
 
 
+class TestParseIdempotentWrite:
+    """Re-parsing an unchanged script must not update the output mtime.
+
+    xil status uses max(input mtime) > max(output mtime) to detect staleness.
+    Writing the parsed JSON unconditionally bumped the output mtime and made
+    all downstream stages (stems, daw, master) appear stale even when the
+    script content was unchanged.  The fix: skip the write when content is
+    byte-for-byte identical.
+    """
+
+    _SCRIPT = (
+        'THE 413 Season 1: Episode 1: "Pilot"\n'
+        "\nCAST:\n\n* ADAM — Host\n\n===\n\nCOLD OPEN\n\nADAM Hello there.\n"
+    )
+
+    def test_mtime_unchanged_on_identical_reparse(self, tmp_path):
+        script = tmp_path / "S01E01_the413_pilot_v1.md"
+        script.write_text(self._SCRIPT, encoding="utf-8")
+        out = tmp_path / "parsed.json"
+
+        with unittest.mock.patch("sys.argv", [
+            "xil-parse", str(script), "--output", str(out), "--quiet",
+        ]):
+            parser.main()
+
+        mtime_first = out.stat().st_mtime
+
+        with unittest.mock.patch("sys.argv", [
+            "xil-parse", str(script), "--output", str(out), "--quiet",
+        ]):
+            parser.main()
+
+        assert out.stat().st_mtime == mtime_first, (
+            "Re-parsing an unchanged script must not update the output mtime"
+        )
+
+    def test_mtime_updated_when_content_changes(self, tmp_path):
+        import time
+        script = tmp_path / "S01E01_the413_pilot_v1.md"
+        script.write_text(self._SCRIPT, encoding="utf-8")
+        out = tmp_path / "parsed.json"
+
+        with unittest.mock.patch("sys.argv", [
+            "xil-parse", str(script), "--output", str(out), "--quiet",
+        ]):
+            parser.main()
+
+        mtime_first = out.stat().st_mtime
+        time.sleep(0.05)
+
+        # Modify the script so parse output changes
+        script.write_text(
+            self._SCRIPT + "\nADAM And one more line.\n", encoding="utf-8"
+        )
+        with unittest.mock.patch("sys.argv", [
+            "xil-parse", str(script), "--output", str(out), "--quiet",
+        ]):
+            parser.main()
+
+        assert out.stat().st_mtime > mtime_first, (
+            "Output mtime must advance when parsed content actually changes"
+        )
+
+
 class TestParseScriptIntegration:
     @pytest.fixture
     def parsed(self, tmp_path):
