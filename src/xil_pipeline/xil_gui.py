@@ -423,6 +423,93 @@ def _concatenate_stems(ep_choice: str, filter_type: str) -> str | None:
         return None
 
 
+# ── SFX library grading ──────────────────────────────────────────────────────
+#
+# Grades are stored in each mp3's ID3 tag in a dedicated user-text frame
+# (TXXX:XIL_GRADE = "accurate" | "rejected"; absent = ungraded), so a verdict
+# travels with the asset and never changes the filename. _sfx_grade_cache holds
+# {path: grade} so list filtering/relabeling is instant; it is (re)built from disk
+# only on demand (Load/Refresh), never at app construction — 842 ID3 reads must
+# stay off the startup path.
+
+_GRADE_TXXX = "XIL_GRADE"
+_GRADES = ("accurate", "rejected")
+_GRADE_GLYPH = {"accurate": "✓", "rejected": "✗", "": "•"}
+_sfx_grade_cache: dict[str, str] = {}
+
+
+def _sfx_dir() -> str:
+    """Absolute path to the shared SFX library directory."""
+    return os.path.join(str(get_workspace_root()), "SFX")
+
+
+def _read_sfx_grade(path: str) -> str:
+    """Return 'accurate'/'rejected' from the mp3's XIL_GRADE frame, else '' (ungraded)."""
+    try:
+        from mutagen.id3 import ID3, ID3NoHeaderError
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            return ""
+        frame = tags.get(f"TXXX:{_GRADE_TXXX}")
+        if frame and frame.text:
+            val = str(frame.text[0]).strip().lower()
+            return val if val in _GRADES else ""
+        return ""
+    except Exception:
+        return ""
+
+
+def _write_sfx_grade(path: str, status: str) -> None:
+    """Set (or clear) the XIL_GRADE frame. status in {'accurate','rejected',''}.
+
+    Other ID3 frames are preserved; only the grade frame is replaced/removed.
+    """
+    from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
+    try:
+        tags = ID3(path)
+    except ID3NoHeaderError:
+        tags = ID3()
+    tags.delall(f"TXXX:{_GRADE_TXXX}")
+    if status in _GRADES:
+        tags.add(TXXX(encoding=3, desc=_GRADE_TXXX, text=status))
+    tags.save(path)
+
+
+def _scan_sfx_grades() -> dict[str, str]:
+    """Rebuild _sfx_grade_cache from disk for every SFX/*.mp3. Returns the cache."""
+    _sfx_grade_cache.clear()
+    sfx_dir = _sfx_dir()
+    if os.path.isdir(sfx_dir):
+        for path in sorted(glob.glob(os.path.join(sfx_dir, "*.mp3"))):
+            _sfx_grade_cache[path] = _read_sfx_grade(path)
+    return _sfx_grade_cache
+
+
+def _sfx_choices(grade_filter: str = "all") -> list[tuple[str, str]]:
+    """Return [(glyph + filename, path), ...] from the cache, filtered by grade."""
+    out: list[tuple[str, str]] = []
+    for path, grade in sorted(_sfx_grade_cache.items()):
+        if grade_filter == "ungraded" and grade:
+            continue
+        if grade_filter in _GRADES and grade != grade_filter:
+            continue
+        label = f"{_GRADE_GLYPH.get(grade, '•')}  {os.path.basename(path)}"
+        out.append((label, path))
+    return out
+
+
+def _sfx_summary() -> str:
+    """One-line count summary of the current grade cache."""
+    total = len(_sfx_grade_cache)
+    if total == 0:
+        return "No SFX files found (click Load to scan SFX/)."
+    acc = sum(1 for g in _sfx_grade_cache.values() if g == "accurate")
+    rej = sum(1 for g in _sfx_grade_cache.values() if g == "rejected")
+    ung = total - acc - rej
+    return f"{total} files — {acc} ✓ accurate · {rej} ✗ rejected · {ung} • ungraded"
+
+
 # ── Stage runner ───────────────────────────────────────────────────────────
 
 # Characters that have special meaning to a Unix shell; reject any token
@@ -1591,7 +1678,104 @@ def _build_app():
                     outputs=[audio_player],
                 )
 
-            # ── Tab 8: Timeline ──────────────────────────────────────
+            # ── Tab 8: Audio Grading ─────────────────────────────────
+            with gr.Tab("Audio Grading"):
+                grade_refresh_btn = gr.Button("⟳ Load / Refresh SFX library", size="sm")
+                grade_summary = gr.Markdown("Click **Load** to scan SFX/.")
+                grade_filter = gr.Radio(
+                    ["all", "ungraded", "accurate", "rejected"],
+                    label="Show", value="all",
+                )
+                sfx_dd = gr.Dropdown(label="SFX file", choices=[], interactive=True)
+                grade_audio = gr.Audio(label="Playback", type="filepath", autoplay=False)
+                grade_status = gr.Markdown("")
+                with gr.Row():
+                    mark_ok_btn = gr.Button("✓ Mark Accurate", variant="primary", size="sm")
+                    mark_rej_btn = gr.Button("✗ Mark Rejected", variant="stop", size="sm")
+                    clear_grade_btn = gr.Button("Clear grade", size="sm")
+
+                def _grade_status_md(path):
+                    if not path:
+                        return ""
+                    g = _sfx_grade_cache.get(path, "")
+                    label = {"accurate": "✓ accurate", "rejected": "✗ rejected"}.get(g, "• ungraded")
+                    return f"**{os.path.basename(path)}** — {label}"
+
+                def _path_for_label(label, grade_filter_val):
+                    if not label:
+                        return None
+                    for lbl, path in _sfx_choices(grade_filter_val):
+                        if lbl == label:
+                            return path
+                    return None
+
+                def on_grade_refresh(grade_filter_val):
+                    _scan_sfx_grades()
+                    labels = [lbl for lbl, _ in _sfx_choices(grade_filter_val)]
+                    return (
+                        gr.update(choices=labels, value=labels[0] if labels else None),
+                        _sfx_summary(),
+                    )
+
+                def on_grade_filter_change(grade_filter_val):
+                    labels = [lbl for lbl, _ in _sfx_choices(grade_filter_val)]
+                    return gr.update(choices=labels, value=labels[0] if labels else None)
+
+                def on_sfx_select(label, grade_filter_val):
+                    path = _path_for_label(label, grade_filter_val)
+                    if not path:
+                        return gr.update(value=None), ""
+                    _log_activity(f"GRADE preview → {os.path.basename(path)}")
+                    return gr.update(value=path), _grade_status_md(path)
+
+                def _apply_grade(label, grade_filter_val, status):
+                    path = _path_for_label(label, grade_filter_val)
+                    if not path:
+                        return gr.update(), gr.update(), "", _sfx_summary()
+                    _write_sfx_grade(path, status)
+                    _sfx_grade_cache[path] = status if status in _GRADES else ""
+                    _log_activity(f"GRADE {status or 'cleared'} → {os.path.basename(path)}")
+                    # Rebuild the (filtered) list; if the graded item dropped out of
+                    # the current filter, advance to the next item for fast grading.
+                    labels = [lbl for lbl, _ in _sfx_choices(grade_filter_val)]
+                    new_label = f"{_GRADE_GLYPH.get(_sfx_grade_cache[path], '•')}  {os.path.basename(path)}"
+                    sel = new_label if new_label in labels else (labels[0] if labels else None)
+                    sel_path = _path_for_label(sel, grade_filter_val) if sel else None
+                    return (
+                        gr.update(choices=labels, value=sel),
+                        gr.update(value=sel_path),
+                        _grade_status_md(sel_path),
+                        _sfx_summary(),
+                    )
+
+                grade_refresh_btn.click(
+                    fn=on_grade_refresh, inputs=[grade_filter],
+                    outputs=[sfx_dd, grade_summary],
+                )
+                grade_filter.change(
+                    fn=on_grade_filter_change, inputs=[grade_filter], outputs=[sfx_dd],
+                )
+                sfx_dd.change(
+                    fn=on_sfx_select, inputs=[sfx_dd, grade_filter],
+                    outputs=[grade_audio, grade_status],
+                )
+                mark_ok_btn.click(
+                    fn=lambda label, f: _apply_grade(label, f, "accurate"),
+                    inputs=[sfx_dd, grade_filter],
+                    outputs=[sfx_dd, grade_audio, grade_status, grade_summary],
+                )
+                mark_rej_btn.click(
+                    fn=lambda label, f: _apply_grade(label, f, "rejected"),
+                    inputs=[sfx_dd, grade_filter],
+                    outputs=[sfx_dd, grade_audio, grade_status, grade_summary],
+                )
+                clear_grade_btn.click(
+                    fn=lambda label, f: _apply_grade(label, f, ""),
+                    inputs=[sfx_dd, grade_filter],
+                    outputs=[sfx_dd, grade_audio, grade_status, grade_summary],
+                )
+
+            # ── Tab 9: Timeline ──────────────────────────────────────
             with gr.Tab("Timeline"):
                 tl_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices)
                 tl_html = gr.HTML("<p>Select an episode above.</p>")
