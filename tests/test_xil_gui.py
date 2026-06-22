@@ -14,10 +14,15 @@ from xil_pipeline.xil_gui import (
     _ep_choice,
     _ep_meta,
     _parse_choice,
+    _read_sfx_grade,
     _refresh_episodes,
     _sanitize_extra_flags,
     _save_script_file,
+    _scan_sfx_grades,
+    _sfx_choices,
+    _sfx_grade_cache,
     _stage_status,
+    _write_sfx_grade,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -409,3 +414,89 @@ class TestStageStatus:
         st = _stage_status("the413", "S01E01")
         assert st["master"] == "○"
         assert st["overall"] == "○ missing"
+
+
+# ─── Audio Grading (SFX library grades stored in ID3) ───
+
+def _make_mp3(path, ms=120):
+    from pydub import AudioSegment
+    path.parent.mkdir(parents=True, exist_ok=True)
+    AudioSegment.silent(duration=ms).export(str(path), format="mp3")
+
+
+class TestSfxGradeTag:
+    def test_round_trips_accurate_and_rejected(self, tmp_path):
+        mp3 = tmp_path / "a.mp3"
+        _make_mp3(mp3)
+        assert _read_sfx_grade(str(mp3)) == ""          # ungraded by default
+        _write_sfx_grade(str(mp3), "accurate")
+        assert _read_sfx_grade(str(mp3)) == "accurate"
+        _write_sfx_grade(str(mp3), "rejected")
+        assert _read_sfx_grade(str(mp3)) == "rejected"
+
+    def test_clear_grade(self, tmp_path):
+        mp3 = tmp_path / "a.mp3"
+        _make_mp3(mp3)
+        _write_sfx_grade(str(mp3), "accurate")
+        _write_sfx_grade(str(mp3), "")
+        assert _read_sfx_grade(str(mp3)) == ""
+
+    def test_grade_preserves_other_id3_tags(self, tmp_path):
+        from mutagen.id3 import ID3
+
+        from xil_pipeline.sfx_common import tag_mp3
+        mp3 = tmp_path / "a.mp3"
+        _make_mp3(mp3)
+        tag_mp3(str(mp3), show="THE 413", title="Door creak", comments="elevenlabs")
+        _write_sfx_grade(str(mp3), "rejected")
+        assert _read_sfx_grade(str(mp3)) == "rejected"
+        tags = ID3(str(mp3))
+        assert str(tags.get("TIT2").text[0]) == "Door creak"      # title intact
+        assert str(tags.get("TALB").text[0]) == "THE 413"          # album intact
+        assert tags.get("COMM::eng") is not None                   # comment intact
+
+    def test_untagged_mp3_reads_ungraded_then_gradeable(self, tmp_path):
+        mp3 = tmp_path / "fresh.mp3"
+        _make_mp3(mp3)            # no ID3 header written
+        assert _read_sfx_grade(str(mp3)) == ""
+        _write_sfx_grade(str(mp3), "accurate")
+        assert _read_sfx_grade(str(mp3)) == "accurate"
+
+
+class TestSfxChoicesAndScan:
+    def _seed_cache(self, mapping):
+        _sfx_grade_cache.clear()
+        _sfx_grade_cache.update(mapping)
+
+    def test_glyph_prefix_per_state(self):
+        self._seed_cache({
+            "/SFX/ok.mp3": "accurate",
+            "/SFX/no.mp3": "rejected",
+            "/SFX/maybe.mp3": "",
+        })
+        labels = dict((lbl.split("  ", 1)[1], lbl[0]) for lbl, _ in _sfx_choices("all"))
+        assert labels["ok.mp3"] == "✓"
+        assert labels["no.mp3"] == "✗"
+        assert labels["maybe.mp3"] == "•"
+
+    def test_filters_select_subset(self):
+        self._seed_cache({
+            "/SFX/ok.mp3": "accurate",
+            "/SFX/no.mp3": "rejected",
+            "/SFX/maybe.mp3": "",
+        })
+        assert [p for _, p in _sfx_choices("ungraded")] == ["/SFX/maybe.mp3"]
+        assert [p for _, p in _sfx_choices("accurate")] == ["/SFX/ok.mp3"]
+        assert [p for _, p in _sfx_choices("rejected")] == ["/SFX/no.mp3"]
+        assert len(_sfx_choices("all")) == 3
+
+    def test_scan_populates_cache_from_disk(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        sfx = tmp_path / "SFX"
+        _make_mp3(sfx / "one.mp3")
+        _make_mp3(sfx / "two.mp3")
+        _write_sfx_grade(str(sfx / "one.mp3"), "accurate")
+        cache = _scan_sfx_grades()
+        assert cache[str(sfx / "one.mp3")] == "accurate"
+        assert cache[str(sfx / "two.mp3")] == ""
+        assert len(cache) == 2
