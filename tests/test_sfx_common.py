@@ -919,3 +919,80 @@ class TestDawExportTagValidation:
             _validate_tag_for_script("../evil")
 
 
+
+
+# ─── SFX grade tag (canonical read/write) ───
+
+class TestSfxGradeTag:
+    def _mp3(self, tmp_path, name="a.mp3"):
+        from pydub import AudioSegment
+        p = tmp_path / name
+        AudioSegment.silent(duration=120).export(str(p), format="mp3")
+        return str(p)
+
+    def test_round_trip_and_clear(self, tmp_path):
+        p = self._mp3(tmp_path)
+        assert sfx_common.read_sfx_grade(p) == ""
+        sfx_common.write_sfx_grade(p, "accurate")
+        assert sfx_common.read_sfx_grade(p) == "accurate"
+        sfx_common.write_sfx_grade(p, "rejected")
+        assert sfx_common.read_sfx_grade(p) == "rejected"
+        sfx_common.write_sfx_grade(p, "")
+        assert sfx_common.read_sfx_grade(p) == ""
+
+    def test_preserves_other_tags(self, tmp_path):
+        from mutagen.id3 import ID3
+        p = self._mp3(tmp_path)
+        sfx_common.tag_mp3(p, show="THE 413", title="Door creak")
+        sfx_common.write_sfx_grade(p, "rejected")
+        tags = ID3(p)
+        assert str(tags.get("TIT2").text[0]) == "Door creak"
+        assert sfx_common.read_sfx_grade(p) == "rejected"
+
+    def test_missing_header_reads_ungraded(self, tmp_path):
+        p = self._mp3(tmp_path)
+        assert sfx_common.read_sfx_grade(p) == ""  # no ID3 header yet
+
+
+# ─── generate_sfx omits rejected pool files ───
+
+class TestGenerateSfxRejected:
+    def _beats(self, sample_script, sample_sfx_file):
+        entries = sfx_common.load_sfx_entries(sample_script, sample_sfx_file)
+        return [e for e in entries if e["text"] == "BEAT"]
+
+    def test_rejected_pool_file_is_omitted_and_stale_removed(
+        self, sample_script, sample_sfx_file, sample_sfx_config, tmp_path,
+    ):
+        beats = self._beats(sample_script, sample_sfx_file)
+        stems_dir = str(tmp_path / "stems")
+        sfx_dir = str(tmp_path / "SFX")
+        # First run places the stems.
+        sfx_common.generate_sfx(beats, sample_sfx_config, stems_dir, sfx_dir=sfx_dir, client=None)
+        shared = tmp_path / "SFX" / "beat.mp3"
+        stem1 = tmp_path / "stems" / "004_cold-open_sfx.mp3"
+        stem2 = tmp_path / "stems" / "007_cold-open_sfx.mp3"
+        assert shared.exists() and stem1.exists() and stem2.exists()
+
+        # Reject the pool file and re-run: stems omitted, stale copies removed,
+        # pool file itself left intact.
+        sfx_common.write_sfx_grade(str(shared), "rejected")
+        sfx_common.generate_sfx(beats, sample_sfx_config, stems_dir, sfx_dir=sfx_dir, client=None)
+        assert not stem1.exists()
+        assert not stem2.exists()
+        assert shared.exists()
+
+    def test_accurate_pool_file_still_placed(
+        self, sample_script, sample_sfx_file, sample_sfx_config, tmp_path,
+    ):
+        beats = self._beats(sample_script, sample_sfx_file)
+        stems_dir = str(tmp_path / "stems")
+        sfx_dir = str(tmp_path / "SFX")
+        sfx_common.generate_sfx(beats, sample_sfx_config, stems_dir, sfx_dir=sfx_dir, client=None)
+        shared = tmp_path / "SFX" / "beat.mp3"
+        sfx_common.write_sfx_grade(str(shared), "accurate")
+        # Remove stems so the re-run must place them again.
+        for s in ("004_cold-open_sfx.mp3", "007_cold-open_sfx.mp3"):
+            (tmp_path / "stems" / s).unlink()
+        sfx_common.generate_sfx(beats, sample_sfx_config, stems_dir, sfx_dir=sfx_dir, client=None)
+        assert (tmp_path / "stems" / "004_cold-open_sfx.mp3").exists()
