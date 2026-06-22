@@ -35,6 +35,8 @@ from datetime import datetime
 from pathlib import Path
 
 from xil_pipeline.models import get_workspace_root
+from xil_pipeline.sfx_common import read_sfx_grade as _read_sfx_grade
+from xil_pipeline.sfx_common import write_sfx_grade as _write_sfx_grade
 
 # ── Optional activity log (set by --output in main()) ─────────────────────────
 
@@ -425,14 +427,14 @@ def _concatenate_stems(ep_choice: str, filter_type: str) -> str | None:
 
 # ── SFX library grading ──────────────────────────────────────────────────────
 #
-# Grades are stored in each mp3's ID3 tag in a dedicated user-text frame
-# (TXXX:XIL_GRADE = "accurate" | "rejected"; absent = ungraded), so a verdict
-# travels with the asset and never changes the filename. _sfx_grade_cache holds
-# {path: grade} so list filtering/relabeling is instant; it is (re)built from disk
-# only on demand (Load/Refresh), never at app construction — 842 ID3 reads must
-# stay off the startup path.
+# Grades live in each mp3's ID3 tag (TXXX:XIL_GRADE = "accurate" | "rejected";
+# absent = ungraded) — read/written by sfx_common.read_sfx_grade /
+# write_sfx_grade so the pipeline (which omits rejected pool files) and this GUI
+# share one implementation. _sfx_grade_cache holds {path: grade} so list
+# filtering/relabeling is instant; it is (re)built from disk only on demand
+# (Load/Refresh), never at app construction — 842 ID3 reads must stay off the
+# startup path.
 
-_GRADE_TXXX = "XIL_GRADE"
 _GRADES = ("accurate", "rejected")
 _GRADE_GLYPH = {"accurate": "✓", "rejected": "✗", "": "•"}
 _sfx_grade_cache: dict[str, str] = {}
@@ -441,39 +443,6 @@ _sfx_grade_cache: dict[str, str] = {}
 def _sfx_dir() -> str:
     """Absolute path to the shared SFX library directory."""
     return os.path.join(str(get_workspace_root()), "SFX")
-
-
-def _read_sfx_grade(path: str) -> str:
-    """Return 'accurate'/'rejected' from the mp3's XIL_GRADE frame, else '' (ungraded)."""
-    try:
-        from mutagen.id3 import ID3, ID3NoHeaderError
-        try:
-            tags = ID3(path)
-        except ID3NoHeaderError:
-            return ""
-        frame = tags.get(f"TXXX:{_GRADE_TXXX}")
-        if frame and frame.text:
-            val = str(frame.text[0]).strip().lower()
-            return val if val in _GRADES else ""
-        return ""
-    except Exception:
-        return ""
-
-
-def _write_sfx_grade(path: str, status: str) -> None:
-    """Set (or clear) the XIL_GRADE frame. status in {'accurate','rejected',''}.
-
-    Other ID3 frames are preserved; only the grade frame is replaced/removed.
-    """
-    from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
-    try:
-        tags = ID3(path)
-    except ID3NoHeaderError:
-        tags = ID3()
-    tags.delall(f"TXXX:{_GRADE_TXXX}")
-    if status in _GRADES:
-        tags.add(TXXX(encoding=3, desc=_GRADE_TXXX, text=status))
-    tags.save(path)
 
 
 def _scan_sfx_grades() -> dict[str, str]:

@@ -23,7 +23,7 @@ import re
 import shutil
 import sys
 
-from mutagen.id3 import APIC, COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, USLT, ID3NoHeaderError, PictureType
+from mutagen.id3 import APIC, COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, TXXX, USLT, ID3NoHeaderError, PictureType
 from mutagen.wave import WAVE
 from pydub import AudioSegment
 
@@ -252,6 +252,54 @@ def tag_mp3(
         mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
         with open(cover_art_path, "rb") as img:
             tags.add(APIC(encoding=3, mime=mime, type=PictureType.COVER_FRONT, desc="", data=img.read()))
+    tags.save(path)
+
+
+# ── SFX quality grading (stored in a dedicated ID3 frame) ─────────────────────
+#
+# A grade is recorded in each mp3's ``TXXX:XIL_GRADE`` user-text frame
+# ("accurate" | "rejected"; absent = ungraded). Storing it in the file (not the
+# filename) lets a verdict travel with the asset, and the pipeline can omit
+# rejected pool files from production. Set via the xil-gui Audio Grading tab.
+
+SFX_GRADE_FRAME = "XIL_GRADE"
+SFX_GRADE_ACCURATE = "accurate"
+SFX_GRADE_REJECTED = "rejected"
+_SFX_GRADES = (SFX_GRADE_ACCURATE, SFX_GRADE_REJECTED)
+
+
+def read_sfx_grade(path: str) -> str:
+    """Return ``'accurate'``/``'rejected'`` from *path*'s XIL_GRADE frame, else ``''``.
+
+    Never raises — a missing file, missing ID3 header, or unknown value all
+    read as ungraded (``''``).
+    """
+    try:
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            return ""
+        frame = tags.get(f"TXXX:{SFX_GRADE_FRAME}")
+        if frame and frame.text:
+            val = str(frame.text[0]).strip().lower()
+            return val if val in _SFX_GRADES else ""
+        return ""
+    except Exception:
+        return ""
+
+
+def write_sfx_grade(path: str, status: str) -> None:
+    """Set (or clear) *path*'s XIL_GRADE frame. ``status`` in {accurate, rejected, ''}.
+
+    All other ID3 frames are preserved; only the grade frame is replaced/removed.
+    """
+    try:
+        tags = ID3(path)
+    except ID3NoHeaderError:
+        tags = ID3()
+    tags.delall(f"TXXX:{SFX_GRADE_FRAME}")
+    if status in _SFX_GRADES:
+        tags.add(TXXX(encoding=3, desc=SFX_GRADE_FRAME, text=status))
     tags.save(path)
 
 
@@ -540,10 +588,22 @@ def generate_sfx(
     # Phase 2: place episode stems
     copied_count = 0
     skipped_count = 0
+    omitted_count = 0
     for entry in entries_to_process:
         stem_file = os.path.join(stems_dir, f"{entry['stem_name']}.mp3")
         shared_path = shared_paths[entry["text"]]
         effect = effects[entry["text"]]
+
+        # Omit pool files graded "rejected" in the Audio Grading tab: do not place
+        # the stem, and remove any stale copy from a prior run so the effect is
+        # truly absent rather than silently kept.
+        if read_sfx_grade(shared_path) == SFX_GRADE_REJECTED:
+            if os.path.exists(stem_file):
+                os.remove(stem_file)
+            logger.info("   [grade] omitted (rejected): %s", os.path.basename(shared_path))
+            omitted_count += 1
+            continue
+
         placed = place_episode_stem(shared_path, stem_file)
         if placed:
             logger.info("   Placed: %s", stem_file)
@@ -569,8 +629,8 @@ def generate_sfx(
             pass
 
     logger.info(
-        "--- SFX Complete: %d shared assets, %d placed, %d skipped ---",
-        len(unique_keys), copied_count, skipped_count,
+        "--- SFX Complete: %d shared assets, %d placed, %d skipped, %d omitted (rejected) ---",
+        len(unique_keys), copied_count, skipped_count, omitted_count,
     )
     try:
         _sfx_manifest_save(mf_path, manifest)
