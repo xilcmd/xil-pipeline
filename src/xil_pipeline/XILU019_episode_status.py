@@ -117,7 +117,10 @@ def _fmt_time(mtime: float | None) -> str:
 
 def _gdoc_files(gdoc_dir: Path, tag: str) -> list[Path]:
     """Production .gdoc(s) for *tag*, e.g. ``S01E01_show.md.gdoc``."""
-    if not gdoc_dir.is_dir():
+    try:
+        if not gdoc_dir.is_dir():
+            return []
+    except OSError:
         return []
     return sorted(gdoc_dir.glob(f"{tag}*.gdoc")) + sorted(gdoc_dir.glob(f"*{tag}*.gdoc"))
 
@@ -257,7 +260,11 @@ def evaluate_episode(slug: str, tag: str, gdoc_dir: Path) -> list[StageStatus]:
     src = stages[0]
     if not gdocs:
         src.status = _NONE
-        src.note = "no gdoc dir" if not gdoc_dir.is_dir() else "no source doc"
+        try:
+            _gdoc_is_dir = gdoc_dir.is_dir()
+        except OSError:
+            _gdoc_is_dir = False
+        src.note = "no gdoc dir" if not _gdoc_is_dir else "no source doc"
         src.refresh = ""
 
     return stages
@@ -503,8 +510,12 @@ def main() -> None:
 
     slug = resolve_slug(args.show)
     gdoc_dir = Path(args.gdoc_dir)
-    if not gdoc_dir.is_dir():
-        logger.warning(f"Google Drive dir not found: {gdoc_dir} — skipping source check.")
+    try:
+        gdoc_available = gdoc_dir.is_dir()
+    except OSError:
+        gdoc_available = False
+    if not gdoc_available:
+        logger.warning(f"Google Drive dir not available: {gdoc_dir} — skipping source check.")
 
     if args.all:
         if args.json:
