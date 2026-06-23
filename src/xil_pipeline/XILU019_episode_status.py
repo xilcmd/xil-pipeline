@@ -151,7 +151,7 @@ def _master_files(root: Path, slug: str, tag: str) -> list[Path]:
     masters = root / "masters"
     found: list[Path] = []
     if masters.is_dir():
-        found += masters.glob(f"{tag}_*.mp3")          # flat: {tag}_{slug}_{date}.mp3, {tag}_master.mp3
+        found += masters.glob(f"{tag}_{slug}_*.mp3")   # flat: {tag}_{slug}_{date}.mp3
         sub = masters / slug
         if sub.is_dir():
             found += sub.glob(f"{tag}_*.mp3")           # slug-subdir variant
