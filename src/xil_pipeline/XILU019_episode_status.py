@@ -47,6 +47,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -275,6 +276,42 @@ def _worst(stages: list[StageStatus]) -> str:
     return _OK
 
 
+def _rejected_sfx(slug: str, tag: str) -> list[str]:
+    """Return sorted SFX effect keys whose shared pool file is graded 'rejected'.
+
+    These are the effects xil-produce will omit from the episode. Best-effort:
+    returns ``[]`` when the sfx config is absent or unreadable, and never raises.
+    """
+    from xil_pipeline.sfx_common import (
+        SFX_GRADE_REJECTED,
+        read_sfx_grade,
+        shared_sfx_path,
+    )
+    root = get_workspace_root()
+    cfg_path = root / "configs" / slug / f"sfx_{tag}.json"
+    if not cfg_path.exists():
+        return []
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    sfx_dir = str(root / "SFX")
+    rejected: list[str] = []
+    for key, eff in (cfg.get("effects") or {}).items():
+        candidates: list[str] = []
+        src = (eff or {}).get("source")
+        if src:
+            candidates.append(src if os.path.isabs(src) else os.path.join(str(root), src))
+        else:
+            base = shared_sfx_path(sfx_dir, key, "elevenlabs")  # SFX/{slug}.mp3
+            candidates.append(base)
+            # backend-tagged variants, e.g. SFX/{slug}.audioldm2.mp3
+            candidates += glob.glob(f"{glob.escape(os.path.splitext(base)[0])}.*.mp3")
+        if any(os.path.exists(c) and read_sfx_grade(c) == SFX_GRADE_REJECTED for c in candidates):
+            rejected.append(key)
+    return sorted(rejected)
+
+
 def _print_episode(slug: str, tag: str, stages: list[StageStatus]) -> None:
     logger.info(f"Episode {tag} (show: {slug})")
     logger.info("")
@@ -303,12 +340,23 @@ def _print_episode(slug: str, tag: str, stages: list[StageStatus]) -> None:
         for cmd in refreshes:
             logger.info(f"  {cmd}")
 
+    rejected = _rejected_sfx(slug, tag)
+    if rejected:
+        logger.info("")
+        logger.warning(
+            "%d SFX graded rejected — omitted from production (fill the gap or re-grade in xil-gui):",
+            len(rejected),
+        )
+        for key in rejected:
+            logger.info(f"    ✗ {key}")
+
 
 def _emit_json(slug: str, tag: str, stages: list[StageStatus]) -> None:
     payload = {
         "show": slug,
         "episode": tag,
         "overall": _worst(stages),
+        "rejected_sfx": _rejected_sfx(slug, tag),
         "stages": [
             {
                 "name": s.name,
@@ -380,6 +428,9 @@ def _print_all(slug: str, tags: list[str], gdoc_dir: Path) -> int:
         if worst != _OK:
             exit_code = 1
         next_step = next((s.refresh for s in stages if s.refresh), "")
+        rej = _rejected_sfx(slug, tag)
+        if rej:
+            next_step = (f"{next_step}   " if next_step else "") + f"⚠ {len(rej)} SFX rejected"
         logger.info(f"  {tag:<10} {worst:<8} {next_step}")
 
     return exit_code

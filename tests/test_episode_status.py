@@ -310,3 +310,70 @@ def test_cli_all_exit_one_when_any_stale(ws, monkeypatch):
         ["xil-status", "--all", "--show", _SLUG, "--gdoc-dir", str(_no_gdoc_dir(ws))],
     )
     assert code == 1
+
+
+# ── rejected-SFX status messaging ──────────────────────────────────────────────
+
+def _make_sfx(path, mtime=1000):
+    from pydub import AudioSegment
+    path.parent.mkdir(parents=True, exist_ok=True)
+    AudioSegment.silent(duration=80).export(str(path), format="mp3")
+    os.utime(path, (mtime, mtime))
+
+
+class TestRejectedSfx:
+    def test_lists_rejected_effect_keys(self, ws):
+        from xil_pipeline.sfx_common import slugify_effect_key, write_sfx_grade
+        sfx = ws / "SFX"
+        door = sfx / f"{slugify_effect_key('SFX: DOOR')}.mp3"
+        bell = sfx / f"{slugify_effect_key('SFX: BELL')}.mp3"
+        _make_sfx(door)
+        _make_sfx(bell)
+        write_sfx_grade(str(door), "rejected")
+        write_sfx_grade(str(bell), "accurate")
+
+        cfg = {"show": "X", "effects": {
+            "SFX: DOOR": {"prompt": "d", "duration_seconds": 1.0},
+            "SFX: BELL": {"prompt": "b", "duration_seconds": 1.0},
+        }}
+        cfg_dir = ws / "configs" / _SLUG
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / f"sfx_{_TAG}.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+        assert status._rejected_sfx(_SLUG, _TAG) == ["SFX: DOOR"]
+
+    def test_no_config_returns_empty(self, ws):
+        assert status._rejected_sfx(_SLUG, _TAG) == []
+
+    def test_source_effect_rejection_detected(self, ws):
+        from xil_pipeline.sfx_common import write_sfx_grade
+        src = ws / "SFX" / "my custom door.mp3"
+        _make_sfx(src)
+        write_sfx_grade(str(src), "rejected")
+        cfg = {"show": "X", "effects": {
+            "SFX: DOOR": {"source": "SFX/my custom door.mp3", "duration_seconds": 1.0},
+        }}
+        cfg_dir = ws / "configs" / _SLUG
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / f"sfx_{_TAG}.json").write_text(json.dumps(cfg), encoding="utf-8")
+        assert status._rejected_sfx(_SLUG, _TAG) == ["SFX: DOOR"]
+
+    def test_json_includes_rejected_sfx(self, ws, monkeypatch, capsys):
+        from xil_pipeline.sfx_common import slugify_effect_key, write_sfx_grade
+        _build_fresh(ws)
+        door = ws / "SFX" / f"{slugify_effect_key('SFX: DOOR')}.mp3"
+        _make_sfx(door)
+        write_sfx_grade(str(door), "rejected")
+        cfg_dir = ws / "configs" / _SLUG
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        (cfg_dir / f"sfx_{_TAG}.json").write_text(
+            json.dumps({"show": "X", "effects": {"SFX: DOOR": {"prompt": "d", "duration_seconds": 1.0}}}),
+            encoding="utf-8",
+        )
+        code = _run_cli(
+            monkeypatch,
+            ["xil-status", _TAG, "--show", _SLUG, "--json", "--gdoc-dir", str(_no_gdoc_dir(ws))],
+        )
+        assert code == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["rejected_sfx"] == ["SFX: DOOR"]
