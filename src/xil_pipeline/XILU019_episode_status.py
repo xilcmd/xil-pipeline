@@ -90,6 +90,11 @@ class StageStatus:
     note: str = ""
     refresh: str = ""  # suggested xil command (empty if none / OK)
     inputs_present: bool = True
+    output_files: list = None  # type: ignore[assignment]  # populated by _evaluate_stage
+
+    def __post_init__(self) -> None:
+        if self.output_files is None:
+            self.output_files = []
 
 
 # ── mtime helpers ─────────────────────────────────────────────────────────────
@@ -206,6 +211,7 @@ def _evaluate_stage(
         output_count=count if count is not None else len(out_times),
         refresh=suggested,
         inputs_present=bool(in_times),
+        output_files=[p for p in outputs if p.is_file()],
     )
 
 
@@ -319,7 +325,9 @@ def _rejected_sfx(slug: str, tag: str) -> list[str]:
     return sorted(rejected)
 
 
-def _print_episode(slug: str, tag: str, stages: list[StageStatus]) -> None:
+def _print_episode(slug: str, tag: str, stages: list[StageStatus],
+                   verbose: bool = False) -> None:
+    root = get_workspace_root()
     logger.info(f"Episode {tag} (show: {slug})")
     logger.info("")
     logger.info(
@@ -339,6 +347,14 @@ def _print_episode(slug: str, tag: str, stages: list[StageStatus]) -> None:
         logger.info(
             f"  {s.name:<9} {s.status:<8} {in_str:<18} {out_str:<18} {count}{marker}"
         )
+        if verbose and s.output_files:
+            for f in s.output_files:
+                try:
+                    rel = f.relative_to(root)
+                except ValueError:
+                    rel = f
+                mtime = _fmt_time(f.stat().st_mtime)
+                logger.info(f"             {mtime}  {rel}")
 
     refreshes = [s.refresh for s in stages if s.refresh]
     if refreshes:
@@ -500,6 +516,11 @@ def get_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit results as JSON (single-episode mode only)",
     )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="List each output file with its mtime below the stage row",
+    )
     return parser
 
 
@@ -534,7 +555,7 @@ def main() -> None:
     if args.json:
         _emit_json(slug, tag, stages)
     else:
-        _print_episode(slug, tag, stages)
+        _print_episode(slug, tag, stages, verbose=args.verbose)
 
     sys.exit(0 if _worst(stages) == _OK else 1)
 
