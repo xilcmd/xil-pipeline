@@ -1661,9 +1661,304 @@ flowchart TD
 
 ---
 
+## 24. XILU017 — Remove Show
+
+Removes all workspace files for a given show. Useful when retiring a show from the workspace or starting a production over from scratch.
+
+```bash
+xil remove-show mypodcast --dry-run
+xil remove-show mypodcast --yes
+xil remove-show "My Podcast" --dry-run
+xil remove-show mypodcast --include-scripts --yes
+```
+
+### Artifacts removed
+
+| Path | Notes |
+|------|-------|
+| `configs/{slug}/` | All cast + SFX configs |
+| `parsed/{slug}/` | All parsed JSONs and CSVs |
+| `stems/{slug}/` | All TTS/SFX stems |
+| `daw/{slug}/` | All DAW layer WAVs |
+| `masters/{slug}/` | All master MP3s |
+| `cues/{slug}/` | Cues sheets + manifests |
+| `posts/{slug}/` | Social media post drafts |
+| `cast_{slug}_*.json`, `sfx_{slug}_*.json` (root) | Legacy layout configs |
+| `parsed/parsed_{slug}_*.json` etc. (root) | Legacy flat parsed files |
+| `.active_show` | Cleared if it points to the removed show |
+| `scripts/*_{slug}_*.md` | Only with `--include-scripts` |
+
+`SFX/` and `logs/` are **never** touched.
+
+### CLI flags
+
+| Flag | Description |
+|------|-------------|
+| `SHOW` (positional) | Show name or slug (`mypodcast` or `"My Podcast"`) |
+| `--dry-run` / `-n` | Show what would be removed without deleting |
+| `--yes` / `-y` | Skip the confirmation prompt |
+| `--include-scripts` | Also remove matching `scripts/*.md` files (caution: source material) |
+
+### Flow
+
+```mermaid
+flowchart TD
+    INPUT["`SHOW
+    name or slug`"]
+    RESOLVE["`_resolve_slug()
+    Accept name or slug
+    Validate configs/{slug}/ exists`"]
+    COLLECT["`_collect()
+    Build removal list:
+    dirs + files (normalized + legacy)`"]
+    REPORT["`_report()
+    Print [DIR] / [FILE] rows
+    with file count + size`"]
+    DRY{"--dry-run?"}
+    CONFIRM{"--yes?"}
+    PROMPT["`Type slug to confirm
+    (or Ctrl-C to abort)`"]
+    DELETE["`_delete()
+    shutil.rmtree dirs
+    Path.unlink files`"]
+    DONE["`✓ N file(s) removed for show`"]
+
+    INPUT --> RESOLVE --> COLLECT --> REPORT --> DRY
+    DRY -->|yes| EXIT["Exit 0 (nothing deleted)"]
+    DRY -->|no| CONFIRM
+    CONFIRM -->|yes| DELETE
+    CONFIRM -->|no| PROMPT --> DELETE
+    DELETE --> DONE
+```
+
+> **Confirmation:** Without `--yes`, the command requires typing the slug exactly before anything is deleted. Ctrl-C or a wrong input aborts cleanly.
+> **Scripts excluded by default:** Production scripts are source material — they are never removed unless `--include-scripts` is passed explicitly.
+> **No API key required** — local filesystem operations only.
+
+---
+
+## 25. XILU018 — Remove Episode
+
+Removes all workspace artifacts for a single episode while leaving the source production script and shared assets untouched.
+
+```bash
+xil remove-episode S01E01 --dry-run
+xil remove-episode S01E01 --yes
+xil remove-episode S01E01 --show "Night Owls" --dry-run
+```
+
+### Artifacts removed
+
+| Path | Notes |
+|------|-------|
+| `configs/{slug}/cast_{tag}.json` | Cast config |
+| `configs/{slug}/sfx_{tag}.json` | SFX config |
+| `parsed/{slug}/parsed_{tag}.json` (+ `.csv`, `orig_`, `pre_splice_`, `stem_verify_`, `annotated`) | All parsed variants |
+| `cues/{slug}/cues_{tag}.md` | Cues sheet |
+| `cues/{slug}/cues_manifest_{tag}.json` | Cues manifest |
+| `stems/{slug}/{tag}/` | All stems for this episode |
+| `daw/{slug}/{tag}/` | All DAW layer WAVs |
+| `masters/{slug}/{tag}_*.mp3` + `masters/{tag}_{slug}_{date}.mp3` | All master variants |
+| `posts/{slug}/{tag}_posts.md` | Social media post drafts |
+| `voice_samples/{tag}/` | Voice audition samples |
+| Legacy root + parsed files | `cast_{slug}_{tag}.json`, `sfx_{slug}_{tag}.json`, flat parsed variants |
+
+`SFX/`, `logs/`, and `scripts/` are **never** touched.
+
+### CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `TAG` (positional) | — | Episode tag to remove (e.g. `S01E01`) |
+| `--show` / `-s` | from `project.json` | Show name or slug override |
+| `--dry-run` / `-n` | off | Show what would be removed without deleting |
+| `--yes` / `-y` | off | Skip the confirmation prompt |
+
+### Flow
+
+```mermaid
+flowchart TD
+    INPUT["`TAG + optional SHOW`"]
+    RESOLVE["`resolve_slug()
+    Derive slug from project.json
+    or --show override`"]
+    COLLECT["`_collect()
+    Enumerate normalized + legacy paths
+    Deduplicate by path`"]
+    REPORT["`_report()
+    Print [DIR] / [FILE] rows
+    with file count + size`"]
+    DRY{"--dry-run?"}
+    CONFIRM{"--yes?"}
+    PROMPT["`Type TAG to confirm
+    (or Ctrl-C to abort)`"]
+    DELETE["`_delete()
+    shutil.rmtree dirs
+    Path.unlink files`"]
+    DONE["`✓ N file(s) removed for episode`"]
+
+    INPUT --> RESOLVE --> COLLECT --> REPORT --> DRY
+    DRY -->|yes| EXIT["Exit 0 (nothing deleted)"]
+    DRY -->|no| CONFIRM
+    CONFIRM -->|yes| DELETE
+    CONFIRM -->|no| PROMPT --> DELETE
+    DELETE --> DONE
+```
+
+> **Script always preserved:** `scripts/` is excluded from removal — the source production script is never at risk.
+> **Flat masters scoped to slug:** The `masters/{tag}_{slug}_{date}.mp3` glob is scoped by slug so two shows sharing the same tag (e.g. both having an `S01E01`) cannot accidentally delete the wrong master.
+> **No API key required** — local filesystem operations only.
+
+---
+
+## 26. XILU019 — Episode Status
+
+Make-style staleness checker for the episode pipeline. Walks the artifact chain from Google Drive source through to master MP3, reporting per stage whether outputs are up to date with their inputs, and prints the exact `xil` commands needed to refresh anything stale. Nothing is ever rebuilt.
+
+```bash
+xil status --episode S01E01
+xil status S01E01 --show "Night Owls"
+xil status --all
+xil status --episode S01E01 --json
+xil status --episode S01E01 --verbose
+```
+
+### Pipeline chain
+
+```
+Google Drive .gdoc → scripts/*.md → parsed/{slug}/parsed_{tag}.json
+  → stems/{slug}/{tag}/*.mp3 → daw/{slug}/{tag}/*.wav → masters/{slug}/{tag}_*.mp3
+```
+
+### Stage status values
+
+| Status | Meaning |
+|--------|---------|
+| `OK` | Stage has run at or after its newest input |
+| `STALE` | Newest input is newer than newest output — stage has not re-run since input changed |
+| `MISSING` | No output files exist yet |
+| `-` | Informational (source stage only) — gdoc dir absent or no source doc found |
+
+**STALE decision rule:** `max(inputs) > max(outputs)`. The newest output (not the oldest) is compared — older dedup-reused outputs from incremental builds do not trigger false staleness. What matters is whether the stage ran *after* its input last changed.
+
+### CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `TAG` (positional) or `--episode` / `-e` | — | Episode tag to check (e.g. `S01E01`) |
+| `--show` / `-s` | from `project.json` | Show name or slug override |
+| `--all` / `-a` | off | Check all episodes for the show (one summary row per episode) |
+| `--gdoc-dir` | `$XIL_GDOC_DIR` or `/mnt/i/My Drive` | Google Drive directory holding the source `.gdoc` |
+| `--json` | off | Emit results as JSON (single-episode mode only) |
+| `--verbose` / `-v` | off | List each output file with its mtime below the stage row |
+
+### Flow (single-episode mode)
+
+```mermaid
+flowchart TD
+    INPUT["`TAG + optional SHOW`"]
+    SLUG["`resolve_slug()`"]
+    GDOC["`_gdoc_files()
+    Glob {tag}*.gdoc in gdoc_dir
+    warn if dir not mounted`"]
+    SCRIPT["`_script_files()
+    scripts/*{tag}*.md
+    excluding revised_*`"]
+    PARSED["`parsed/{slug}/parsed_{tag}.json`"]
+    STEMS["`stems/{slug}/{tag}/*.mp3
+    + *_stem_manifest.json`"]
+    DAW["`daw/{slug}/{tag}/*.wav`"]
+    MASTERS["`_master_files()
+    masters/{slug}/{tag}_*.mp3
+    masters/{tag}_{slug}_{date}.mp3
+    legacy root {slug}_{tag}_master.mp3`"]
+    EVAL["`_evaluate_stage() × 6
+    compute OK / STALE / MISSING
+    per stage`"]
+    PRINT["`_print_episode()
+    STAGE · STATUS · NEWEST INPUT
+    NEWEST OUTPUT · FILES`"]
+    REJECTED["`_rejected_sfx()
+    SFX effects graded 'rejected'
+    in shared pool — warn if any`"]
+    REFRESH["`Print xil commands
+    for stale/missing stages`"]
+
+    INPUT --> SLUG --> GDOC
+    GDOC --> EVAL
+    SCRIPT --> EVAL
+    PARSED --> EVAL
+    STEMS --> EVAL
+    DAW --> EVAL
+    MASTERS --> EVAL
+    EVAL --> PRINT --> REJECTED --> REFRESH
+```
+
+### Flow (--all mode)
+
+```mermaid
+flowchart TD
+    SLUG2["`resolve_slug()`"]
+    DISCOVER["`_discover_tags()
+    Glob parsed/ stems/ daw/ masters/
+    for tags matching S\d+E\d+`"]
+    LOOP["`For each tag:
+    evaluate_episode()`"]
+    WORST["`_worst()
+    worst status across non-source stages`"]
+    REJECTED2["`_rejected_sfx()
+    count rejected SFX per episode`"]
+    TABLE["`Print summary row:
+    EPISODE · STATUS · NEXT STEP`"]
+
+    SLUG2 --> DISCOVER --> LOOP --> WORST --> TABLE
+    LOOP --> REJECTED2 --> TABLE
+```
+
+### JSON output (`--json`, single-episode only)
+
+```json
+{
+  "show": "the413",
+  "episode": "S01E01",
+  "overall": "OK",
+  "rejected_sfx": [],
+  "stages": [
+    {
+      "name": "source",
+      "status": "-",
+      "newest_input": null,
+      "newest_output": null,
+      "oldest_output": null,
+      "output_count": 0,
+      "note": "no gdoc dir",
+      "refresh": ""
+    }
+  ]
+}
+```
+
+### Stems stage: manifest inclusion
+
+The stems stage is judged against `*.mp3` files **plus** `*_stem_manifest.json`. The manifest is rewritten on every produce run — including no-op runs where all stems are dedup-reused — so it is the only file that advances when re-producing an unchanged episode. Without it, a stems stage made stale by a re-parse could never be cleared. The manifest is **not** included in the daw stage's inputs: a no-op manifest bump must not invalidate an up-to-date daw layer.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | All stages OK |
+| `1` | Any stage is STALE or MISSING |
+| `2` | Usage or resolution error |
+
+> **Google Drive source:** The gdoc stage is informational — a missing or unmounted drive dir warns and continues rather than failing. Override the default mount with `--gdoc-dir` or the `XIL_GDOC_DIR` environment variable.
+> **Rejected SFX:** Effects graded `rejected` in xil-gui are flagged in the status output — these are omitted from production until re-graded or replaced. Use `--json` to machine-read the `rejected_sfx` list.
+> **No API key required** — reads local files and mtimes only.
+
+---
+
 ## Man Pages
 
-All 23 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
+All 26 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
 
 ### Accessing man pages
 
