@@ -1956,6 +1956,282 @@ The stems stage is judged against `*.mp3` files **plus** `*_stem_manifest.json`.
 
 ---
 
+## 27. Data Model Reference
+
+All data classes used across the pipeline, grouped by layer. Pydantic `BaseModel` subclasses (all in `models.py`) carry validation and are serialized to/from JSON. `@dataclass` instances are in-memory runtime state only.
+
+### 27a. Script parsing models — XILP001 output
+
+```mermaid
+classDiagram
+    class ParsedScript {
+        <<Pydantic>>
+        +string show
+        +int? season
+        +int episode
+        +string title
+        +string? season_title
+        +string source_file
+        +List~ScriptEntry~ entries
+        +ScriptStats stats
+        +tag() string
+    }
+    class ScriptEntry {
+        <<Pydantic>>
+        +int seq
+        +string type
+        +string? section
+        +string? scene
+        +string? speaker
+        +string? direction
+        +string text
+        +string? direction_type
+        +string? sfx_source
+    }
+    class ScriptStats {
+        <<Pydantic>>
+        +int total_entries
+        +int dialogue_lines
+        +int direction_lines
+        +int characters_for_tts
+        +List~string~ speakers
+        +List~string~ sections
+    }
+    ParsedScript "1" *-- "many" ScriptEntry : entries
+    ParsedScript "1" *-- "1" ScriptStats : stats
+```
+
+`type` values: `dialogue` · `direction` · `section_header` · `scene_header`
+`direction_type` values: `SFX` · `MUSIC` · `AMBIENCE` · `BEAT` · `VINTAGE FILTER`
+
+---
+
+### 27b. Cast configuration models
+
+```mermaid
+classDiagram
+    class CastConfiguration {
+        <<Pydantic>>
+        +string show
+        +int? season
+        +int? episode
+        +string? tag_override
+        +string? title
+        +string? season_title
+        +string artist
+        +Preamble? preamble
+        +Preamble? postamble
+        +Dict~string,CastMember~ cast
+        +tag() string
+    }
+    class CastMember {
+        <<Pydantic>>
+        +string full_name
+        +string voice_id
+        +float pan
+        +string|bool? filter
+        +string role
+        +float? stability
+        +float? similarity_boost
+        +float? style
+        +bool? use_speaker_boost
+        +string? language_code
+        +float? speed
+    }
+    class Preamble {
+        <<Pydantic>>
+        +string? text
+        +List~PreambleSegment~? segments
+        +string speaker
+        +float? speed
+    }
+    class PreambleSegment {
+        <<Pydantic>>
+        +string text
+        +string? shared_key
+    }
+    class VoiceConfig {
+        <<Pydantic>>
+        +string id
+        +float pan
+        +string|bool? filter
+    }
+    CastConfiguration "1" *-- "many" CastMember : cast
+    CastConfiguration "1" o-- "0..1" Preamble : preamble / postamble
+    Preamble "1" o-- "many" PreambleSegment : segments
+    CastMember ..> VoiceConfig : flattened into at load time
+```
+
+`filter` values: `false` (none) · `"phone"` · `"vintage"` · `"vintage,phone"`
+`pan` range: −1.0 (full left) → 0.0 (centre) → 1.0 (full right)
+`VoiceConfig` is the stripped-down view built by `load_production()` for use inside XILP002/XILP003.
+
+---
+
+### 27c. SFX configuration models
+
+```mermaid
+classDiagram
+    class SfxConfiguration {
+        <<Pydantic>>
+        +string show
+        +int? season
+        +int? episode
+        +string? tag_override
+        +dict defaults
+        +Dict~string,SfxEntry~ effects
+        +List~string~ vintage_scenes
+        +tag() string
+    }
+    class SfxEntry {
+        <<Pydantic>>
+        +string? prompt
+        +string type
+        +float duration_seconds
+        +float? prompt_influence
+        +bool loop
+        +string? source
+        +float? volume_percentage
+        +float? ramp_in_seconds
+        +float? ramp_out_seconds
+        +float? play_duration
+    }
+    SfxConfiguration "1" *-- "many" SfxEntry : effects
+```
+
+`SfxEntry.type` values: `sfx` (API-generated) · `silence` (stop marker — no audio file)
+`source` path bypasses API generation and reads the named file from `SFX/`.
+`duration_seconds` is capped at 30 s for API-generated entries (ElevenLabs limit).
+
+---
+
+### 27d. Production runtime models
+
+```mermaid
+classDiagram
+    class ProjectConfig {
+        <<Pydantic>>
+        +string show
+        +string type
+        +int? season
+        +string? season_title
+        +string? tag_format
+    }
+    class DialogueEntry {
+        <<Pydantic>>
+        +string speaker
+        +string text
+        +string stem_name
+        +int seq
+        +string? section
+        +string? direction
+    }
+    class StemPlan {
+        <<dataclass>>
+        +int seq
+        +string filepath
+        +string? direction_type
+        +string? entry_type
+        +string? text
+        +string? scene
+        +bool foreground_override
+        +float? volume_percentage
+        +float? ramp_in_seconds
+        +float? ramp_out_seconds
+        +float? play_duration
+        +string? tts_model
+        +bool pre_trimmed
+        +bool loop
+    }
+```
+
+`ProjectConfig.type` values: `podcast` · `audiobook` · `drama` · `special`
+`DialogueEntry` is produced by `load_production()` from `ScriptEntry` rows; `stem_name` is the output filename without extension.
+`StemPlan` is built by `collect_stem_plans()` in `mix_common.py` from the stems directory and is consumed by XILP003 and XILP005.
+
+---
+
+### 27e. Pipeline utility models
+
+```mermaid
+classDiagram
+    class MigrationAction {
+        <<dataclass>>
+        +string status
+        +int new_seq
+        +string new_stem
+        +int? old_seq
+        +string? old_stem
+        +string reason
+        +string entry_type
+        +string? speaker
+        +string new_text
+        +string old_text
+    }
+    class StageStatus {
+        <<dataclass>>
+        +string name
+        +string status
+        +float? newest_input
+        +float? newest_output
+        +float? oldest_output
+        +int output_count
+        +string note
+        +string refresh
+        +bool inputs_present
+        +List~Path~ output_files
+    }
+    class TimelineData {
+        <<dataclass>>
+        +string tag
+        +float total_duration_s
+        +Dict~string,List~ layers
+    }
+    class LayerSpan {
+        <<dataclass>>
+        +float start_s
+        +float end_s
+        +string label
+        +float? ramp_in_s
+        +float? ramp_out_s
+        +float? play_duration
+        +string? snippet
+        +float? volume_pct
+        +int? seq
+        +string? tts_model
+    }
+    class CommandSpec {
+        <<frozen dataclass>>
+        +string module
+        +string description
+        +string group
+        +string hint
+    }
+    class RemovalItem {
+        <<union _Dir | _File>>
+        +Path path
+        +string label
+        +file_count() int
+        +total_bytes() int
+    }
+    class _Dir {
+        <<dataclass>>
+    }
+    class _File {
+        <<dataclass>>
+    }
+    TimelineData "1" *-- "many" LayerSpan : layers
+    RemovalItem <|-- _Dir
+    RemovalItem <|-- _File
+```
+
+`MigrationAction.status` values: `COPY` · `SPEAKER` · `NEW` · `MISSING` · `SKIP` (see §12)
+`StageStatus.status` values: `OK` · `STALE` · `MISSING` · `-` (see §26)
+`CommandSpec` is `frozen=True` — instances are immutable entries in the `XIL_SCRIPT_COMMANDS` registry in `xil.py`.
+`RemovalItem` is the union type `_Dir | _File` used by XILU017 and XILU018; both share the same interface.
+
+---
+
 ## Man Pages
 
 All 26 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
