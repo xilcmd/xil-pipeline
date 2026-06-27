@@ -814,20 +814,12 @@ Consumed by XILP005 via `--timeline` and `--timeline-html`.
 
 ### 10a. Data model
 
-```mermaid
-classDiagram
-    class LayerSpan {
-        +float start_s
-        +float end_s
-        +str label
-    }
-    class TimelineData {
-        +str tag
-        +float total_duration_s
-        +dict layers
-    }
-    TimelineData "1" --> "*" LayerSpan : layers[key]
-```
+`timeline_viz.py` is built on two dataclasses — full field listing in [§27e](#27e-pipeline-utility-models).
+
+| Class | Role |
+|-------|------|
+| `TimelineData` | Episode container — tag, total duration, four named `LayerSpan` lists keyed by layer |
+| `LayerSpan` | One asset placement — start/end time, label, optional ramp-in/out, volume, play-duration, tooltip snippet |
 
 ### 10b. Rendering paths
 
