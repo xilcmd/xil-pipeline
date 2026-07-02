@@ -597,6 +597,24 @@ def is_section_header(line: str, section_map: dict[str, str] | None = None) -> b
     return line.strip() in (section_map if section_map is not None else SECTION_MAP)
 
 
+def _match_section(line: str, section_map: dict[str, str]) -> str | None:
+    """Return the section slug if *line* is a section header, else ``None``.
+
+    Handles both plain headers (``"ACT ONE"``) and subtitle-qualified headers
+    (``'ACT ONE: "Yesterday"'``) by stripping everything after the first colon
+    when the full line is not itself a key.  This lets scriptwriters annotate
+    acts with episode-specific titles without confusing the parser.
+    """
+    stripped = line.strip()
+    if stripped in section_map:
+        return section_map[stripped]
+    if ":" in stripped:
+        base = stripped.split(":", 1)[0].strip()
+        if base in section_map:
+            return section_map[base]
+    return None
+
+
 def is_scene_header(line: str) -> bool:
     """Check if a line is a scene header (``SCENE N: ...``).
 
@@ -927,9 +945,11 @@ def parse_script(
         if line.startswith("END OF EPISODE") or line.startswith("END OF PRODUCTION"):
             break
 
-        # Section headers
-        if is_section_header(line, active_section_map):
-            current_section = active_section_map[line.strip()]
+        # Section headers — also matches subtitle-qualified forms like
+        # 'ACT ONE: "Yesterday"' where "ACT ONE" is the section key.
+        _section_slug = _match_section(line, active_section_map)
+        if _section_slug is not None:
+            current_section = _section_slug
             current_scene = None
             seq += 1
             entries.append({
