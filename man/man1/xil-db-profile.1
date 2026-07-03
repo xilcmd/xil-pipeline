@@ -1,0 +1,47 @@
+.TH XIL\-DB\-PROFILE "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.SH NAME
+xil\-db\-profile \- profile MP3 audio levels: peak, average, and minimum dBFS
+.SH SYNOPSIS
+.B xil\-db\-profile
+[\-h] [\fI\,PATH\/\fR] [\-\-output FILE] [\-\-absolute] [\-\-json]
+.SH DESCRIPTION
+Recursively scans a directory (or a single MP3 file) and reports the peak,
+average (RMS), and minimum dBFS loudness for each file.  Useful for
+normalisation auditing before assembly or mastering.
+.PP
+When
+.I PATH
+is omitted, scans the shared
+.B SFX/
+directory under the current workspace root.
+.SH ARGUMENTS
+.TP
+.I PATH
+Directory or MP3 file to scan (default: \fI<workspace>\fR/SFX/)
+.SH OPTIONS
+.TP
+\fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
+Write results to FILE instead of stdout
+.TP
+\fB\-\-absolute\fR
+Print absolute file paths (default: relative to scan root)
+.TP
+\fB\-\-json\fR
+Output a JSON array to stdout \(em no banner, safe to pipe to jq
+.SH EXAMPLES
+.TP
+Profile the SFX library:
+.B xil db\-profile
+.TP
+Profile a single episode's stems:
+.B xil db\-profile stems/the413/S01E01 \-\-json
+.TP
+Save a CSV\-compatible report to a file:
+.B xil db\-profile \-\-output loudness.txt
+.SH SEE ALSO
+.BR xil (1),
+.BR xil\-assemble (1),
+.BR xil\-master (1),
+.BR xil\-sfx\-lib (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

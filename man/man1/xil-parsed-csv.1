@@ -1,0 +1,49 @@
+.TH XIL\-PARSED\-CSV "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.SH NAME
+xil\-parsed\-csv \- export parsed_<TAG>.json entries to CSV, one row per entry
+.SH SYNOPSIS
+.B xil\-parsed\-csv
+[\-h] [\fI\,PATH\/\fR] [\-\-output FILE] [\-\-json]
+.SH DESCRIPTION
+Reads a
+.B parsed_<TAG>.json
+file produced by
+.B xil\-parse
+and writes a flat CSV (or JSON array) with one row per script entry.  Columns
+include sequence number, section, type, speaker, text, direction type, and
+SFX source path.
+.PP
+When
+.I PATH
+is omitted, scans
+.B parsed/\fR\fI<slug>\fR/
+under the current workspace root for the most recent parsed JSON matching the
+active show.
+.SH ARGUMENTS
+.TP
+.I PATH
+Path to a parsed_*.json file or parsed directory (default: workspace parsed/<slug>/)
+.SH OPTIONS
+.TP
+\fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
+Write CSV output to FILE (default: stdout)
+.TP
+\fB\-\-json\fR
+Output a JSON array to stdout \(em no banner, safe to pipe to jq
+.SH EXAMPLES
+.TP
+Export the active episode's parsed JSON to CSV:
+.B xil parsed\-csv
+.TP
+Export a specific parsed JSON:
+.B xil parsed\-csv parsed/the413/parsed_the413_S01E01.json \-\-output script.csv
+.TP
+Pipe to jq to list all direction lines:
+.B xil parsed\-csv \-\-json | jq '.[] | select(.type == "direction")'
+.SH SEE ALSO
+.BR xil (1),
+.BR xil\-parse (1),
+.BR xil\-csv\-join (1),
+.BR xil\-sfx\-csv (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

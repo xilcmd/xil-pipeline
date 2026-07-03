@@ -1,0 +1,43 @@
+.TH XIL\-EPISODE\-SUMMARY "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.SH NAME
+xil\-episode\-summary \- write a one\-row\-per\-episode summary CSV from all parsed JSON files
+.SH SYNOPSIS
+.B xil\-episode\-summary
+[\-h] [\-\-output FILE] [\-\-show NAME] [\-\-stdout]
+.SH DESCRIPTION
+Scans all
+.B parsed_<TAG>.json
+files under the current show's
+.B parsed/\fR\fI<slug>\fR/
+directory and writes a summary CSV with one row per episode.  Columns include
+the episode tag, title, total entry count, dialogue count, direction count,
+section list, and word count.
+.PP
+Useful for tracking progress across a season or auditing show\-level metrics.
+.SH OPTIONS
+.TP
+\fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
+Write CSV to FILE (default: \fI<workspace>\fR/parsed/\fI<slug>\fR/episode_summary.csv)
+.TP
+\fB\-\-show\fR \fI\,NAME\/\fR
+Show name or slug override (default: resolved from project.json / active show)
+.TP
+\fB\-\-stdout\fR
+Write CSV to stdout \(em no banner, safe to pipe
+.SH EXAMPLES
+.TP
+Generate a season summary for the active show:
+.B xil episode\-summary
+.TP
+Write to a named file:
+.B xil episode\-summary \-\-output season1_summary.csv
+.TP
+Pipe to column for aligned display:
+.B xil episode\-summary \-\-stdout | column \-t \-s,
+.SH SEE ALSO
+.BR xil (1),
+.BR xil\-parse (1),
+.BR xil\-parsed\-csv (1),
+.BR xil\-status (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

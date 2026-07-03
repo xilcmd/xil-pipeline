@@ -1,9 +1,9 @@
-.TH XIL\-GUI "1" "2026\-04\-19" "xil\-pipeline 0.1.7" "User Commands"
+.TH XIL\-GUI "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
 .SH NAME
 xil\-gui \- launch the xil\-pipeline web dashboard (Gradio)
 .SH SYNOPSIS
 .B xil\-gui
-[\-h] [\-\-port PORT] [\-\-host HOST] [\-\-share]
+[\-h] [\-\-port PORT] [\-\-host HOST] [\-\-share] [\-\-output FILE]
 .SH DESCRIPTION
 Opens a browser\-based Gradio dashboard that supplements the CLI with four tabs:
 .TP
@@ -36,6 +36,9 @@ Host address to bind (default: 127.0.0.1)
 .TP
 \fB\-\-share\fR
 Generate a public ngrok URL for partner access. The URL is open (no authentication) and valid for up to 72 hours. Suitable for trusted collaborator sessions only.
+.TP
+\fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
+Append a timestamped session activity log to FILE (default: no log file)
 .SH EXAMPLES
 .TP
 Open locally:

@@ -1,0 +1,47 @@
+.TH XIL\-SFX\-CSV "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.SH NAME
+xil\-sfx\-csv \- flatten sfx_<TAG>.json configs to CSV, one row per effect
+.SH SYNOPSIS
+.B xil\-sfx\-csv
+[\-h] [\fI\,PATH\/\fR] [\-\-output FILE] [\-\-json]
+.SH DESCRIPTION
+Reads one or more
+.B sfx_<TAG>.json
+configuration files and writes a flat CSV (or JSON array) with one row per
+effect.  Columns include the effect key, prompt, type, duration, loop flag,
+and source path.
+.PP
+When
+.I PATH
+is omitted, scans
+.B configs/\fR\fI<slug>\fR/
+under the current workspace root for all sfx_*.json files matching the active
+show.
+.SH ARGUMENTS
+.TP
+.I PATH
+Path to a specific sfx_*.json file or a configs directory (default: workspace configs/<slug>/)
+.SH OPTIONS
+.TP
+\fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
+Write CSV output to FILE (default: stdout)
+.TP
+\fB\-\-json\fR
+Output a JSON array to stdout \(em no banner, safe to pipe to jq
+.SH EXAMPLES
+.TP
+Export all SFX configs for the active show:
+.B xil sfx\-csv
+.TP
+Export a specific episode's SFX config:
+.B xil sfx\-csv configs/the413/sfx_the413_S01E01.json \-\-output sfx_review.csv
+.TP
+Pipe to jq for filtering:
+.B xil sfx\-csv \-\-json | jq '.[] | select(.type == "ambience")'
+.SH SEE ALSO
+.BR xil (1),
+.BR xil\-parse (1),
+.BR xil\-produce (1),
+.BR xil\-parsed\-csv (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

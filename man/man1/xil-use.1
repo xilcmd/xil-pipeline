@@ -1,0 +1,41 @@
+.TH XIL\-USE "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.SH NAME
+xil\-use \- set or display the active show context
+.SH SYNOPSIS
+.B xil\-use
+.br
+.B xil\-use
+\fI\,SHOW\/\fR
+.SH DESCRIPTION
+Without arguments, lists all shows discovered in the current workspace (each
+\fBconfigs/\fR\fI<slug>\fR\fB/project.json\fR) and marks the currently active show with
+an asterisk.
+.PP
+With a show name or slug argument, switches the active show to that show.
+Subsequent commands that auto\-detect the show (parse, produce, status, etc.)
+will use the newly active show until changed again.
+.PP
+The active show is stored in \fI<workspace>\fR/.active_show.
+.SH ARGUMENTS
+.TP
+.I SHOW
+Show name or slug to activate (e.g. \fB"Night Owls"\fR or \fBnightowls\fR).
+Both forms are accepted.  Omit to list available shows.
+.SH EXAMPLES
+.TP
+List all shows:
+.B xil use
+.TP
+Switch to a show by name:
+.B xil use "The Woonsocket Wonders"
+.TP
+Switch to a show by slug:
+.B xil use thewoonsocketwonders
+.TP
+Via unified dispatcher:
+.B xil use
+.SH SEE ALSO
+.BR xil (1),
+.BR xil\-init (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>
