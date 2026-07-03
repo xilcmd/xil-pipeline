@@ -61,3 +61,5 @@ stem_log*.csv
 
 # Active show context (workspace-local, not shared)
 .active_show
+tools/generated_character_map.json
+tools/timeline_s01e01.json
