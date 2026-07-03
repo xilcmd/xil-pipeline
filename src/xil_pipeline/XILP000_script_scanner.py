@@ -458,7 +458,8 @@ def harvest_cast(scripts_dir: str, speakers_path: str | None, apply: bool = Fals
     """
     import glob as _glob
 
-    all_scripts = sorted(_glob.glob(os.path.join(scripts_dir, "*.md")))
+    all_scripts = sorted(_glob.glob(os.path.join(scripts_dir, "**", "*.md"), recursive=True) or
+                         _glob.glob(os.path.join(scripts_dir, "*.md")))
     if not all_scripts:
         logger.info("No .md scripts found in %s", scripts_dir)
         return
@@ -543,7 +544,8 @@ def backfill_cast(
     from xil_pipeline.models import get_workspace_root
 
     root = str(get_workspace_root())
-    all_scripts = sorted(_glob.glob(os.path.join(scripts_dir, "*.md")))
+    all_scripts = sorted(_glob.glob(os.path.join(scripts_dir, "**", "*.md"), recursive=True) or
+                         _glob.glob(os.path.join(scripts_dir, "*.md")))
     if not all_scripts:
         logger.info("No .md scripts found in %s", scripts_dir)
         return

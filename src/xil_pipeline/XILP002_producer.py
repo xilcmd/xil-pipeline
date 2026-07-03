@@ -53,6 +53,9 @@ from xil_pipeline.sfx_common import (
 from xil_pipeline.sfx_common import (
     generate_sfx as generate_sfx_stems,
 )
+from xil_pipeline.sfx_common import (
+    sfx_dir as _sfx_dir_for,
+)
 from xil_pipeline.XILU007_mp3_hash import hash_file as _hash_file
 
 logger = get_logger(__name__)
@@ -342,6 +345,7 @@ def dry_run(
     sfx_entries: list[dict] | None = None, sfx_config: dict | None = None,
     stems_dir: str = "", force: bool = False,
     sfx_backend_name: str = "elevenlabs",
+    sfx_dir: str | None = None,
 ) -> None:
     """Preview all dialogue lines and TTS cost without making API calls.
 
@@ -418,7 +422,8 @@ def dry_run(
 
     # SFX entries — delegate to sfx_common.dry_run_sfx
     if sfx_entries and sfx_config:
-        dry_run_sfx(sfx_entries, sfx_config, stems_dir, backend_name=sfx_backend_name)
+        dry_run_sfx(sfx_entries, sfx_config, stems_dir, sfx_dir=sfx_dir,
+                    backend_name=sfx_backend_name)
 
     # Summary
     chars_in_range = sum(
@@ -1213,7 +1218,8 @@ def main() -> None:
                 direction_types.add("VINTAGE FILTER")
             sfx_entries = load_sfx_entries(args.script, sfx_path,
                                            direction_types=direction_types,
-                                           local_only=args.local_only)
+                                           local_only=args.local_only,
+                                           sfx_dir=_sfx_dir_for(slug))
             # Pre-filter SFX entries to the requested range
             if args.stop_at is not None:
                 sfx_entries = [e for e in sfx_entries if e["seq"] <= args.stop_at]
@@ -1239,7 +1245,8 @@ def main() -> None:
                     stop_at=args.stop_at,
                     sfx_entries=sfx_entries, sfx_config=sfx_config_data,
                     stems_dir=stems_dir, force=args.force,
-                    sfx_backend_name=args.sfx_backend)
+                    sfx_backend_name=args.sfx_backend,
+                    sfx_dir=_sfx_dir_for(slug))
         else:
             if args.backend == "elevenlabs":
                 check_elevenlabs_quota()
@@ -1247,10 +1254,13 @@ def main() -> None:
             if sfx_entries and sfx_config_data:
                 _sfx_cfg_pf = SfxConfiguration(**sfx_config_data)
                 _missing = []
+                _ws_root = get_workspace_root()
                 for _entry in sfx_entries:
                     _effect = _sfx_cfg_pf.effects.get(_entry["text"])
-                    if _effect and _effect.source is not None and not os.path.exists(_effect.source):
-                        _missing.append(f"  '{_entry['text']}' → {_effect.source}")
+                    if _effect and _effect.source is not None:
+                        _src = _effect.source if os.path.isabs(_effect.source) else str(_ws_root / _effect.source)
+                        if not os.path.exists(_src):
+                            _missing.append(f"  '{_entry['text']}' → {_effect.source}")
                 if _missing:
                     logger.error(
                         "%d SFX source file(s) declared but missing — fix sfx config before generating:",
@@ -1301,6 +1311,7 @@ def main() -> None:
                                 section_speed_overrides=section_speed_overrides or None)
                 if sfx_entries and sfx_config_data:
                     generate_sfx_stems(sfx_entries, sfx_config_data, stems_dir,
+                                       sfx_dir=_sfx_dir_for(slug),
                                        client=client, start_from=args.start_from,
                                        backend=sfx_backend)
             finally:

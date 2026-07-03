@@ -1264,7 +1264,7 @@ class TestGenerateSfxConfigWithHints:
         with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         effect = config["effects"]["SFX: STATIC"]
-        assert effect["source"] == "SFX/sfx_static.mp3"
+        assert effect["source"] == "SFX/the413/sfx_static.mp3"
         assert "prompt" not in effect
 
     def test_source_hint_ambience_keeps_loop(self, tmp_path):
@@ -1280,7 +1280,7 @@ class TestGenerateSfxConfigWithHints:
         with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         effect = config["effects"]["AMBIENCE: DINER"]
-        assert effect["source"] == "SFX/ambience_diner.mp3"
+        assert effect["source"] == "SFX/the413/ambience_diner.mp3"
         assert effect.get("loop") is True
 
     def test_parsed_entry_text_stripped_of_hint(self, tmp_path):
@@ -1293,7 +1293,7 @@ class TestGenerateSfxConfigWithHints:
         parsed = parser.parse_script(str(script))
         direction = next(e for e in parsed["entries"] if e["type"] == "direction")
         assert direction["text"] == "SFX: PHONE BUZZ"
-        assert direction.get("sfx_source") == "SFX/sfx_buzz.mp3"
+        assert direction.get("sfx_source") == "SFX/the413/sfx_buzz.mp3"
 
 
 # ─── Tests: backfill_sfx_sources ───

@@ -565,7 +565,7 @@ def is_stage_direction(line: str) -> bool:
     return line.startswith("[") and "]" in line
 
 
-def _parse_direction_hint(raw: str) -> tuple[str, str | None]:
+def _parse_direction_hint(raw: str, slug: str = "") -> tuple[str, str | None]:
     """Strip a scriptwriter SFX-source hint from a direction text.
 
     Scriptwriters may annotate directions with a filename hint separated
@@ -573,14 +573,16 @@ def _parse_direction_hint(raw: str) -> tuple[str, str | None]:
 
         SFX: RADIO STATIC — BRIEF TUNING | sfx_radio-static-tuning-transition.mp3
 
-    Returns the clean direction text and the SFX source path (``"SFX/<filename>"``),
-    or ``None`` if no hint is present.
+    Returns the clean direction text and the SFX source path (``"SFX/{slug}/<filename>"``
+    when *slug* is provided, ``"SFX/<filename>"`` otherwise), or ``None`` if no hint
+    is present.
     """
     if " | " in raw:
         clean, hint = raw.split(" | ", 1)
         hint = hint.strip()
         if hint.endswith(".mp3") or hint.endswith(".wav"):
-            return clean.strip(), f"SFX/{hint}"
+            prefix = f"SFX/{slug}" if slug else "SFX"
+            return clean.strip(), f"{prefix}/{hint}"
     return raw.strip(), None
 
 
@@ -849,6 +851,9 @@ def parse_script(
     else:
         show, season, episode, title, season_title = "Unknown Show", None, 1, "", None
 
+    # Slug is needed to build per-show SFX source paths for pipe-hints
+    _script_slug = show_slug(show)
+
     # Apply project.json fallbacks when the script header omits Season/Arc declarations
     season = resolve_season(season)
     season_title = resolve_season_title(season_title)
@@ -892,7 +897,7 @@ def parse_script(
             if is_stage_direction(line):
                 brackets = re.findall(r"\[([^\]]+)\]", line)
                 for bracket_text in brackets:
-                    clean_text, sfx_source = _parse_direction_hint(bracket_text.strip())
+                    clean_text, sfx_source = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
                     direction_type = classify_direction(clean_text)
                     if direction_type is None:
                         logger.debug(f"  Skipping unrecognized direction: [{clean_text}]")
@@ -991,7 +996,7 @@ def parse_script(
             # Extract embedded bracketed directions (e.g. [AMBIENCE: ...])
             brackets = re.findall(r"\[([^\]]+)\]", line)
             for bracket_text in brackets:
-                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip())
+                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
                 direction_type = classify_direction(clean_text)
                 if direction_type is None:
                     # Acting note in square brackets (e.g. [drawn out]) — not a technical cue
@@ -1022,7 +1027,7 @@ def parse_script(
             # Extract all bracketed sections
             brackets = re.findall(r"\[([^\]]+)\]", line)
             for bracket_text in brackets:
-                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip())
+                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
                 direction_type = classify_direction(clean_text)
                 if direction_type is None:
                     # Acting note in square brackets (e.g. [drawn out]) — not a technical cue

@@ -46,7 +46,7 @@ def test_scaffold_creates_speakers_json(workspace):
 
 
 def test_scaffold_creates_sample_script(workspace):
-    path = os.path.join(workspace, "scripts", "sample_S01E01.md")
+    path = os.path.join(workspace, "scripts", "testshow", "sample_S01E01.md")
     assert os.path.exists(path)
     with open(path) as f:
         content = f.read()
@@ -63,6 +63,9 @@ def test_scaffold_creates_subdirectories(workspace):
     # Flat layout: shared dirs at root, per-show dirs under category/slug/
     for subdir in ("scripts", "SFX"):
         assert os.path.isdir(os.path.join(workspace, subdir))
+    # Hierarchical: scripts and SFX get per-show subdirs too
+    for subdir in ("scripts/testshow", "SFX/testshow"):
+        assert os.path.isdir(os.path.join(workspace, subdir))
     for category in ("daw", "stems", "masters", "parsed", "cues"):
         assert os.path.isdir(os.path.join(workspace, category, "testshow"))
 
@@ -73,7 +76,7 @@ def test_scaffold_custom_show_name(tmp_path):
     with open(os.path.join(target, "configs", "nightowls", "project.json")) as f:
         data = json.load(f)
     assert data["show"] == "Night Owls"
-    with open(os.path.join(target, "scripts", "sample_S01E01.md")) as f:
+    with open(os.path.join(target, "scripts", "nightowls", "sample_S01E01.md")) as f:
         content = f.read()
     assert content.startswith("Night Owls Episode 1:")
 
@@ -86,7 +89,7 @@ def test_scaffold_with_season_and_title(tmp_path):
         data = json.load(f)
     assert data["season"] == 2
     assert data["season_title"] == "The Bridge"
-    with open(os.path.join(target, "scripts", "sample_S01E01.md")) as f:
+    with open(os.path.join(target, "scripts", "nightowls", "sample_S01E01.md")) as f:
         header = f.readline()
     assert "Season 2:" in header
     assert 'Arc: "The Bridge"' in header
@@ -124,7 +127,7 @@ def test_sample_script_parses_with_speakers(workspace, monkeypatch):
     monkeypatch.chdir(workspace)
 
     speakers_path = os.path.join(workspace, "configs", "testshow", "speakers.json")
-    script_path = os.path.join(workspace, "scripts", "sample_S01E01.md")
+    script_path = os.path.join(workspace, "scripts", "testshow", "sample_S01E01.md")
 
     # Load speakers from the scaffolded speakers.json
     known, keys = load_speakers(speakers_path)

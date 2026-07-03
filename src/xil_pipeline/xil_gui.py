@@ -168,8 +168,12 @@ def _episode_choices() -> list[str]:
 
 
 def _script_choices() -> list[str]:
-    """Return relative paths to all scripts/*.md files, sorted."""
-    return sorted(glob.glob(os.path.join(str(get_workspace_root()), "scripts", "*.md")))
+    """Return relative paths to all scripts .md files, hierarchical then flat fallback."""
+    root = get_workspace_root()
+    per_show = sorted(root.glob("scripts/*/*.md"))
+    if per_show:
+        return [str(p.relative_to(root)) for p in per_show]
+    return sorted(glob.glob(os.path.join(str(root), "scripts", "*.md")))
 
 
 def _default_chatterbox_python() -> str:
@@ -267,7 +271,7 @@ def _analyze_script_header(
 
 
 def _save_script_file(text: str, filename: str) -> str:
-    """Write script to {workspace_root}/scripts/{filename}. Refuses to overwrite."""
+    """Write script to {workspace_root}/scripts/{slug}/{filename}. Refuses to overwrite."""
     if not text.strip():
         return "⚠️ No script content to save."
     filename = filename.strip()
@@ -276,16 +280,27 @@ def _save_script_file(text: str, filename: str) -> str:
     if not filename.endswith(".md"):
         filename += ".md"
 
-    scripts_dir = get_workspace_root() / "scripts"
+    root = get_workspace_root()
+    # Derive slug from filename pattern: S##E##_{slug}_...md or {slug}_...md
+    import re as _re
+    _slug_match = _re.match(r"^(?:[A-Z]\d+[A-Z]\d+_)?([a-z0-9]+)_", filename)
+    _slug = _slug_match.group(1) if _slug_match else ""
+    if _slug and (root / "scripts" / _slug).is_dir():
+        scripts_dir = root / "scripts" / _slug
+        rel = f"scripts/{_slug}/{filename}"
+    else:
+        scripts_dir = root / "scripts"
+        rel = f"scripts/{filename}"
+
     scripts_dir.mkdir(parents=True, exist_ok=True)
     dest = scripts_dir / filename
 
     if dest.exists():
-        return f"⚠️ Already exists: scripts/{filename} — edit the filename above to save a new version."
+        return f"⚠️ Already exists: {rel} — edit the filename above to save a new version."
 
     dest.write_text(text, encoding="utf-8")
-    _log_activity(f"SAVE script → scripts/{filename}")
-    return f"✅ Saved: scripts/{filename}"
+    _log_activity(f"SAVE script → {rel}")
+    return f"✅ Saved: {rel}"
 
 
 def _parse_choice(choice: str) -> tuple[str, str]:
@@ -453,9 +468,14 @@ _GRADE_GLYPH = {"accurate": "✓", "rejected": "✗", "": "•"}
 _sfx_grade_cache: dict[str, str] = {}
 
 
-def _sfx_dir() -> str:
-    """Absolute path to the shared SFX library directory."""
-    return os.path.join(str(get_workspace_root()), "SFX")
+def _sfx_dir(slug: str = "") -> str:
+    """Absolute path to the SFX library directory, scoped to slug when the subdir exists."""
+    root = get_workspace_root()
+    if slug:
+        per_show = root / "SFX" / slug
+        if per_show.is_dir():
+            return str(per_show)
+    return str(root / "SFX")
 
 
 def _scan_sfx_grades() -> dict[str, str]:
@@ -639,7 +659,11 @@ def _cmd_parse(slug: str, tag: str, script_path: str | None, preview: int | None
         cmd = [sys.executable, "-m", module, str(script_path).strip(), "--episode", tag]
     else:
         import glob as _glob
-        candidates = sorted(_glob.glob(os.path.join(str(get_workspace_root()), "scripts", "*.md")))
+        root = get_workspace_root()
+        # Prefer per-show subdir when the slug subdir exists
+        candidates = sorted(_glob.glob(os.path.join(str(root), "scripts", slug, "*.md"))) if slug else []
+        if not candidates:
+            candidates = sorted(_glob.glob(os.path.join(str(root), "scripts", "*.md")))
         if not candidates:
             raise ValueError("No script path given and no .md files found in scripts/")
         script = candidates[0]
