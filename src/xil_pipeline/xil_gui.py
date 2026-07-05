@@ -306,14 +306,38 @@ def _save_script_file(text: str, filename: str) -> str:
     return f"✅ Saved: {rel}"
 
 
+_SLUG_TAG_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _is_safe_slug_or_tag(value: str) -> bool:
+    """True iff *value* is a bare filesystem-safe path component.
+
+    Show slugs (:func:`models.show_slug`) and episode tags are always
+    alphanumeric-with-separators — never a path separator, ``..``, or a
+    null byte. Slug/tag strings arriving from GUI callbacks or the
+    ``/xil/*`` HTTP routes flow into :func:`derive_paths`, so this
+    allowlist must run *before* any path is built — containment checks
+    after the fact (:func:`_check_workspace_path`) are defence-in-depth,
+    not the primary control.
+    """
+    return bool(value) and bool(_SLUG_TAG_RE.match(value))
+
+
 def _parse_choice(choice: str) -> tuple[str, str]:
     """'the413  S03E03  [title]' → ('the413', 'S03E03')
     'mypodcast  [show]  —  My Podcast' → ('mypodcast', '')
+
+    A slug that is not a safe path component (see :func:`_is_safe_slug_or_tag`)
+    yields ``("", "")`` — every caller feeds the result into
+    :func:`derive_paths`, and callers already handle the empty case.
     """
     parts = choice.strip().split()
+    slug = parts[0] if parts else ""
+    if slug and not _is_safe_slug_or_tag(slug):
+        return "", ""
     if len(parts) >= 2 and re.match(r"^[A-Z][A-Z0-9]+$", parts[1]):
-        return parts[0], parts[1]
-    return parts[0] if parts else "", ""
+        return slug, parts[1]
+    return slug, ""
 
 
 def _stage_status(slug: str, tag: str) -> dict[str, str]:
@@ -576,6 +600,39 @@ def _timeline_iframe_html(html_path: str) -> str:
     )
 
 
+def _load_config_file(path: str, label: str) -> str:
+    """Read a JSON config for the editor textboxes, workspace-bounded.
+
+    The path arrives from a Gradio dropdown, but callbacks are HTTP
+    endpoints — the value is client-suppliable, so the same
+    :func:`_check_workspace_path` boundary the save functions enforce
+    must apply on the read side too.
+    """
+    if not path:
+        return ""
+    try:
+        _check_workspace_path(path)
+    except ValueError as exc:
+        return f"// {exc}"
+    _log_activity(f"SELECT {label} → {path}")
+    if not os.path.exists(path):
+        return f"// File not found: {path}"
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def load_cast_config(path: str) -> str:
+    return _load_config_file(path, "cast")
+
+
+def load_speakers_config(path: str) -> str:
+    return _load_config_file(path, "speakers")
+
+
+def load_sfx_config(path: str) -> str:
+    return _load_config_file(path, "sfx")
+
+
 def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str):
     """Generator: launch a pipeline stage, yield accumulated stdout."""
     if not episode_choice or not stage:
@@ -615,7 +672,7 @@ def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str)
     yield header
 
     try:
-        proc = subprocess.Popen(  # lgtm[py/command-line-injection]
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -642,7 +699,7 @@ def _execute_cmd(cmd: list[str]):
     _log_activity("CMD: " + " ".join(cmd))
     yield header
     try:
-        proc = subprocess.Popen(  # lgtm[py/command-line-injection]
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -926,7 +983,7 @@ def _build_app():
         _log_activity("CMD: " + " ".join(cmd))
         yield "$ " + " ".join(cmd) + "\n\n"
         try:
-            proc = subprocess.Popen(  # lgtm[py/command-line-injection]
+            proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -977,15 +1034,6 @@ def _build_app():
     def cast_config_choices() -> list[str]:
         return _find_cast_configs()
 
-    def load_cast_config(path: str) -> str:
-        if not path:
-            return ""
-        _log_activity(f"SELECT cast → {path}")
-        if not os.path.exists(path):
-            return f"// File not found: {path}"
-        with open(path, encoding="utf-8") as f:
-            return f.read()
-
     def save_cast_config(path: str, text: str) -> str:
         if not path:
             return "No file selected."
@@ -1007,15 +1055,6 @@ def _build_app():
     def speakers_config_choices() -> list[str]:
         return _find_speakers_configs()
 
-    def load_speakers_config(path: str) -> str:
-        if not path:
-            return ""
-        _log_activity(f"SELECT speakers → {path}")
-        if not os.path.exists(path):
-            return f"// File not found: {path}"
-        with open(path, encoding="utf-8") as f:
-            return f.read()
-
     def save_speakers_config(path: str, text: str) -> str:
         if not path:
             return "No file selected."
@@ -1036,15 +1075,6 @@ def _build_app():
 
     def sfx_config_choices() -> list[str]:
         return _find_sfx_configs()
-
-    def load_sfx_config(path: str) -> str:
-        if not path:
-            return ""
-        _log_activity(f"SELECT sfx → {path}")
-        if not os.path.exists(path):
-            return f"// File not found: {path}"
-        with open(path, encoding="utf-8") as f:
-            return f.read()
 
     def save_sfx_config(path: str, text: str) -> str:
         if not path:
@@ -1928,23 +1958,6 @@ def get_parser() -> argparse.ArgumentParser:
         help="Append a timestamped session activity log to FILE",
     )
     return parser
-
-
-_SLUG_TAG_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-
-
-def _is_safe_slug_or_tag(value: str) -> bool:
-    """True iff *value* is a bare filesystem-safe path component.
-
-    Show slugs (:func:`models.show_slug`) and episode tags are always
-    alphanumeric-with-separators — never a path separator, ``..``, or a
-    null byte. The ``/xil/get-sfx`` and ``/xil/update-sfx`` routes take
-    slug/tag straight from the HTTP request and feed them into
-    :func:`derive_paths`, so this allowlist must run *before* any path is
-    built — containment checks after the fact (:func:`_check_workspace_path`)
-    are defence-in-depth, not the primary control.
-    """
-    return bool(value) and bool(_SLUG_TAG_RE.match(value))
 
 
 def _register_sfx_routes(app) -> None:

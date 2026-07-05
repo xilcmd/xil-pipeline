@@ -652,3 +652,53 @@ class TestSfxRoutes:
         r = client.get("/xil/get-sfx", params={
             "slug": "my-show_2", "tag": "S01E01-alt", "key": "X"})
         assert r.status_code == 200
+
+
+# ── CodeQL hardening: _parse_choice slug validation + config-loader guards ───
+
+class TestParseChoiceRejectsUnsafeSlug:
+    """_parse_choice is the choke point where GUI dropdown strings become
+    slug/tag fed to derive_paths — a traversal slug must come back empty."""
+
+    @pytest.mark.parametrize("bad", [
+        "../../etc  S01E01",
+        "..  S01E01",
+        "foo/bar  S01E01",
+        "foo\\bar  S01E01",
+    ])
+    def test_traversal_slug_returns_empty(self, bad):
+        assert _parse_choice(bad) == ("", "")
+
+    def test_legit_choices_unaffected(self):
+        assert _parse_choice("the413  S03E03") == ("the413", "S03E03")
+        assert _parse_choice("my-show_2  S01E01") == ("my-show_2", "S01E01")
+
+
+class TestConfigLoadersGuarded:
+    """load_*_config read whatever path they are handed; the matching save_*
+    functions check the workspace boundary but the loads did not (CodeQL
+    py/path-injection, 2026-07-05). Loads must refuse paths outside the
+    workspace root without reading them."""
+
+    @pytest.fixture
+    def ws(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path / "workspace"))
+        (tmp_path / "workspace").mkdir()
+        outside = tmp_path / "outside.json"
+        outside.write_text('{"secret": true}')
+        return outside
+
+    @pytest.mark.parametrize("loader_name", [
+        "load_cast_config", "load_speakers_config", "load_sfx_config"])
+    def test_loader_refuses_path_outside_workspace(self, ws, loader_name):
+        import xil_pipeline.xil_gui as gui
+        loader = getattr(gui, loader_name)
+        out = loader(str(ws))
+        assert "secret" not in out
+        assert "outside the workspace" in out
+
+    def test_loader_reads_inside_workspace(self, ws, tmp_path):
+        import xil_pipeline.xil_gui as gui
+        inside = tmp_path / "workspace" / "cast_S01E01.json"
+        inside.write_text('{"cast": {}}')
+        assert gui.load_cast_config(str(inside)) == '{"cast": {}}'
