@@ -42,11 +42,12 @@ from mutagen.id3 import error as MutagenID3Error
 from mutagen.mp3 import MP3, HeaderNotFoundError
 
 from xil_pipeline.log_config import configure_logging, get_logger
+from xil_pipeline.models import get_workspace_root
 from xil_pipeline.sfx_common import run_banner
 
 logger = get_logger(__name__)
 
-SFX_DIR = "SFX"
+SFX_DIR = str(get_workspace_root() / "SFX")
 ELEVENLABS_BASE = "https://api.elevenlabs.io"
 
 

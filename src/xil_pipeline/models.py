@@ -137,7 +137,7 @@ def _derive_paths_new(slug: str, tag: str) -> dict[str, str]:
         "cues": os.path.join(root, "cues", slug, f"cues_{tag}.md"),
         "cues_manifest": os.path.join(root, "cues", slug, f"cues_manifest_{tag}.json"),
         "orig_parsed": os.path.join(root, "parsed", slug, f"orig_parsed_{tag}.json"),
-        "revised_script": os.path.join(root, "scripts", f"revised_{slug}_{tag}.md"),
+        "revised_script": os.path.join(root, "scripts", slug, f"revised_{slug}_{tag}.md"),
         "stems": os.path.join(root, "stems", slug, tag),
         "daw": os.path.join(root, "daw", slug, tag),
         "posts": os.path.join(root, "posts", slug, f"{tag}_posts.md"),

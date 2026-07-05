@@ -657,3 +657,200 @@ class TestVolumeBadgeInHtml:
         # Both ramp_out_s and volume_pct should be serialized into the DATA JSON
         assert '"ramp_out_s": 2.0' in html
         assert '"volume_pct": 80.0' in html
+
+
+# ─── Tests: HTML editor integrity (sound profile editor regression guards) ───
+
+class TestHtmlEditorIntegrity:
+    """Structural + runtime invariants for the double-click sound profile editor.
+
+    These encode the two bug classes that broke the editor when it shipped:
+    modal elements injected after the script (getElementById → null →
+    TypeError → all later listeners never registered) and a context-menu
+    trigger that Brave suppresses inside iframes.
+    """
+
+    def _render(self, tmp_path, **kwargs):
+        data = build_timeline_data(
+            total_s=10.0,
+            tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")],
+            amb_labels=[(0.0, 10.0, "AMBIENCE: RIVER")],
+            mus_labels=[(2.0, 8.0, "MUSIC: THEME")],
+            sfx_labels=[(3.0, 4.0, "SFX: DOOR")],
+        )
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(data, out, **kwargs)
+        return open(out, encoding="utf-8").read()
+
+    def test_all_getelementbyid_targets_exist_before_script(self, tmp_path):
+        """Every id the script looks up must exist in the DOM before the script runs.
+
+        Violation symptom: null.addEventListener() throws at script eval,
+        silently killing every listener registered after the throw (including
+        click-to-play).
+        """
+        import re
+
+        html = self._render(tmp_path)
+        script_start = html.index("<script>")
+        script = html[script_start:html.index("</script>")]
+        pre_script_ids = set(re.findall(r'id="([^"]+)"', html[:script_start]))
+        referenced = set(re.findall(r"getElementById\('([^']+)'\)", script))
+        # Sanity: the modal elements must be among the references
+        assert {"sfx-modal-cancel", "sfx-modal-save", "sfx-modal-overlay"} <= referenced
+        missing = referenced - pre_script_ids
+        assert not missing, f"getElementById targets not in DOM before script: {missing}"
+
+    def test_dblclick_editor_wiring(self, tmp_path):
+        """Editor opens on dblclick (not contextmenu — Brave blocks preventDefault
+        on iframe context menus) and single-click play ignores dblclick's clicks."""
+        html = self._render(tmp_path)
+        assert "addEventListener('dblclick'" in html
+        assert "contextmenu" not in html
+        assert "e.detail > 1" in html
+        assert "data-effect-key" in html
+        assert "EDITABLE_LAYERS" in html
+
+    def test_slug_tag_constants_embedded(self, tmp_path):
+        html = self._render(tmp_path, slug="myshow", tag="S01E01")
+        assert 'const XIL_SLUG = "myshow";' in html
+        assert 'const XIL_TAG  = "S01E01";' in html
+
+    def test_script_runs_clean_in_node(self, tmp_path):
+        """Execute the generated script in node with a stub DOM: it must run
+        without throwing and register the modal-button and play listeners."""
+        import shutil
+        import subprocess
+
+        if shutil.which("node") is None:
+            pytest.skip("node not available")
+
+        html = self._render(tmp_path, slug="myshow", tag="S01E01")
+        script = html[html.index("<script>") + len("<script>"):html.index("</script>")]
+        script_path = tmp_path / "tl_script.js"
+        script_path.write_text(script, encoding="utf-8")
+
+        harness = tmp_path / "harness.js"
+        harness.write_text(
+            """
+const fs = require('fs');
+const script = fs.readFileSync(process.argv[2], 'utf8');
+const listeners = [];
+function el(id) {
+  return {
+    id, style: {}, dataset: {}, innerHTML: '', textContent: '',
+    clientWidth: 1200, classList: {add(){}, remove(){}},
+    addEventListener(t) { listeners.push(id + ':' + t); },
+  };
+}
+const ids = ['xil-player','player-label','audio-el','zoom-info','floattip','tc','ti',
+             'ruler','layers','sfx-modal-overlay','sfx-modal','sfx-modal-title',
+             'sfx-modal-fields','sfx-modal-status','sfx-modal-save','sfx-modal-cancel',
+             'transport','transport-play','transport-time','transport-mutes',
+             'transport-hint','playhead'];
+const elements = {};
+ids.forEach(i => elements[i] = el(i));
+global.document = {
+  getElementById(id) { return elements[id] || null; },
+  addEventListener(t) { listeners.push('document:' + t); },
+  querySelectorAll() { return []; },
+};
+global.window = { innerWidth: 1200, innerHeight: 800 };
+global.fetch = () => Promise.resolve({json: () => Promise.resolve({})});
+eval(script);
+console.log(listeners.join(','));
+""",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            ["node", str(harness), str(script_path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, f"script threw in node: {result.stderr}"
+        registered = result.stdout.strip().split(",")
+        for expected in ("sfx-modal-cancel:click", "sfx-modal-save:click",
+                         "sfx-modal-overlay:click", "layers:click",
+                         "document:dblclick"):
+            assert expected in registered, f"listener not registered: {expected}"
+
+    def test_preview_gain_graph_wiring(self, tmp_path):
+        """Click-to-play routes audio through a Web Audio gain graph so the
+        preview honors volume_percentage (incl. >100%), ramps, and duration."""
+        html = self._render(tmp_path)
+        assert "createMediaElementSource" in html
+        assert "createGain" in html
+        assert "linearRampToValueAtTime" in html
+        assert "cancelScheduledValues" in html
+
+    def test_click_delay_and_dblclick_cancel(self, tmp_path):
+        """Single-click preview is deferred 250ms so the editor's dblclick can
+        cancel it — no playback blip when opening the editor."""
+        html = self._render(tmp_path)
+        assert "clickTimer = setTimeout" in html
+        assert "clearTimeout(clickTimer)" in html
+
+
+# ─── Tests: DAW-style transport (playhead + full-mix playback) ───
+
+class TestTransport:
+    """Full-mix transport: five synced layer WAVs, playhead, ruler seek."""
+
+    LAYER_KEYS = ("dialogue", "sfx", "music", "ambience", "vintage_filter")
+
+    def _render(self, tmp_path, layers_dir=None, wav_keys=None, **kwargs):
+        data = build_timeline_data(
+            total_s=10.0, tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")],
+            amb_labels=[], mus_labels=[], sfx_labels=[],
+        )
+        if layers_dir is not None and wav_keys:
+            for key in wav_keys:
+                (layers_dir / f"TEST_layer_{key}.wav").write_bytes(b"RIFF")
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(
+            data, out, slug="myshow", tag="TEST",
+            layers_dir=str(layers_dir) if layers_dir is not None else None,
+            **kwargs,
+        )
+        return open(out, encoding="utf-8").read()
+
+    def test_layer_audio_embedded_with_cache_buster(self, tmp_path):
+        ldir = tmp_path / "daw"
+        ldir.mkdir()
+        html = self._render(tmp_path, layers_dir=ldir, wav_keys=self.LAYER_KEYS)
+        import re
+        m = re.search(r"const LAYER_AUDIO = ({.*?});", html)
+        assert m, "LAYER_AUDIO constant missing"
+        import json as _json
+        la = _json.loads(m.group(1))
+        assert set(la.keys()) == set(self.LAYER_KEYS)
+        for path in la.values():
+            assert "?v=" in path
+            assert "_layer_" in path
+
+    def test_layer_audio_omits_missing_files(self, tmp_path):
+        ldir = tmp_path / "daw"
+        ldir.mkdir()
+        html = self._render(tmp_path, layers_dir=ldir, wav_keys=("dialogue", "music"))
+        import json as _json
+        import re
+        la = _json.loads(re.search(r"const LAYER_AUDIO = ({.*?});", html).group(1))
+        assert set(la.keys()) == {"dialogue", "music"}
+
+    def test_transport_markup_and_playhead(self, tmp_path):
+        ldir = tmp_path / "daw"
+        ldir.mkdir()
+        html = self._render(tmp_path, layers_dir=ldir, wav_keys=self.LAYER_KEYS)
+        assert 'id="transport"' in html
+        assert 'id="playhead"' in html
+        assert 'id="transport-play"' in html
+        assert 'id="transport-time"' in html
+        assert "mute-toggle" in html
+        assert "seekTo" in html          # ruler-seek handler
+        assert "requestAnimationFrame" in html
+
+    def test_no_layers_dir_renders_empty_layer_audio(self, tmp_path):
+        html = self._render(tmp_path, layers_dir=None)
+        assert "const LAYER_AUDIO = {};" in html
+        assert "run xil daw to enable full-mix playback" in html

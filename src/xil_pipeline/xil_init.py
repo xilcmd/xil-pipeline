@@ -453,6 +453,9 @@ def scaffold(
         # Shared dirs — one per workspace, no per-show subdir
         for shared in ("scripts", "SFX", "voice_samples"):
             os.makedirs(os.path.join(directory, shared), exist_ok=True)
+        # Per-show subdirs under scripts/ and SFX/ to match the rest of the workspace layout
+        for slug_dir in (f"scripts/{slug}", f"SFX/{slug}"):
+            os.makedirs(os.path.join(directory, slug_dir), exist_ok=True)
         # Per-show category subdirs
         os.makedirs(os.path.join(directory, "configs", slug), exist_ok=True)
         for category in ("daw", "stems", "masters", "parsed", "cues", "posts"):
@@ -488,7 +491,7 @@ def scaffold(
     tag = SAMPLE_TAG_BY_TYPE.get(content_type, "S01E01")
     season_part = f" Season {season}:" if season is not None else ""
     arc_part = f' Arc: "{season_title}"' if season_title else ""
-    script_path = os.path.join(directory, "scripts", f"sample_{tag}.md")
+    script_path = os.path.join(directory, "scripts", slug, f"sample_{tag}.md") if flat_layout else os.path.join(directory, "scripts", f"sample_{tag}.md")
     if not os.path.exists(script_path):
         template = SCRIPTS_BY_TYPE.get(content_type, SCRIPTS_BY_TYPE["podcast"])
         with open(script_path, "w", encoding="utf-8") as f:

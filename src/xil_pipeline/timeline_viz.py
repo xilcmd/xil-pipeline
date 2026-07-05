@@ -256,6 +256,331 @@ def render_terminal_timeline(data: TimelineData, width: int | None = None) -> st
     return "\n".join(lines)
 
 
+_MODAL_CSS = """\
+  #sfx-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:2000; }
+  #sfx-modal { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:#2a2a3e; border:1px solid #555; border-radius:8px; padding:20px;
+    min-width:300px; max-width:460px; color:#eee; font-size:13px; }
+  #sfx-modal h3 { margin-bottom:12px; font-size:0.9em; color:#b0b0ff; word-break:break-all; font-weight:600; }
+  .sfx-field-wrap { margin-bottom:10px; }
+  .sfx-field-wrap label { display:block; font-size:11px; color:#aaa; margin-bottom:3px; text-transform:uppercase; letter-spacing:0.04em; }
+  .sfx-field-wrap input[type=number] { width:100%; background:#111; color:#eee; border:1px solid #444; border-radius:4px; padding:4px 8px; font-size:13px; }
+  .sfx-field-wrap input[type=number]:focus { outline:none; border-color:#6688cc; }
+  .sfx-field-wrap input[disabled] { opacity:0.3; cursor:not-allowed; }
+  .sfx-help { font-size:10px; color:#666; margin-top:3px; line-height:1.3; }
+  #sfx-modal-status { min-height:1.2em; font-size:12px; margin-top:8px; color:#aaa; }
+  .sfx-modal-btns { margin-top:14px; display:flex; gap:8px; }
+  .sfx-modal-btns button { background:#333; color:#ccc; border:1px solid #555; padding:5px 14px;
+    border-radius:4px; cursor:pointer; font-size:12px; }
+  .sfx-modal-btns button:hover:not([disabled]) { background:#444; }
+  .sfx-modal-btns button[disabled] { opacity:0.45; cursor:not-allowed; }
+  #sfx-modal-save { background:#1a3a1a; border-color:#4caf50; color:#8fca8f; }
+  #sfx-modal-save:hover:not([disabled]) { background:#1e481e; }
+"""
+
+_MODAL_HTML = """\
+<div id="sfx-modal-overlay">
+  <div id="sfx-modal">
+    <h3 id="sfx-modal-title"></h3>
+    <div id="sfx-modal-fields"></div>
+    <div id="sfx-modal-status"></div>
+    <div class="sfx-modal-btns">
+      <button id="sfx-modal-save">Save</button>
+      <button id="sfx-modal-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+"""
+
+_MODAL_JS = """\
+// === Right-click Sound Profile Editor ===
+function _sfxField(id, label, min, max, step, val, pfx, defs, help, disabled) {
+  const catDef = defs[pfx + id];
+  const globDef = defs[id];
+  const ph = catDef != null ? 'category default: ' + catDef
+           : (globDef != null ? 'global default: ' + globDef : 'no default set');
+  const va = (val != null) ? ' value="' + val + '"' : '';
+  const da = disabled ? ' disabled' : '';
+  return '<div class="sfx-field-wrap"><label>' + label + '</label>' +
+    '<input type="number" id="sfxf-' + id + '" min="' + min + '" max="' + max +
+    '" step="' + step + '"' + va + ' placeholder="' + ph + '"' + da + '>' +
+    '<div class="sfx-help">' + help + '</div></div>';
+}
+
+let _sfxModalCtx = null;  // {key, layer, effect, defaults} of the open editor
+
+function _showSfxModal(key, layer, effect, defaults) {
+  _sfxModalCtx = {key: key, layer: layer, effect: effect, defaults: defaults};
+  const isAmb = layer === 'ambience';
+  const pfx = layer + '_';
+  document.getElementById('sfx-modal-title').textContent = key;
+  document.getElementById('sfx-modal-fields').innerHTML =
+    _sfxField('volume_percentage', 'Volume %', 0, 200, 1,
+      effect.volume_percentage ?? null, pfx, defaults,
+      'Per-cue override (0–200, 100 = unity). Clear to inherit ' + pfx + 'volume_percentage default.', false) +
+    _sfxField('ramp_in_seconds', 'Ramp In (s)', 0, 30, 0.1,
+      effect.ramp_in_seconds ?? null, pfx, defaults,
+      'Fade-in duration in seconds. Clear to inherit ' + pfx + 'ramp_in_seconds default.', false) +
+    _sfxField('ramp_out_seconds', 'Ramp Out (s)', 0, 30, 0.1,
+      effect.ramp_out_seconds ?? null, pfx, defaults,
+      'Fade-out duration in seconds. Clear to inherit ' + pfx + 'ramp_out_seconds default.', false) +
+    _sfxField('play_duration', 'Play Duration %', 0, 100, 1,
+      effect.play_duration ?? null, pfx, defaults,
+      'Percentage of clip to play (0–100). Not applicable to AMBIENCE.', isAmb);
+  const modal = document.getElementById('sfx-modal');
+  modal.dataset.effectKey = key;
+  modal.dataset.layer = layer;
+  const st = document.getElementById('sfx-modal-status');
+  st.textContent = '';
+  st.style.color = '#aaa';
+  document.getElementById('sfx-modal-save').disabled = false;
+  document.getElementById('sfx-modal-overlay').style.display = 'block';
+}
+
+document.addEventListener('dblclick', function(e) {
+  const span = e.target.closest('.span[data-effect-key]');
+  if (!span) return;
+  e.stopPropagation();
+  clearTimeout(clickTimer);  // cancel the deferred single-click preview
+  const key = span.dataset.effectKey;
+  const layer = span.dataset.layer;
+  fetch('/xil/get-sfx?slug=' + encodeURIComponent(XIL_SLUG) +
+        '&tag=' + encodeURIComponent(XIL_TAG) +
+        '&key=' + encodeURIComponent(key))
+    .then(function(r) { return r.json(); })
+    .then(function(d) { _showSfxModal(key, layer, d.effect || {}, d.defaults || {}); })
+    .catch(function(err) { console.error('sfx-modal:', err); });
+});
+
+document.getElementById('sfx-modal-cancel').addEventListener('click', function() {
+  document.getElementById('sfx-modal-overlay').style.display = 'none';
+});
+document.getElementById('sfx-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
+// Push a saved edit into the in-page span data so the next click-to-play
+// preview reflects it immediately, without waiting for a daw regen.
+function _applySfxEditToSpans(payload) {
+  if (!_sfxModalCtx) return;
+  const layer = _sfxModalCtx.layer, defaults = _sfxModalCtx.defaults;
+  function eff(field) {
+    const v = payload[field];
+    if (v != null) return v;
+    const cat = defaults[layer + '_' + field];
+    return cat != null ? cat : (defaults[field] != null ? defaults[field] : null);
+  }
+  const spans = (DATA.layers[layer] || []).filter(function(sp) { return sp.label === payload.key; });
+  const durS = _sfxModalCtx.effect && _sfxModalCtx.effect.duration_seconds;
+  spans.forEach(function(sp) {
+    sp.volume_pct = eff('volume_percentage');
+    sp.ramp_in_s = eff('ramp_in_seconds');
+    sp.ramp_out_s = eff('ramp_out_seconds');
+    if (layer !== 'ambience') {
+      sp.play_duration = payload.play_duration;
+      if (durS) {
+        const pd = payload.play_duration != null ? payload.play_duration : 100;
+        sp.end_s = sp.start_s + durS * pd / 100;
+      }
+    }
+  });
+}
+
+document.getElementById('sfx-modal-save').addEventListener('click', function() {
+  const modal = document.getElementById('sfx-modal');
+  function getVal(id) {
+    const el = document.getElementById('sfxf-' + id);
+    if (!el || el.disabled) return null;
+    const v = el.value.trim();
+    return v === '' ? null : parseFloat(v);
+  }
+  const payload = {
+    slug: XIL_SLUG, tag: XIL_TAG, key: modal.dataset.effectKey,
+    volume_percentage: getVal('volume_percentage'),
+    ramp_in_seconds: getVal('ramp_in_seconds'),
+    ramp_out_seconds: getVal('ramp_out_seconds'),
+    play_duration: getVal('play_duration'),
+  };
+  const st = document.getElementById('sfx-modal-status');
+  const btn = this;
+  st.style.color = '#aaa';
+  st.textContent = 'Saving…';
+  btn.disabled = true;
+  fetch('/xil/update-sfx', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.ok) {
+      _applySfxEditToSpans(payload);
+      st.style.color = '#4caf50';
+      st.textContent = d.message || 'Saved.';
+      setTimeout(function() {
+        document.getElementById('sfx-modal-overlay').style.display = 'none';
+        btn.disabled = false;
+      }, 1800);
+    } else {
+      st.style.color = '#ef5350';
+      st.textContent = 'Error: ' + (d.error || 'Save failed.');
+      btn.disabled = false;
+    }
+  })
+  .catch(function(err) {
+    st.style.color = '#ef5350';
+    st.textContent = 'Network error: ' + err.message;
+    btn.disabled = false;
+  });
+});
+"""
+
+_TRANSPORT_CSS = """\
+  #transport { display:flex; gap:14px; align-items:center; margin-bottom:10px;
+    background:#222238; padding:6px 12px; border-radius:4px; }
+  #transport-play { background:#333; color:#eee; border:1px solid #666; width:34px; height:26px;
+    border-radius:4px; cursor:pointer; font-size:13px; line-height:1; }
+  #transport-play:hover { background:#444; }
+  #transport-time { font-size:12px; color:#b0b0ff; font-variant-numeric:tabular-nums; min-width:110px; }
+  #transport-mutes { display:flex; gap:10px; }
+  .mute-caption { font-size:11px; color:#777; text-transform:uppercase; letter-spacing:0.05em; align-self:center; }
+  .mute-toggle { font-size:11px; color:#aaa; cursor:pointer; user-select:none; display:flex; align-items:center; gap:3px; }
+  .mute-toggle input { cursor:pointer; margin:0; }
+  .mute-toggle input:disabled { opacity:0.3; cursor:not-allowed; }
+  .mute-toggle:has(input:checked) { color:#ef5350; text-decoration:line-through; }
+  #transport-hint { display:none; font-size:12px; color:#777; font-style:italic; }
+  #playhead { display:none; position:absolute; top:0; bottom:0; width:2px;
+    background:#ff5252; z-index:50; pointer-events:none;
+    box-shadow:0 0 4px rgba(255,82,82,0.7); }
+  #ruler { cursor: pointer; }
+"""
+
+_TRANSPORT_HTML = """\
+<div id="transport">
+  <button id="transport-play" title="Play/pause full mix">&#9205;</button>
+  <span id="transport-time">0:00 / 0:00</span>
+  <span id="transport-mutes">
+    <span class="mute-caption">Mute:</span>
+    <label class="mute-toggle" title="Mute the Dialogue layer"><input type="checkbox" data-layer="dialogue">Dlg</label>
+    <label class="mute-toggle" title="Mute the SFX layer"><input type="checkbox" data-layer="sfx">SFX</label>
+    <label class="mute-toggle" title="Mute the Music layer"><input type="checkbox" data-layer="music">Mus</label>
+    <label class="mute-toggle" title="Mute the Ambience layer"><input type="checkbox" data-layer="ambience">Amb</label>
+    <label class="mute-toggle" title="Mute the Vintage Filter layer"><input type="checkbox" data-layer="vintage_filter">VF</label>
+  </span>
+  <span id="transport-hint">run xil daw to enable full-mix playback</span>
+</div>
+"""
+
+_TRANSPORT_JS = """\
+// === DAW-style transport: synced full-mix playback + playhead ===
+const MIX_ORDER = ['dialogue','sfx','music','ambience','vintage_filter'];
+let mixEls = null, mixMaster = null, mixPlaying = false;
+let phRaf = null, syncIv = null;
+
+function ensureMix() {
+  if (mixEls) return;
+  mixEls = {};
+  for (const k of MIX_ORDER) {
+    if (!LAYER_AUDIO[k]) continue;
+    const a = new Audio('/gradio_api/file=' + LAYER_AUDIO[k]);
+    a.preload = 'auto';
+    mixEls[k] = a;
+  }
+  mixMaster = mixEls['dialogue'] || mixEls[Object.keys(mixEls)[0]];
+  mixMaster.addEventListener('ended', pauseMix);
+}
+
+function playMix() {
+  ensureMix();
+  if (!mixMaster) return;
+  // Mutual exclusion: stop the single-stem preview
+  clearTimeout(clickTimer);
+  clearTimeout(stopTimer);
+  document.getElementById('audio-el').pause();
+  const t = mixMaster.currentTime;
+  for (const k in mixEls) {
+    if (mixEls[k] !== mixMaster) mixEls[k].currentTime = t;
+    mixEls[k].play();
+  }
+  mixPlaying = true;
+  document.getElementById('transport-play').innerHTML = '&#9208;';
+  document.getElementById('playhead').style.display = 'block';
+  phTick();
+  syncIv = setInterval(syncSlaves, 1000);
+}
+
+function pauseMix() {
+  if (!mixEls) return;
+  for (const k in mixEls) mixEls[k].pause();
+  mixPlaying = false;
+  document.getElementById('transport-play').innerHTML = '&#9205;';
+  cancelAnimationFrame(phRaf);
+  clearInterval(syncIv);
+}
+
+function syncSlaves() {
+  const t = mixMaster.currentTime;
+  for (const k in mixEls) {
+    const el = mixEls[k];
+    if (el !== mixMaster && Math.abs(el.currentTime - t) > 0.06) el.currentTime = t;
+  }
+}
+
+function phTick() {
+  if (!mixMaster) return;
+  const W = BASE_WIDTH * zoom;
+  const t = mixMaster.currentTime;
+  const phx = 90 + t / TOTAL * W;
+  document.getElementById('playhead').style.left = phx + 'px';
+  document.getElementById('transport-time').textContent = fmtTime(t) + ' / ' + fmtTime(TOTAL);
+  if (mixPlaying) {
+    // keep the playhead visible while zoomed in
+    const tc = document.getElementById('tc');
+    if (phx < tc.scrollLeft + 90 || phx > tc.scrollLeft + tc.clientWidth - 40) {
+      tc.scrollLeft = Math.max(phx - 120, 0);
+    }
+    phRaf = requestAnimationFrame(phTick);
+  }
+}
+
+function seekTo(t) {
+  ensureMix();
+  if (!mixMaster) return;
+  t = Math.max(0, Math.min(t, TOTAL));
+  for (const k in mixEls) mixEls[k].currentTime = t;
+  document.getElementById('playhead').style.display = 'block';
+  phTick();
+}
+
+document.getElementById('transport-play').addEventListener('click', function() {
+  if (mixPlaying) pauseMix(); else playMix();
+});
+
+document.getElementById('ruler').addEventListener('click', function(e) {
+  const rect = this.getBoundingClientRect();
+  const x = e.clientX - rect.left - 90;
+  if (x < 0) return;
+  seekTo(x / (BASE_WIDTH * zoom) * TOTAL);
+});
+
+document.querySelectorAll('.mute-toggle input').forEach(function(cb) {
+  if (!LAYER_AUDIO[cb.dataset.layer]) cb.disabled = true;
+  cb.addEventListener('change', function() {
+    ensureMix();
+    const el = mixEls[this.dataset.layer];
+    if (el) el.muted = this.checked;
+  });
+});
+
+if (!Object.keys(LAYER_AUDIO).length) {
+  document.getElementById('transport-play').style.display = 'none';
+  document.getElementById('transport-time').style.display = 'none';
+  document.getElementById('transport-mutes').style.display = 'none';
+  document.getElementById('transport-hint').style.display = 'inline';
+} else {
+  document.getElementById('transport-time').textContent = '0:00 / ' + fmtTime(TOTAL);
+}
+"""
+
 _HTML_TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="en">
@@ -302,7 +627,7 @@ _HTML_TEMPLATE = """\
   #xil-player.active {{ display: block; }}
   #player-label {{ font-size: 11px; color: #aaa; margin-bottom: 3px; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }}
-</style>
+{modal_css}{transport_css}</style>
 </head>
 <body>
 <div id="xil-player">
@@ -317,23 +642,31 @@ _HTML_TEMPLATE = """\
   <button onclick="zoomReset()">Reset</button>
   <span class="zoom-info" id="zoom-info">100%</span>
 </div>
+{transport_html}
 <div id="floattip"></div>
 <div class="timeline-container" id="tc">
   <div class="timeline-inner" id="ti">
     <div class="ruler" id="ruler"></div>
     <div id="layers"></div>
+    <div id="playhead"></div>
   </div>
 </div>
+{modal_html}
 <script>
 const DATA = {data_json};
 const CLIPS = {clips_json};
+const LAYER_AUDIO = {layer_audio_json};
+{slug_js}
 const TOTAL = DATA.total_duration_s;
 const COLORS = {{dialogue:'c-dialogue', sfx:'c-sfx', music:'c-music', ambience:'c-ambience', vintage_filter:'c-vintage-filter'}};
 const LABELS = {{dialogue:'Dialogue', sfx:'SFX', music:'Music', ambience:'Ambience', vintage_filter:'Vtg Filter'}};
+function escAttr(s) {{ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }}
+const EDITABLE_LAYERS = {{'sfx':true,'music':true,'ambience':true}};
 let zoom = 1;
 const BASE_WIDTH = Math.max(document.getElementById('tc').clientWidth - 100, 400);
 const tips = {{}};  // span index → tooltip HTML
 const tiToSeq = {{}};  // span index → seq number
+const tiToSpan = {{}};  // span index → span object (resolved audio params)
 
 function fmtTime(s) {{
   const m = Math.floor(s/60), sec = Math.floor(s%60);
@@ -375,8 +708,12 @@ function render() {{
       const seqPrefix = sp.seq != null ? '<span style="opacity:0.6">#'+String(sp.seq).padStart(3,'0')+'</span> ' : '';
       tips[ti] = seqPrefix+'<strong>'+sp.label.replace(/</g,'&lt;')+'</strong>'+snippetLine+'<br>'+fmtTime(sp.start_s)+' \u2192 '+fmtTime(sp.end_s)+' ('+dur+'s)'+tipExtra+modelLine;
       tiToSeq[ti] = sp.seq;
+      tiToSpan[ti] = sp;
       const seqAttr = (sp.seq != null) ? ' data-seq="'+sp.seq+'"' : '';
-      lhtml += '<div class="span '+COLORS[key]+'" style="left:'+left+'%;width:'+w+'%" data-ti="'+ti+'"'+seqAttr+'>'+rampBadges+'</div>';
+      const editable = EDITABLE_LAYERS[key];
+      const eAttr = editable ? ' data-effect-key="'+escAttr(sp.label)+'" data-layer="'+key+'"' : '';
+      if (editable) {{ tips[ti] += '<br><span style="opacity:0.4;font-size:0.85em">✎ double-click to edit sound profile</span>'; }}
+      lhtml += '<div class="span '+COLORS[key]+'" style="left:'+left+'%;width:'+w+'%" data-ti="'+ti+'"'+seqAttr+eAttr+'>'+rampBadges+'</div>';
       ti++;
     }}
     lhtml += '</div></div>';
@@ -424,12 +761,27 @@ document.getElementById('tc').addEventListener('wheel', function(e) {{
 
 render();
 
-document.getElementById('layers').addEventListener('click', function(e) {{
-  const el = e.target.closest('.span[data-seq]');
-  if (!el) return;
+{modal_js}
+
+// === Preview playback with sound profile ===
+// Web Audio gain graph: audio.volume caps at 1.0, so volumes >100% and
+// scheduled ramps require a GainNode.  A media element can only be
+// connected to a context once — create lazily on first play and reuse.
+let audioCtx = null, gainNode = null, stopTimer = null, clickTimer = null;
+function ensureAudioGraph() {{
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = audioCtx.createMediaElementSource(document.getElementById('audio-el'));
+  gainNode = audioCtx.createGain();
+  src.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+}}
+
+function playSpan(el) {{
   const seq = el.dataset.seq;
   const fp = CLIPS[seq];
   if (!fp) return;
+  if (mixPlaying) pauseMix();  // mutual exclusion with the full-mix transport
   document.querySelectorAll('.span.playing').forEach(function(s) {{ s.classList.remove('playing'); }});
   el.classList.add('playing');
   const audioEl = document.getElementById('audio-el');
@@ -438,8 +790,45 @@ document.getElementById('layers').addEventListener('click', function(e) {{
   document.getElementById('player-label').textContent = rawLabel;
   audioEl.src = '/gradio_api/file=' + fp;
   document.getElementById('xil-player').classList.add('active');
+
+  ensureAudioGraph();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  clearTimeout(stopTimer);
+  const sp = ti != null ? tiToSpan[ti] : null;
+  const g = gainNode.gain;
+  const t0 = audioCtx.currentTime;
+  g.cancelScheduledValues(t0);
+  const target = (sp && sp.volume_pct != null) ? sp.volume_pct / 100 : 1;
+  const ri = (sp && sp.ramp_in_s) || 0;
+  const ro = (sp && sp.ramp_out_s) || 0;
+  // end_s - start_s is already the play_duration-trimmed clip length
+  const playLen = sp ? Math.max(sp.end_s - sp.start_s, 0.1) : 0;
+  if (ri > 0) {{
+    g.setValueAtTime(0, t0);
+    g.linearRampToValueAtTime(target, t0 + ri);
+  }} else {{
+    g.setValueAtTime(target, t0);
+  }}
+  if (sp && ro > 0 && playLen > ro) {{
+    g.setValueAtTime(target, t0 + playLen - ro);
+    g.linearRampToValueAtTime(0, t0 + playLen);
+  }}
   audioEl.play();
+  if (sp) {{
+    stopTimer = setTimeout(function() {{ audioEl.pause(); }}, playLen * 1000);
+  }}
+}}
+
+document.getElementById('layers').addEventListener('click', function(e) {{
+  if (e.detail > 1) return;  // ignore clicks that are part of a double-click
+  const el = e.target.closest('.span[data-seq]');
+  if (!el) return;
+  // Defer 250ms so a double-click (edit) can cancel the preview.
+  clearTimeout(clickTimer);
+  clickTimer = setTimeout(function() {{ playSpan(el); }}, 250);
 }});
+
+{transport_js}
 </script>
 </body>
 </html>
@@ -450,6 +839,10 @@ def render_html_timeline(
     data: TimelineData,
     output_path: str,
     stems_dir: str | None = None,
+    *,
+    slug: str = "",
+    tag: str = "",
+    layers_dir: str | None = None,
 ) -> str:
     """Write a self-contained HTML timeline file.
 
@@ -459,6 +852,13 @@ def render_html_timeline(
         stems_dir: Directory of episode stem MP3 files. When provided, clicking
             a timeline block plays the corresponding stem via an embedded audio
             player (served by Gradio's ``/gradio_api/file=`` endpoint).
+        slug: Show slug — embedded as ``XIL_SLUG`` JS constant for the
+            right-click sound profile editor.
+        tag: Episode tag — embedded as ``XIL_TAG`` JS constant.
+        layers_dir: Directory of the DAW layer WAVs
+            (``{tag}_layer_{key}.wav``). Existing layer files are embedded as
+            ``LAYER_AUDIO`` (with an mtime cache-buster) to power the
+            full-mix transport; when absent the transport UI is hidden.
 
     Returns:
         The path written (same as *output_path*).
@@ -502,6 +902,16 @@ def render_html_timeline(
     }
 
     span_count = sum(len(spans) for spans in data.layers.values())
+    slug_js = f"const XIL_SLUG = {json.dumps(slug or data.tag)};\nconst XIL_TAG  = {json.dumps(tag or data.tag)};"
+
+    # Full-mix transport: embed existing DAW layer WAVs with an mtime
+    # cache-buster so a regenerated mix is never served from browser cache.
+    layer_audio: dict[str, str] = {}
+    if layers_dir and os.path.isdir(layers_dir):
+        for key in ("dialogue", "sfx", "music", "ambience", "vintage_filter"):
+            wav = os.path.join(layers_dir, f"{data.tag}_layer_{key}.wav")
+            if os.path.exists(wav):
+                layer_audio[key] = f"{os.path.abspath(wav)}?v={int(os.path.getmtime(wav))}"
 
     content = _HTML_TEMPLATE.format(
         tag=html.escape(data.tag),
@@ -510,6 +920,14 @@ def render_html_timeline(
         data_json=json.dumps(json_data),
         clips_json=clips_json,
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        slug_js=slug_js,
+        layer_audio_json=json.dumps(layer_audio),
+        modal_css=_MODAL_CSS,
+        modal_html=_MODAL_HTML,
+        modal_js=_MODAL_JS,
+        transport_css=_TRANSPORT_CSS,
+        transport_html=_TRANSPORT_HTML,
+        transport_js=_TRANSPORT_JS,
     )
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

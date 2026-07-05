@@ -35,6 +35,13 @@ logger = get_logger(__name__)
 
 SFX_DIR = str(get_workspace_root() / "SFX")
 
+
+def sfx_dir(slug: str) -> str:
+    """Return the per-show SFX directory, falling back to flat SFX/ if the slug subdir is absent."""
+    root = get_workspace_root()
+    per_show = root / "SFX" / slug
+    return str(per_show if per_show.is_dir() else root / "SFX")
+
 _BAR = "=" * 70
 
 
@@ -390,8 +397,13 @@ def ensure_shared_sfx(
     os.makedirs(sfx_dir, exist_ok=True)
 
     if effect.source is not None:
-        # Resolve to a real path to prevent path-traversal via sfx config.
-        src_real = os.path.realpath(effect.source)
+        # Resolve relative paths against workspace root (not CWD) to ensure
+        # source: "SFX/{slug}/file.mp3" in sfx configs works regardless of CWD.
+        from pathlib import Path as _Path
+        _src = _Path(effect.source)
+        if not _src.is_absolute():
+            _src = get_workspace_root() / _src
+        src_real = os.path.realpath(str(_src))
         if os.path.isfile(src_real):
             # Skip copy when source already IS the pool file (source path lives
             # in SFX/ and the slugified key maps to the same filename).
@@ -455,6 +467,7 @@ def load_sfx_entries(
     max_duration: float | None = None,
     direction_types: set[str] | None = None,
     local_only: bool = False,
+    sfx_dir: str | None = None,
 ) -> list[dict]:
     """Load direction entries matched against an SFX configuration.
 
@@ -479,6 +492,8 @@ def load_sfx_entries(
         A list of SFX entry dicts with ``seq``, ``text``, ``direction_type``,
         ``stem_name``, ``sfx_type``, ``section``, and ``scene``.
     """
+    if sfx_dir is None:
+        sfx_dir = SFX_DIR
     with open(script_json_path, encoding="utf-8") as f:
         script_data = json.load(f)
     with open(sfx_json_path, encoding="utf-8") as f:
@@ -500,7 +515,7 @@ def load_sfx_entries(
         if max_duration is not None and effect.duration_seconds > max_duration:
             continue
         if local_only and effect.type == "sfx" and effect.source is None:
-            if not file_nonempty(shared_sfx_path(SFX_DIR, entry["text"])):
+            if not file_nonempty(shared_sfx_path(sfx_dir, entry["text"])):
                 logger.debug("--local-only: skipping %r (not in SFX/)", entry["text"])
                 continue
 
@@ -530,7 +545,7 @@ def generate_sfx(
     sfx_entries: list[dict],
     sfx_config: dict,
     stems_dir: str,
-    sfx_dir: str = SFX_DIR,
+    sfx_dir: str | None = None,
     client=None,
     start_from: int = 1,
     backend: SfxBackend | None = None,
@@ -553,6 +568,8 @@ def generate_sfx(
         backend: SFX generation backend.  Defaults to an ElevenLabs backend
             wrapping *client*.
     """
+    if sfx_dir is None:
+        sfx_dir = SFX_DIR
     if backend is None:
         backend = ElevenLabsSfxBackend(client)
     os.makedirs(stems_dir, exist_ok=True)
@@ -646,7 +663,7 @@ def dry_run_sfx(
     sfx_entries: list[dict],
     sfx_config: dict,
     stems_dir: str,
-    sfx_dir: str = SFX_DIR,
+    sfx_dir: str | None = None,
     backend_name: str = "elevenlabs",
 ) -> None:
     """Preview SFX generation showing status and credit estimates.
@@ -665,6 +682,8 @@ def dry_run_sfx(
             assets are matched against the backend-tagged filename, and local
             backends report generation as free instead of an API credit estimate.
     """
+    if sfx_dir is None:
+        sfx_dir = SFX_DIR
     sfx_cfg = SfxConfiguration(**sfx_config)
     is_local = backend_name != "elevenlabs"
 

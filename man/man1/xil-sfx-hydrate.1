@@ -1,0 +1,58 @@
+.TH XIL\-SFX\-HYDRATE "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.SH NAME
+xil\-sfx\-hydrate \- write pipe\-hint source paths from a parsed JSON into the matching SFX config
+.SH SYNOPSIS
+.B xil\-sfx\-hydrate
+[\-h] (\-\-episode TAG | \-\-tag TAG) [\-\-show SHOW] [\-\-parsed FILE]
+[\-\-sfx FILE] [\-\-dry\-run]
+.SH DESCRIPTION
+Reads the
+.B sfx_source
+fields embedded in a parsed JSON and copies those source paths into the
+matching
+.B sfx_<TAG>.json
+effects configuration.  This is useful after re\-parsing a script that
+contains pipe\-hint annotations (e.g.
+.BR "[SFX: STATIC | sfx_static.mp3]" )
+when you want the SFX config to reflect the hints without regenerating the
+full config from scratch.
+.PP
+Existing effects that already have a
+.B source
+field are left unchanged unless the parsed JSON carries a different hint.
+With
+.B \-\-dry\-run
+the changes are reported but not written.
+.SH OPTIONS
+.TP
+\fB\-\-episode\fR \fI\,TAG\/\fR
+Episode tag (e.g. S04E04).  Mutually exclusive with \fB\-\-tag\fR.
+.TP
+\fB\-\-tag\fR \fI\,TAG\/\fR
+Raw non\-episodic content tag (e.g. V01C03).  Mutually exclusive with \fB\-\-episode\fR.
+.TP
+\fB\-\-show\fR \fI\,SHOW\/\fR
+Show name override (default: from project.json)
+.TP
+\fB\-\-parsed\fR \fI\,FILE\/\fR
+Override the parsed JSON path (default: derived from episode/tag)
+.TP
+\fB\-\-sfx\fR \fI\,FILE\/\fR
+Override the SFX config path (default: derived from episode/tag)
+.TP
+\fB\-\-dry\-run\fR
+Report source fields that would be written without modifying the SFX config
+.SH EXAMPLES
+.TP
+Hydrate the SFX config from a freshly parsed script:
+.B xil sfx\-hydrate \-\-episode S01E02
+.TP
+Preview changes without writing:
+.B xil sfx\-hydrate \-\-episode S01E02 \-\-dry\-run
+.SH SEE ALSO
+.BR xil (1),
+.BR xil\-parse (1),
+.BR xil\-sfx (1),
+.BR xil\-produce (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

@@ -31,8 +31,11 @@ import re
 import shlex
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+
+from fastapi import Request as _FastAPIRequest
 
 from xil_pipeline.models import get_workspace_root
 from xil_pipeline.sfx_common import read_sfx_grade as _read_sfx_grade
@@ -168,8 +171,12 @@ def _episode_choices() -> list[str]:
 
 
 def _script_choices() -> list[str]:
-    """Return relative paths to all scripts/*.md files, sorted."""
-    return sorted(glob.glob(os.path.join(str(get_workspace_root()), "scripts", "*.md")))
+    """Return relative paths to all scripts .md files, hierarchical then flat fallback."""
+    root = get_workspace_root()
+    per_show = sorted(root.glob("scripts/*/*.md"))
+    if per_show:
+        return [str(p.relative_to(root)) for p in per_show]
+    return sorted(glob.glob(os.path.join(str(root), "scripts", "*.md")))
 
 
 def _default_chatterbox_python() -> str:
@@ -267,7 +274,7 @@ def _analyze_script_header(
 
 
 def _save_script_file(text: str, filename: str) -> str:
-    """Write script to {workspace_root}/scripts/{filename}. Refuses to overwrite."""
+    """Write script to {workspace_root}/scripts/{slug}/{filename}. Refuses to overwrite."""
     if not text.strip():
         return "⚠️ No script content to save."
     filename = filename.strip()
@@ -276,16 +283,27 @@ def _save_script_file(text: str, filename: str) -> str:
     if not filename.endswith(".md"):
         filename += ".md"
 
-    scripts_dir = get_workspace_root() / "scripts"
+    root = get_workspace_root()
+    # Derive slug from filename pattern: S##E##_{slug}_...md or {slug}_...md
+    import re as _re
+    _slug_match = _re.match(r"^(?:[A-Z]\d+[A-Z]\d+_)?([a-z0-9]+)_", filename)
+    _slug = _slug_match.group(1) if _slug_match else ""
+    if _slug and (root / "scripts" / _slug).is_dir():
+        scripts_dir = root / "scripts" / _slug
+        rel = f"scripts/{_slug}/{filename}"
+    else:
+        scripts_dir = root / "scripts"
+        rel = f"scripts/{filename}"
+
     scripts_dir.mkdir(parents=True, exist_ok=True)
     dest = scripts_dir / filename
 
     if dest.exists():
-        return f"⚠️ Already exists: scripts/{filename} — edit the filename above to save a new version."
+        return f"⚠️ Already exists: {rel} — edit the filename above to save a new version."
 
     dest.write_text(text, encoding="utf-8")
-    _log_activity(f"SAVE script → scripts/{filename}")
-    return f"✅ Saved: scripts/{filename}"
+    _log_activity(f"SAVE script → {rel}")
+    return f"✅ Saved: {rel}"
 
 
 def _parse_choice(choice: str) -> tuple[str, str]:
@@ -315,7 +333,9 @@ def _stage_status(slug: str, tag: str) -> dict[str, str]:
     )
 
     glyph = {_OK: "✓", _STALE: "⚠", _MISSING: "○"}
-    stages = {s.name: s for s in evaluate_episode(slug, tag, Path(_DEFAULT_GDOC_DIR))}
+    stages = {s.name: s for s in evaluate_episode(
+        slug, tag, Path(_DEFAULT_GDOC_DIR), include_source=False
+    )}
 
     def g(name: str) -> str:
         s = stages.get(name)
@@ -350,17 +370,22 @@ def _stage_status(slug: str, tag: str) -> dict[str, str]:
 
 def _refresh_episodes() -> list[list[str]]:
     """Build the Episodes tab table rows from current workspace state."""
-    rows = []
-    for slug, tag in _find_episodes():
+    episodes = list(_find_episodes())
+    if not episodes:
+        return []
+
+    def _eval_one(slug_tag: tuple[str, str]) -> list[str]:
+        slug, tag = slug_tag
         st = _stage_status(slug, tag)
         title, season_title = _ep_meta(slug, tag)
         desc = title
         if season_title:
             desc = f"[{season_title}]  —  {title}" if title else f"[{season_title}]"
-        rows.append([
-            tag, slug, desc,
-            st["parse"], st["produce"], st["daw"], st["master"], st["overall"],
-        ])
+        return [tag, slug, desc, st["parse"], st["produce"], st["daw"], st["master"], st["overall"]]
+
+    workers = min(8, len(episodes))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        rows = list(ex.map(_eval_one, episodes))
     return rows
 
 
@@ -453,9 +478,14 @@ _GRADE_GLYPH = {"accurate": "✓", "rejected": "✗", "": "•"}
 _sfx_grade_cache: dict[str, str] = {}
 
 
-def _sfx_dir() -> str:
-    """Absolute path to the shared SFX library directory."""
-    return os.path.join(str(get_workspace_root()), "SFX")
+def _sfx_dir(slug: str = "") -> str:
+    """Absolute path to the SFX library directory, scoped to slug when the subdir exists."""
+    root = get_workspace_root()
+    if slug:
+        per_show = root / "SFX" / slug
+        if per_show.is_dir():
+            return str(per_show)
+    return str(root / "SFX")
 
 
 def _scan_sfx_grades() -> dict[str, str]:
@@ -529,6 +559,21 @@ def _check_workspace_path(path: str) -> None:
         Path(path).resolve().relative_to(workspace)
     except ValueError as exc:
         raise ValueError(f"Path is outside the workspace root: {path!r}") from exc
+
+
+def _timeline_iframe_html(html_path: str) -> str:
+    """Build the iframe embed for a timeline HTML file.
+
+    The file mtime is appended as a ``?v=`` query param so a regenerated
+    timeline always gets a fresh URL — without it, the browser serves its
+    cached copy of the old file because the path alone never changes.
+    """
+    abs_path = os.path.abspath(html_path)
+    v = int(os.path.getmtime(html_path))
+    return (
+        f'<iframe src="/gradio_api/file={abs_path}?v={v}" '
+        f'style="width:100%;height:600px;border:none;"></iframe>'
+    )
 
 
 def _run_stage(episode_choice: str, stage: str, dry_run: bool, extra_flags: str):
@@ -639,7 +684,11 @@ def _cmd_parse(slug: str, tag: str, script_path: str | None, preview: int | None
         cmd = [sys.executable, "-m", module, str(script_path).strip(), "--episode", tag]
     else:
         import glob as _glob
-        candidates = sorted(_glob.glob(os.path.join(str(get_workspace_root()), "scripts", "*.md")))
+        root = get_workspace_root()
+        # Prefer per-show subdir when the slug subdir exists
+        candidates = sorted(_glob.glob(os.path.join(str(root), "scripts", slug, "*.md"))) if slug else []
+        if not candidates:
+            candidates = sorted(_glob.glob(os.path.join(str(root), "scripts", "*.md")))
         if not candidates:
             raise ValueError("No script path given and no .md files found in scripts/")
         script = candidates[0]
@@ -820,11 +869,7 @@ def _build_app():
                 f"Generate it first:<br>"
                 f"<code>xil daw --episode {tag} --timeline-html</code></p>"
             )
-        abs_path = os.path.abspath(html_path)
-        return (
-            f'<iframe src="/gradio_api/file={abs_path}" '
-            f'style="width:100%;height:600px;border:none;"></iframe>'
-        )
+        return _timeline_iframe_html(html_path)
 
     def refresh_all():
         new_choices = _episode_choices()
@@ -1885,6 +1930,83 @@ def get_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_SLUG_TAG_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _is_safe_slug_or_tag(value: str) -> bool:
+    """True iff *value* is a bare filesystem-safe path component.
+
+    Show slugs (:func:`models.show_slug`) and episode tags are always
+    alphanumeric-with-separators — never a path separator, ``..``, or a
+    null byte. The ``/xil/get-sfx`` and ``/xil/update-sfx`` routes take
+    slug/tag straight from the HTTP request and feed them into
+    :func:`derive_paths`, so this allowlist must run *before* any path is
+    built — containment checks after the fact (:func:`_check_workspace_path`)
+    are defence-in-depth, not the primary control.
+    """
+    return bool(value) and bool(_SLUG_TAG_RE.match(value))
+
+
+def _register_sfx_routes(app) -> None:
+    """Register the timeline editor's /xil/* routes on a FastAPI *app*.
+
+    Must be called with the app Gradio creates during ``launch()`` —
+    ``launch()`` replaces ``demo.app`` with a new instance, so routes added
+    to the pre-launch object are silently discarded.
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
+
+    @app.get("/xil/get-sfx")
+    async def _api_get_sfx(slug: str, tag: str, key: str):
+        if not (_is_safe_slug_or_tag(slug) and _is_safe_slug_or_tag(tag)):
+            return _JSONResponse({"error": "invalid slug or tag"}, status_code=400)
+        # Already validated above (no separators possible) — basename() is a
+        # no-op here, kept only because static analysis specifically
+        # recognizes it as neutralizing path-injection taint.
+        slug, tag = os.path.basename(slug), os.path.basename(tag)
+        from xil_pipeline.models import derive_paths as _dp
+        sfx_path = _dp(slug, tag)["sfx"]
+        _check_workspace_path(sfx_path)
+        if not os.path.exists(sfx_path):
+            return _JSONResponse({"error": "sfx config not found"}, status_code=404)
+        with open(sfx_path, encoding="utf-8") as f:
+            data = json.load(f)
+        return _JSONResponse({
+            "effect": data.get("effects", {}).get(key, {}),
+            "defaults": data.get("defaults", {}),
+        })
+
+    @app.post("/xil/update-sfx")
+    async def _api_update_sfx(request: _FastAPIRequest):
+        body = await request.json()
+        slug_b, tag_b, key_b = body["slug"], body["tag"], body["key"]
+        if not (_is_safe_slug_or_tag(slug_b) and _is_safe_slug_or_tag(tag_b)):
+            return _JSONResponse({"ok": False, "error": "invalid slug or tag"}, status_code=400)
+        # Already validated above (no separators possible) — basename() is a
+        # no-op here, kept only because static analysis specifically
+        # recognizes it as neutralizing path-injection taint.
+        slug_b, tag_b = os.path.basename(slug_b), os.path.basename(tag_b)
+        from xil_pipeline.models import derive_paths as _dp
+        sfx_path = _dp(slug_b, tag_b)["sfx"]
+        _check_workspace_path(sfx_path)
+        if not os.path.exists(sfx_path):
+            return _JSONResponse({"ok": False, "error": "sfx config not found"}, status_code=404)
+        with open(sfx_path, encoding="utf-8") as f:
+            data = json.load(f)
+        effect = data.setdefault("effects", {}).setdefault(key_b, {})
+        for field in ("volume_percentage", "ramp_in_seconds", "ramp_out_seconds", "play_duration"):
+            val = body.get(field)
+            if val is None:
+                effect.pop(field, None)
+            else:
+                effect[field] = val
+        with open(sfx_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        _log_activity(f"SFX edit via timeline: {slug_b}/{tag_b} → {key_b!r}")
+        return _JSONResponse({"ok": True, "message": f"Saved {key_b!r} — re-run xil daw to apply."})
+
+
 def main() -> None:
     """CLI entry point for the Gradio web dashboard."""
     global _activity_log
@@ -1898,7 +2020,12 @@ def main() -> None:
             server_port=args.port,
             share=args.share,
             allowed_paths=[str(get_workspace_root())],
+            prevent_thread_lock=True,
         )
+        # launch() replaced demo.app with the FastAPI app that actually
+        # serves requests — only now can the /xil/* routes be attached.
+        _register_sfx_routes(demo.app)
+        demo.block_thread()
     finally:
         if _activity_log:
             _activity_log.close()

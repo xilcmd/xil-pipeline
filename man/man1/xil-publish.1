@@ -1,0 +1,59 @@
+.TH XIL\-PUBLISH "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.SH NAME
+xil\-publish \- generate social media post drafts from parsed episode data
+.SH SYNOPSIS
+.B xil\-publish
+[\-h] (\-\-episode TAG | \-\-tag TAG | \-\-all) [\-\-show SHOW]
+[\-\-platform PLATFORM] [\-\-model MODEL] [\-\-dry\-run]
+.SH DESCRIPTION
+Reads a parsed episode JSON and uses the Claude API to draft social media posts
+suitable for Facebook or Instagram.  Posts are written to the
+\fBposts/\fR\fI<slug>\fR\fB/\fR directory as markdown files and printed to the log.
+.PP
+Requires the
+.B ANTHROPIC_API_KEY
+environment variable.
+.SH OPTIONS
+.TP
+\fB\-\-episode\fR \fI\,TAG\/\fR
+Episode tag (e.g. S04E01).  Mutually exclusive with \fB\-\-tag\fR and \fB\-\-all\fR.
+.TP
+\fB\-\-tag\fR \fI\,TAG\/\fR
+Raw content tag for non\-episodic formats (e.g. V01C03).  Mutually exclusive
+with \fB\-\-episode\fR and \fB\-\-all\fR.
+.TP
+\fB\-\-all\fR
+Generate posts for every parsed episode under the current show slug.
+.TP
+\fB\-\-show\fR \fI\,SHOW\/\fR
+Show name override (default: from project.json)
+.TP
+\fB\-\-platform\fR \fI\,PLATFORM\/\fR
+Target platform \(em affects post length and style guidance.
+Choices: \fBfacebook\fR, \fBinstagram\fR (default: facebook)
+.TP
+\fB\-\-model\fR \fI\,MODEL\/\fR
+Claude model ID to use for generation (default: claude\-haiku\-4\-5\-20251001)
+.TP
+\fB\-\-dry\-run\fR
+Print the prompt and token estimate without making an API call or writing files
+.SH EXAMPLES
+.TP
+Draft a Facebook post for episode S01E01:
+.B xil publish \-\-episode S01E01
+.TP
+Draft Instagram posts for all episodes:
+.B xil publish \-\-all \-\-platform instagram
+.TP
+Preview prompt without calling the API:
+.B xil publish \-\-episode S01E01 \-\-dry\-run
+.SH ENVIRONMENT
+.TP
+.B ANTHROPIC_API_KEY
+Required for Claude API access (unless \fB\-\-dry\-run\fR is used).
+.SH SEE ALSO
+.BR xil (1),
+.BR xil\-parse (1),
+.BR xil\-regen (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

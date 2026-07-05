@@ -1,4 +1,4 @@
-.TH XIL "1" "April 2026" "xil\-pipeline 0.1.3" "User Commands"
+.TH XIL "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
 .SH NAME
 xil \- unified dispatcher for xil\-pipeline podcast production commands
 .SH SYNOPSIS
@@ -77,10 +77,20 @@ Script regeneration \(em reconstruct a production script markdown from a
 parsed JSON.  See
 .BR xil\-regen (1).
 .TP
+.B studio\-onboard
+ElevenLabs Studio project creation \(em upload voice stems into a Studio
+project for human editing.  See
+.BR xil\-studio\-onboard (1).
+.TP
 .B master
 Final master MP3 export \(em overlay the four DAW layer WAVs into a single
 podcast\-ready MP3.  See
 .BR xil\-master (1).
+.TP
+.B publish
+Social media post generation \(em draft Facebook/Instagram posts from a
+parsed episode using the Claude API.  See
+.BR xil\-publish (1).
 .SH UTILITIES
 Run these as needed at any stage:
 .TP
@@ -118,6 +128,69 @@ renumbering.  Advanced use.  See
 Recursive MP3 SHA\-256 hash log \(em hash MP3 files for integrity auditing.
 See
 .BR xil\-mp3\-hash (1).
+.TP
+.B stem\-log
+Stem generation log \(em produce a CSV from produce-run log files, showing
+each stem that was generated and its TTS parameters.  See
+.BR xil\-stem\-log (1).
+.TP
+.B stem\-verify
+Stem audio verification \(em scan a stems folder and produce a JSON report
+with file attributes and optional Whisper transcriptions.  See
+.BR xil\-stem\-verify (1).
+.TP
+.B db\-profile
+MP3 loudness profiler \(em report peak, average, and minimum dBFS for MP3
+files; useful for normalising levels before assembly.  See
+.BR xil\-db\-profile (1).
+.TP
+.B sfx\-csv
+SFX config flattener \(em export all effects from an sfx_<TAG>.json config
+to a single CSV for spreadsheet review.  See
+.BR xil\-sfx\-csv (1).
+.TP
+.B parsed\-csv
+Parsed JSON exporter \(em convert a parsed_<TAG>.json script to CSV, one
+row per entry.  See
+.BR xil\-parsed\-csv (1).
+.TP
+.B sfx\-hydrate
+SFX source backfill \(em write pipe\-hint source paths from a parsed JSON
+back into the matching sfx config.  See
+.BR xil\-sfx\-hydrate (1).
+.TP
+.B episode\-summary
+Episode summary CSV \(em write a one\-row\-per\-episode summary from all
+parsed JSON files under the current show.  See
+.BR xil\-episode\-summary (1).
+.TP
+.B migrate\-workspace
+Workspace layout migration \(em upgrade a pre\-0.1.8 single\-show workspace
+to the current multi\-show layout.  See
+.BR xil\-migrate\-workspace (1).
+.TP
+.B remove\-show
+Show removal \(em delete all workspace artifacts for a named show.  See
+.BR xil\-remove\-show (1).
+.TP
+.B remove\-episode
+Episode removal \(em delete all workspace artifacts for a single episode.
+See
+.BR xil\-remove\-episode (1).
+.TP
+.B status
+Pipeline status check \(em make\-style staleness report showing which stages
+are current and which need re\-running.  See
+.BR xil\-status (1).
+.TP
+.B use
+Active show context \(em list all shows in the workspace and optionally
+switch the active show used by subsequent commands.
+.TP
+.B gui
+Web dashboard \(em launch the Gradio browser UI for episode management,
+audio preview, and stage execution.  See
+.BR xil\-gui (1).
 .SH OPTIONS
 .TP
 .BR \-h ", " \-\-help
@@ -173,6 +246,20 @@ API key for ElevenLabs TTS and sound\-effect generation.  Required by
 .BR xil\-sample (1),
 .BR xil\-sfx\-lib (1),
 .BR xil\-splice (1),
-.BR xil\-mp3\-hash (1)
+.BR xil\-mp3\-hash (1),
+.BR xil\-stem\-log (1),
+.BR xil\-stem\-verify (1),
+.BR xil\-db\-profile (1),
+.BR xil\-sfx\-csv (1),
+.BR xil\-parsed\-csv (1),
+.BR xil\-sfx\-hydrate (1),
+.BR xil\-episode\-summary (1),
+.BR xil\-migrate\-workspace (1),
+.BR xil\-remove\-show (1),
+.BR xil\-remove\-episode (1),
+.BR xil\-status (1),
+.BR xil\-studio\-onboard (1),
+.BR xil\-gui (1),
+.BR xil\-publish (1)
 .SH AUTHOR
 John Brissette <xilcmd@gmail.com>

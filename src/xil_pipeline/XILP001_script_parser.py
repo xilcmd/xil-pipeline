@@ -565,7 +565,7 @@ def is_stage_direction(line: str) -> bool:
     return line.startswith("[") and "]" in line
 
 
-def _parse_direction_hint(raw: str) -> tuple[str, str | None]:
+def _parse_direction_hint(raw: str, slug: str = "") -> tuple[str, str | None]:
     """Strip a scriptwriter SFX-source hint from a direction text.
 
     Scriptwriters may annotate directions with a filename hint separated
@@ -573,14 +573,16 @@ def _parse_direction_hint(raw: str) -> tuple[str, str | None]:
 
         SFX: RADIO STATIC — BRIEF TUNING | sfx_radio-static-tuning-transition.mp3
 
-    Returns the clean direction text and the SFX source path (``"SFX/<filename>"``),
-    or ``None`` if no hint is present.
+    Returns the clean direction text and the SFX source path (``"SFX/{slug}/<filename>"``
+    when *slug* is provided, ``"SFX/<filename>"`` otherwise), or ``None`` if no hint
+    is present.
     """
     if " | " in raw:
         clean, hint = raw.split(" | ", 1)
         hint = hint.strip()
         if hint.endswith(".mp3") or hint.endswith(".wav"):
-            return clean.strip(), f"SFX/{hint}"
+            prefix = f"SFX/{slug}" if slug else "SFX"
+            return clean.strip(), f"{prefix}/{hint}"
     return raw.strip(), None
 
 
@@ -595,6 +597,24 @@ def is_section_header(line: str, section_map: dict[str, str] | None = None) -> b
         ``True`` if the line matches a key in the section map.
     """
     return line.strip() in (section_map if section_map is not None else SECTION_MAP)
+
+
+def _match_section(line: str, section_map: dict[str, str]) -> str | None:
+    """Return the section slug if *line* is a section header, else ``None``.
+
+    Handles both plain headers (``"ACT ONE"``) and subtitle-qualified headers
+    (``'ACT ONE: "Yesterday"'``) by stripping everything after the first colon
+    when the full line is not itself a key.  This lets scriptwriters annotate
+    acts with episode-specific titles without confusing the parser.
+    """
+    stripped = line.strip()
+    if stripped in section_map:
+        return section_map[stripped]
+    if ":" in stripped:
+        base = stripped.split(":", 1)[0].strip()
+        if base in section_map:
+            return section_map[base]
+    return None
 
 
 def is_scene_header(line: str) -> bool:
@@ -831,6 +851,9 @@ def parse_script(
     else:
         show, season, episode, title, season_title = "Unknown Show", None, 1, "", None
 
+    # Slug is needed to build per-show SFX source paths for pipe-hints
+    _script_slug = show_slug(show)
+
     # Apply project.json fallbacks when the script header omits Season/Arc declarations
     season = resolve_season(season)
     season_title = resolve_season_title(season_title)
@@ -874,7 +897,7 @@ def parse_script(
             if is_stage_direction(line):
                 brackets = re.findall(r"\[([^\]]+)\]", line)
                 for bracket_text in brackets:
-                    clean_text, sfx_source = _parse_direction_hint(bracket_text.strip())
+                    clean_text, sfx_source = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
                     direction_type = classify_direction(clean_text)
                     if direction_type is None:
                         logger.debug(f"  Skipping unrecognized direction: [{clean_text}]")
@@ -927,9 +950,11 @@ def parse_script(
         if line.startswith("END OF EPISODE") or line.startswith("END OF PRODUCTION"):
             break
 
-        # Section headers
-        if is_section_header(line, active_section_map):
-            current_section = active_section_map[line.strip()]
+        # Section headers — also matches subtitle-qualified forms like
+        # 'ACT ONE: "Yesterday"' where "ACT ONE" is the section key.
+        _section_slug = _match_section(line, active_section_map)
+        if _section_slug is not None:
+            current_section = _section_slug
             current_scene = None
             seq += 1
             entries.append({
@@ -971,7 +996,7 @@ def parse_script(
             # Extract embedded bracketed directions (e.g. [AMBIENCE: ...])
             brackets = re.findall(r"\[([^\]]+)\]", line)
             for bracket_text in brackets:
-                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip())
+                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
                 direction_type = classify_direction(clean_text)
                 if direction_type is None:
                     # Acting note in square brackets (e.g. [drawn out]) — not a technical cue
@@ -1002,7 +1027,7 @@ def parse_script(
             # Extract all bracketed sections
             brackets = re.findall(r"\[([^\]]+)\]", line)
             for bracket_text in brackets:
-                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip())
+                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
                 direction_type = classify_direction(clean_text)
                 if direction_type is None:
                     # Acting note in square brackets (e.g. [drawn out]) — not a technical cue

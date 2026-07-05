@@ -1,0 +1,74 @@
+.TH XIL\-STEM\-VERIFY "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.SH NAME
+xil\-stem\-verify \- scan a stems folder and produce a JSON report with file attributes and optional Whisper transcriptions
+.SH SYNOPSIS
+.B xil\-stem\-verify
+[\-h] [\-\-show SLUG] [\-\-episode TAG] [\-\-stems\-dir DIR] [\-\-output FILE]
+[\-\-whisper\-python PATH] [\-\-model SIZE] [\-\-language LANG]
+[\-\-beam\-size N] [\-\-device {cuda,cpu}] [\-\-no\-transcribe]
+.SH DESCRIPTION
+Scans every MP3 in a stems directory and writes a JSON report containing file
+size, duration, bitrate, and (optionally) a Whisper transcript of each stem.
+Useful for auditing TTS quality, catching silent files, or generating ground
+truth transcriptions for comparison.
+.PP
+Transcription requires a separate
+.B venv\-whisper
+virtual environment containing
+.B faster\-whisper
+(or compatible).  Pass
+.B \-\-no\-transcribe
+to skip Whisper and report file attributes only.
+.SH OPTIONS
+.TP
+\fB\-\-show\fR \fI\,SLUG\/\fR, \fB\-s\fR \fI\,SLUG\/\fR
+Show slug (default: resolved from project.json or XIL_PROJECTROOT)
+.TP
+\fB\-\-episode\fR \fI\,TAG\/\fR, \fB\-e\fR \fI\,TAG\/\fR
+Episode tag, e.g. S01E01 (required unless \fB\-\-stems\-dir\fR is set)
+.TP
+\fB\-\-stems\-dir\fR \fI\,DIR\/\fR
+Override stems directory (default: \fI<workspace>\fR/stems/\fI<slug>\fR/\fI<episode>\fR/)
+.TP
+\fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
+Output JSON path (default: \fI<workspace>\fR/parsed/\fI<slug>\fR/stem_verify_\fI<episode>\fR.json)
+.TP
+\fB\-\-whisper\-python\fR \fI\,PATH\/\fR
+Path to the venv\-whisper Python executable (auto\-detected if omitted)
+.TP
+\fB\-\-model\fR \fI\,SIZE\/\fR
+Whisper model size: tiny|base|small|medium|large\-v3|large\-v3\-turbo
+(default: large\-v3\-turbo)
+.TP
+\fB\-\-language\fR \fI\,LANG\/\fR
+Language hint for Whisper.  Use
+.B auto
+for automatic detection (default: en)
+.TP
+\fB\-\-beam\-size\fR \fI\,N\/\fR
+Whisper beam size (default: 5)
+.TP
+\fB\-\-device\fR {cuda,cpu}
+Compute device for Whisper (default: cuda)
+.TP
+\fB\-\-no\-transcribe\fR
+Skip Whisper transcription; output file attributes only (no GPU required)
+.SH EXAMPLES
+.TP
+Verify and transcribe all stems for episode S01E01:
+.B xil stem\-verify \-\-episode S01E01
+.TP
+File attributes only (no Whisper):
+.B xil stem\-verify \-\-episode S01E01 \-\-no\-transcribe
+.TP
+Use a smaller model for faster transcription:
+.B xil stem\-verify \-\-episode S01E01 \-\-model small
+.TP
+Run on CPU if no GPU is available:
+.B xil stem\-verify \-\-episode S01E01 \-\-device cpu \-\-model base
+.SH SEE ALSO
+.BR xil (1),
+.BR xil\-produce (1),
+.BR xil\-stem\-log (1)
+.SH AUTHOR
+John Brissette <xilcmd@gmail.com>

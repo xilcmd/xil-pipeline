@@ -138,10 +138,10 @@ class TestSetupCreateShow:
         assert active == "pilotwave"
 
     def test_create_show_creates_sample_script(self, gui_client):
-        """scaffold() writes a sample script to scripts/."""
+        """scaffold() writes a sample script to scripts/{slug}/."""
         workspace, client = gui_client
         _call_create_show(client, "Echo Bay")
-        scripts = list((workspace / "scripts").glob("sample_*.md"))
+        scripts = list((workspace / "scripts").rglob("sample_*.md"))
         assert scripts, "No sample script found in scripts/"
 
     def test_create_show_empty_name_is_rejected(self, gui_client):

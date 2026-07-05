@@ -374,6 +374,10 @@ class TestRejectedSfx:
             monkeypatch,
             ["xil-status", _TAG, "--show", _SLUG, "--json", "--gdoc-dir", str(_no_gdoc_dir(ws))],
         )
-        assert code == 0
+        # Writing sfx_{tag}.json here (after _build_fresh's synthetic daw
+        # mtime) makes daw legitimately stale — the sfx config is a daw
+        # input, so xil-status correctly reports overall STALE (exit 1).
+        # rejected_sfx is still surfaced regardless of staleness.
+        assert code == 1
         payload = json.loads(capsys.readouterr().out)
         assert payload["rejected_sfx"] == ["SFX: DOOR"]

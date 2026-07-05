@@ -500,3 +500,155 @@ class TestSfxChoicesAndScan:
         assert cache[str(sfx / "one.mp3")] == "accurate"
         assert cache[str(sfx / "two.mp3")] == ""
         assert len(cache) == 2
+
+
+# ── _timeline_iframe_html ─────────────────────────────────────────────────────
+
+class TestTimelineIframeHtml:
+    def test_iframe_url_is_cache_busted(self, tmp_path):
+        """The iframe src must carry the file mtime so a regenerated timeline
+        can never be served from the browser cache (stale-cache bug, 2026-07-05)."""
+        from xil_pipeline.xil_gui import _timeline_iframe_html
+
+        f = tmp_path / "S01E01_timeline.html"
+        f.write_text("<html></html>")
+        html = _timeline_iframe_html(str(f))
+        v = int(os.path.getmtime(f))
+        assert f"?v={v}" in html
+        assert f"/gradio_api/file={os.path.abspath(f)}" in html
+        assert "<iframe" in html
+
+
+# ── SFX editor FastAPI routes ─────────────────────────────────────────────────
+
+class TestSfxRoutes:
+    """The timeline editor's /xil/get-sfx and /xil/update-sfx routes.
+
+    Registered via _register_sfx_routes(app) — a module-level function so it
+    can target the FastAPI app Gradio creates during launch() (launch REPLACES
+    demo.app, so routes added before launch are silently discarded — the
+    2026-07-05 'editor opens empty / Save fails' bug).
+    """
+
+    @pytest.fixture
+    def client(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "myshow"
+        cfg_dir.mkdir(parents=True)
+        cfg = {
+            "defaults": {"music_volume_percentage": 40, "volume_percentage": 70},
+            "effects": {"MUSIC: THEME": {"volume_percentage": 80}},
+        }
+        (cfg_dir / "sfx_S01E01.json").write_text(json.dumps(cfg))
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from xil_pipeline.xil_gui import _register_sfx_routes
+
+        app = FastAPI()
+        _register_sfx_routes(app)
+        return TestClient(app)
+
+    def test_get_returns_effect_and_defaults(self, client):
+        r = client.get("/xil/get-sfx", params={
+            "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["effect"] == {"volume_percentage": 80}
+        assert body["defaults"]["music_volume_percentage"] == 40
+
+    def test_get_unknown_key_returns_empty_effect(self, client):
+        r = client.get("/xil/get-sfx", params={
+            "slug": "myshow", "tag": "S01E01", "key": "SFX: NOPE"})
+        assert r.status_code == 200
+        assert r.json()["effect"] == {}
+
+    def test_get_missing_config_404s(self, client):
+        r = client.get("/xil/get-sfx", params={
+            "slug": "ghostshow", "tag": "S09E99", "key": "X"})
+        assert r.status_code == 404
+
+    def test_post_updates_and_clears_fields(self, client, tmp_path):
+        r = client.post("/xil/update-sfx", json={
+            "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
+            "volume_percentage": None,       # clear existing override
+            "ramp_in_seconds": 2.5,          # set new override
+            "ramp_out_seconds": None,
+            "play_duration": 66,
+        })
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        effect = on_disk["effects"]["MUSIC: THEME"]
+        assert "volume_percentage" not in effect
+        assert effect["ramp_in_seconds"] == 2.5
+        assert effect["play_duration"] == 66
+
+    def test_post_creates_effect_entry_when_absent(self, client, tmp_path):
+        r = client.post("/xil/update-sfx", json={
+            "slug": "myshow", "tag": "S01E01", "key": "SFX: NEW DOOR",
+            "volume_percentage": 55,
+        })
+        assert r.status_code == 200
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert on_disk["effects"]["SFX: NEW DOOR"] == {"volume_percentage": 55}
+
+    def test_post_missing_config_404s(self, client):
+        r = client.post("/xil/update-sfx", json={
+            "slug": "ghostshow", "tag": "S09E99", "key": "X",
+            "volume_percentage": 10})
+        assert r.status_code == 404
+
+    # ── path-traversal rejection (CodeQL py/path-injection, 2026-07-05) ──────
+    # slug/tag flow straight into derive_paths() -> a filesystem path. Legit
+    # slugs/tags are always alphanumeric (see models.show_slug), so anything
+    # else — path separators, "..", null bytes — must be rejected before it
+    # ever reaches derive_paths, not merely contained after the fact.
+
+    @pytest.mark.parametrize("bad_slug", [
+        "../../etc", "..\\..\\windows", "foo/bar", "foo\\bar",
+        "..", ".", "a/../../b", "show\x00name",
+    ])
+    def test_get_rejects_unsafe_slug(self, client, bad_slug):
+        r = client.get("/xil/get-sfx", params={
+            "slug": bad_slug, "tag": "S01E01", "key": "X"})
+        assert r.status_code == 400
+
+    @pytest.mark.parametrize("bad_tag", [
+        "../S01E01", "S01/../E01", "S01E01/../../secrets", ".",
+    ])
+    def test_get_rejects_unsafe_tag(self, client, bad_tag):
+        r = client.get("/xil/get-sfx", params={
+            "slug": "myshow", "tag": bad_tag, "key": "X"})
+        assert r.status_code == 400
+
+    def test_post_rejects_unsafe_slug(self, client):
+        r = client.post("/xil/update-sfx", json={
+            "slug": "../../etc", "tag": "S01E01", "key": "X",
+            "volume_percentage": 10})
+        assert r.status_code == 400
+
+    def test_post_rejects_unsafe_tag(self, client):
+        r = client.post("/xil/update-sfx", json={
+            "slug": "myshow", "tag": "../../S01E01", "key": "X",
+            "volume_percentage": 10})
+        assert r.status_code == 400
+
+    def test_post_rejection_does_not_touch_disk(self, client, tmp_path):
+        before = (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text()
+        client.post("/xil/update-sfx", json={
+            "slug": "../../etc", "tag": "S01E01", "key": "X",
+            "volume_percentage": 10})
+        after = (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text()
+        assert before == after
+
+    def test_legit_slug_and_tag_with_hyphen_underscore_still_work(self, client, tmp_path):
+        cfg_dir = tmp_path / "configs" / "my-show_2"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "sfx_S01E01-alt.json").write_text(json.dumps({"effects": {}}))
+        r = client.get("/xil/get-sfx", params={
+            "slug": "my-show_2", "tag": "S01E01-alt", "key": "X"})
+        assert r.status_code == 200

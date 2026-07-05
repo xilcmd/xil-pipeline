@@ -356,6 +356,57 @@ class TestParseIdempotentWrite:
         )
 
 
+class TestSectionSubtitle:
+    """Section headers with quoted subtitles must advance current_section.
+
+    Scripts like The Woonsocket Wonders use 'ACT ONE: "Yesterday"' to give
+    each act an episode-specific title. Before the fix, _match_section() did
+    not exist and the exact-match lookup on 'ACT ONE: "Yesterday"' failed,
+    freezing every entry in the preceding section (cold-open in TWW S01E02).
+    """
+
+    _SCRIPT = (
+        'The Woonsocket Wonders Season 1: Episode 2: "The Nose Knows"\n'
+        "\nCAST:\n\n* CLARA — Protagonist\n* NARRATOR — Narrator\n\n===\n\n"
+        "COLD OPEN\n\nNARRATOR Cold open line.\n\n"
+        'ACT ONE: "Yesterday"\n\nCLARA Act one line.\n\n'
+        'ACT TWO: "The Lick"\n\nCLARA Act two line.\n'
+    )
+
+    @pytest.fixture
+    def parsed(self, tmp_path):
+        f = tmp_path / "S01E02_tww_test_v1.md"
+        f.write_text(self._SCRIPT, encoding="utf-8")
+        return parser.parse_script(str(f))
+
+    def test_act_one_subtitle_advances_section(self, parsed):
+        act1_entries = [e for e in parsed["entries"] if e.get("section") == "act1"]
+        assert act1_entries, "act1 section must contain entries"
+
+    def test_act_two_subtitle_advances_section(self, parsed):
+        act2_entries = [e for e in parsed["entries"] if e.get("section") == "act2"]
+        assert act2_entries, "act2 section must contain entries"
+
+    def test_cold_open_does_not_absorb_act_content(self, parsed):
+        cold_dialogue = [
+            e for e in parsed["entries"]
+            if e["type"] == "dialogue" and e.get("section") == "cold-open"
+        ]
+        act_dialogue = [
+            e for e in parsed["entries"]
+            if e["type"] == "dialogue" and e.get("section") in ("act1", "act2")
+        ]
+        assert len(cold_dialogue) == 1, "only the cold-open line belongs to cold-open"
+        assert len(act_dialogue) == 2, "act lines must not be absorbed into cold-open"
+
+    def test_section_header_text_preserves_subtitle(self, parsed):
+        headers = [e for e in parsed["entries"] if e["type"] == "section_header"]
+        header_texts = [e["text"] for e in headers]
+        assert any('"Yesterday"' in t for t in header_texts), (
+            "section_header entry text must preserve the full subtitle"
+        )
+
+
 class TestParseScriptIntegration:
     @pytest.fixture
     def parsed(self, tmp_path):
@@ -1213,7 +1264,7 @@ class TestGenerateSfxConfigWithHints:
         with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         effect = config["effects"]["SFX: STATIC"]
-        assert effect["source"] == "SFX/sfx_static.mp3"
+        assert effect["source"] == "SFX/the413/sfx_static.mp3"
         assert "prompt" not in effect
 
     def test_source_hint_ambience_keeps_loop(self, tmp_path):
@@ -1229,7 +1280,7 @@ class TestGenerateSfxConfigWithHints:
         with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         effect = config["effects"]["AMBIENCE: DINER"]
-        assert effect["source"] == "SFX/ambience_diner.mp3"
+        assert effect["source"] == "SFX/the413/ambience_diner.mp3"
         assert effect.get("loop") is True
 
     def test_parsed_entry_text_stripped_of_hint(self, tmp_path):
@@ -1242,7 +1293,7 @@ class TestGenerateSfxConfigWithHints:
         parsed = parser.parse_script(str(script))
         direction = next(e for e in parsed["entries"] if e["type"] == "direction")
         assert direction["text"] == "SFX: PHONE BUZZ"
-        assert direction.get("sfx_source") == "SFX/sfx_buzz.mp3"
+        assert direction.get("sfx_source") == "SFX/the413/sfx_buzz.mp3"
 
 
 # ─── Tests: backfill_sfx_sources ───
