@@ -1960,6 +1960,10 @@ def _register_sfx_routes(app) -> None:
     async def _api_get_sfx(slug: str, tag: str, key: str):
         if not (_is_safe_slug_or_tag(slug) and _is_safe_slug_or_tag(tag)):
             return _JSONResponse({"error": "invalid slug or tag"}, status_code=400)
+        # Already validated above (no separators possible) — basename() is a
+        # no-op here, kept only because static analysis specifically
+        # recognizes it as neutralizing path-injection taint.
+        slug, tag = os.path.basename(slug), os.path.basename(tag)
         from xil_pipeline.models import derive_paths as _dp
         sfx_path = _dp(slug, tag)["sfx"]
         _check_workspace_path(sfx_path)
@@ -1978,6 +1982,10 @@ def _register_sfx_routes(app) -> None:
         slug_b, tag_b, key_b = body["slug"], body["tag"], body["key"]
         if not (_is_safe_slug_or_tag(slug_b) and _is_safe_slug_or_tag(tag_b)):
             return _JSONResponse({"ok": False, "error": "invalid slug or tag"}, status_code=400)
+        # Already validated above (no separators possible) — basename() is a
+        # no-op here, kept only because static analysis specifically
+        # recognizes it as neutralizing path-injection taint.
+        slug_b, tag_b = os.path.basename(slug_b), os.path.basename(tag_b)
         from xil_pipeline.models import derive_paths as _dp
         sfx_path = _dp(slug_b, tag_b)["sfx"]
         _check_workspace_path(sfx_path)
