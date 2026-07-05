@@ -1930,6 +1930,23 @@ def get_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_SLUG_TAG_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _is_safe_slug_or_tag(value: str) -> bool:
+    """True iff *value* is a bare filesystem-safe path component.
+
+    Show slugs (:func:`models.show_slug`) and episode tags are always
+    alphanumeric-with-separators — never a path separator, ``..``, or a
+    null byte. The ``/xil/get-sfx`` and ``/xil/update-sfx`` routes take
+    slug/tag straight from the HTTP request and feed them into
+    :func:`derive_paths`, so this allowlist must run *before* any path is
+    built — containment checks after the fact (:func:`_check_workspace_path`)
+    are defence-in-depth, not the primary control.
+    """
+    return bool(value) and bool(_SLUG_TAG_RE.match(value))
+
+
 def _register_sfx_routes(app) -> None:
     """Register the timeline editor's /xil/* routes on a FastAPI *app*.
 
@@ -1941,8 +1958,11 @@ def _register_sfx_routes(app) -> None:
 
     @app.get("/xil/get-sfx")
     async def _api_get_sfx(slug: str, tag: str, key: str):
+        if not (_is_safe_slug_or_tag(slug) and _is_safe_slug_or_tag(tag)):
+            return _JSONResponse({"error": "invalid slug or tag"}, status_code=400)
         from xil_pipeline.models import derive_paths as _dp
         sfx_path = _dp(slug, tag)["sfx"]
+        _check_workspace_path(sfx_path)
         if not os.path.exists(sfx_path):
             return _JSONResponse({"error": "sfx config not found"}, status_code=404)
         with open(sfx_path, encoding="utf-8") as f:
@@ -1956,6 +1976,8 @@ def _register_sfx_routes(app) -> None:
     async def _api_update_sfx(request: _FastAPIRequest):
         body = await request.json()
         slug_b, tag_b, key_b = body["slug"], body["tag"], body["key"]
+        if not (_is_safe_slug_or_tag(slug_b) and _is_safe_slug_or_tag(tag_b)):
+            return _JSONResponse({"ok": False, "error": "invalid slug or tag"}, status_code=400)
         from xil_pipeline.models import derive_paths as _dp
         sfx_path = _dp(slug_b, tag_b)["sfx"]
         _check_workspace_path(sfx_path)

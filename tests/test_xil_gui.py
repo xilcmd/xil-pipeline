@@ -601,3 +601,54 @@ class TestSfxRoutes:
             "slug": "ghostshow", "tag": "S09E99", "key": "X",
             "volume_percentage": 10})
         assert r.status_code == 404
+
+    # ── path-traversal rejection (CodeQL py/path-injection, 2026-07-05) ──────
+    # slug/tag flow straight into derive_paths() -> a filesystem path. Legit
+    # slugs/tags are always alphanumeric (see models.show_slug), so anything
+    # else — path separators, "..", null bytes — must be rejected before it
+    # ever reaches derive_paths, not merely contained after the fact.
+
+    @pytest.mark.parametrize("bad_slug", [
+        "../../etc", "..\\..\\windows", "foo/bar", "foo\\bar",
+        "..", ".", "a/../../b", "show\x00name",
+    ])
+    def test_get_rejects_unsafe_slug(self, client, bad_slug):
+        r = client.get("/xil/get-sfx", params={
+            "slug": bad_slug, "tag": "S01E01", "key": "X"})
+        assert r.status_code == 400
+
+    @pytest.mark.parametrize("bad_tag", [
+        "../S01E01", "S01/../E01", "S01E01/../../secrets", ".",
+    ])
+    def test_get_rejects_unsafe_tag(self, client, bad_tag):
+        r = client.get("/xil/get-sfx", params={
+            "slug": "myshow", "tag": bad_tag, "key": "X"})
+        assert r.status_code == 400
+
+    def test_post_rejects_unsafe_slug(self, client):
+        r = client.post("/xil/update-sfx", json={
+            "slug": "../../etc", "tag": "S01E01", "key": "X",
+            "volume_percentage": 10})
+        assert r.status_code == 400
+
+    def test_post_rejects_unsafe_tag(self, client):
+        r = client.post("/xil/update-sfx", json={
+            "slug": "myshow", "tag": "../../S01E01", "key": "X",
+            "volume_percentage": 10})
+        assert r.status_code == 400
+
+    def test_post_rejection_does_not_touch_disk(self, client, tmp_path):
+        before = (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text()
+        client.post("/xil/update-sfx", json={
+            "slug": "../../etc", "tag": "S01E01", "key": "X",
+            "volume_percentage": 10})
+        after = (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text()
+        assert before == after
+
+    def test_legit_slug_and_tag_with_hyphen_underscore_still_work(self, client, tmp_path):
+        cfg_dir = tmp_path / "configs" / "my-show_2"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "sfx_S01E01-alt.json").write_text(json.dumps({"effects": {}}))
+        r = client.get("/xil/get-sfx", params={
+            "slug": "my-show_2", "tag": "S01E01-alt", "key": "X"})
+        assert r.status_code == 200
