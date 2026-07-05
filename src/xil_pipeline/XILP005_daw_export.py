@@ -458,6 +458,7 @@ def export_daw_layers(
     save_aup3: bool = False,
     macro: bool = False,
     show: str = "Sample Show",
+    slug: str = "",
     season_title: str | None = None,
     episode_title: str | None = None,
     artist: str = "XIL Pipeline",
@@ -642,7 +643,10 @@ def export_daw_layers(
             print(render_terminal_timeline(td))
         if timeline_html:
             html_path = os.path.join(output_dir, f"{tag}_timeline.html")
-            render_html_timeline(td, html_path, stems_dir=stems_dir)
+            render_html_timeline(
+                td, html_path, stems_dir=stems_dir, slug=slug, tag=tag,
+                layers_dir=output_dir,
+            )
             logger.info(f"    Written: {html_path}")
 
     logger.info("")
@@ -786,7 +790,10 @@ def main() -> None:
                     print(render_terminal_timeline(td))
                 if args.timeline_html:
                     html_path = os.path.join(output_dir, f"{tag}_timeline.html")
-                    render_html_timeline(td, html_path, stems_dir=stems_dir)
+                    render_html_timeline(
+                        td, html_path, stems_dir=stems_dir, slug=slug, tag=tag,
+                        layers_dir=output_dir,
+                    )
                     logger.info(f"    Written: {html_path}")
             return
 
@@ -795,6 +802,7 @@ def main() -> None:
             save_aup3=args.save_aup3,
             macro=args.macro,
             show=cast_cfg.show,
+            slug=slug,
             season_title=cast_cfg.season_title,
             episode_title=cast_cfg.title,
             artist=cast_cfg.artist,

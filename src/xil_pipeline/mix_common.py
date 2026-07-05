@@ -624,12 +624,14 @@ def build_ambience_layer(
     if not ambience_plans:
         return layer, labels
 
-    # All background cue ms values (AMBIENCE + MUSIC) sorted by position.
+    # Ambience boundaries: only AMBIENCE cues (including STOP markers).
+    # MUSIC cues do NOT terminate ambience — that is a mixing decision made
+    # in the DAW. Use an explicit AMBIENCE: STOP to end a span early.
     bg_cues: list[tuple[int, int]] = sorted(
         (
             (timeline.get(p.seq, 0), p.seq)
             for p in stem_plans
-            if p.is_background
+            if p.direction_type == "AMBIENCE"
         ),
         key=lambda t: t[0],
     )
@@ -641,7 +643,7 @@ def build_ambience_layer(
         if start_ms >= total_ms:
             continue
 
-        # End at the next background cue after this one, or track end.
+        # End at the next AMBIENCE cue after this one, or track end.
         end_ms = total_ms
         for cue_ms, cue_seq in bg_cues:
             if cue_seq > plan.seq and cue_ms > start_ms:
@@ -979,7 +981,7 @@ def compute_ambience_labels(
         (
             (timeline.get(p.seq, 0), p.seq)
             for p in stem_plans
-            if p.is_background
+            if p.direction_type == "AMBIENCE"
         ),
         key=lambda t: t[0],
     )

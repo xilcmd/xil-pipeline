@@ -127,7 +127,7 @@ def _gdoc_files(gdoc_dir: Path, tag: str) -> list[Path]:
             return []
     except OSError:
         return []
-    return sorted(gdoc_dir.glob(f"{tag}*.gdoc")) + sorted(gdoc_dir.glob(f"*{tag}*.gdoc"))
+    return sorted(set(gdoc_dir.glob(f"{tag}*.gdoc")) | set(gdoc_dir.glob(f"*{tag}*.gdoc")))
 
 
 def _script_files(root: Path, tag: str) -> list[Path]:
@@ -136,7 +136,7 @@ def _script_files(root: Path, tag: str) -> list[Path]:
     if not scripts.is_dir():
         return []
     return sorted(
-        p for p in scripts.glob(f"*{tag}*.md") if not p.name.startswith("revised_")
+        p for p in scripts.rglob(f"*{tag}*.md") if not p.name.startswith("revised_")
     )
 
 
@@ -215,12 +215,20 @@ def _evaluate_stage(
     )
 
 
-def evaluate_episode(slug: str, tag: str, gdoc_dir: Path) -> list[StageStatus]:
-    """Build and evaluate the full waypoint chain for one episode."""
+def evaluate_episode(
+    slug: str, tag: str, gdoc_dir: Path, *, include_source: bool = True
+) -> list[StageStatus]:
+    """Build and evaluate the full waypoint chain for one episode.
+
+    When *include_source* is ``False`` the Google Drive mount is not probed and
+    the ``source`` / ``script`` stages are omitted.  Pass this from callers that
+    only need the pipeline stages (parsed → stems → daw → master), e.g. the GUI
+    episode table, to avoid slow network-mount probes on every refresh.
+    """
     root = get_workspace_root()
     paths = derive_paths(slug, tag)
 
-    gdocs = _gdoc_files(gdoc_dir, tag)
+    gdocs = _gdoc_files(gdoc_dir, tag) if include_source else []
     scripts = _script_files(root, tag)
     parsed = [Path(paths["parsed"])]
     stems = _glob_in(paths["stems"], "*.mp3")
@@ -250,28 +258,35 @@ def evaluate_episode(slug: str, tag: str, gdoc_dir: Path) -> list[StageStatus]:
     # against the stem MP3s only.
     stems_outputs = stems + stems_manifest
 
-    stages = [
-        _evaluate_stage("source", [], gdocs, ""),
-        _evaluate_stage("script", gdocs, scripts, script_refresh),
+    stages: list[StageStatus] = []
+
+    if include_source:
+        stages += [
+            _evaluate_stage("source", [], gdocs, ""),
+            _evaluate_stage("script", gdocs, scripts, script_refresh),
+        ]
+        # The source stage is informational: a missing/empty gdoc dir is not a failure.
+        src = stages[0]
+        if not gdocs:
+            src.status = _NONE
+            try:
+                _gdoc_is_dir = gdoc_dir.is_dir()
+            except OSError:
+                _gdoc_is_dir = False
+            src.note = "no gdoc dir" if not _gdoc_is_dir else "no source doc"
+            src.refresh = ""
+
+    sfx_cfg = [Path(paths["sfx"])] if Path(paths["sfx"]).exists() else []
+
+    stages += [
         _evaluate_stage("parsed", scripts, parsed, parse_refresh),
         _evaluate_stage(
             "stems", parsed, stems_outputs, f"xil produce --episode {tag}",
             count=len(stems),
         ),
-        _evaluate_stage("daw", stems, daw, f"xil daw --episode {tag}"),
+        _evaluate_stage("daw", stems + sfx_cfg, daw, f"xil daw --episode {tag}"),
         _evaluate_stage("master", daw, masters, f"xil master --episode {tag}"),
     ]
-
-    # The source stage is informational: a missing/empty gdoc dir is not a failure.
-    src = stages[0]
-    if not gdocs:
-        src.status = _NONE
-        try:
-            _gdoc_is_dir = gdoc_dir.is_dir()
-        except OSError:
-            _gdoc_is_dir = False
-        src.note = "no gdoc dir" if not _gdoc_is_dir else "no source doc"
-        src.refresh = ""
 
     return stages
 

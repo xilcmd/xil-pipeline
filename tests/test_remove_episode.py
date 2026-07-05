@@ -105,18 +105,20 @@ class TestCollect:
         paths = [i.path for i in items]
         assert workspace / "daw" / "mypodcast" / "S01E01" in paths
 
-    def test_collects_master_mp3(self, workspace):
+    def test_does_not_collect_master_mp3(self, workspace):
+        # masters/ is never touched by remove-episode — it must survive erasure.
         _scaffold_episode(workspace, "mypodcast", "S01E01")
         items = _collect("mypodcast", "S01E01")
         paths = [i.path for i in items]
-        assert workspace / "masters" / "mypodcast" / "S01E01_master.mp3" in paths
+        assert workspace / "masters" / "mypodcast" / "S01E01_master.mp3" not in paths
 
-    def test_collects_flat_master_mp3(self, workspace):
-        # XILP011 writes masters/{tag}_{slug}_{date}.mp3 flat under masters/.
+    def test_does_not_collect_flat_master_mp3(self, workspace):
+        # XILP011 writes masters/{tag}_{slug}_{date}.mp3 flat under masters/ —
+        # still preserved, same as the nested layout.
         _scaffold_episode(workspace, "mypodcast", "S01E01")
         items = _collect("mypodcast", "S01E01")
         paths = [i.path for i in items]
-        assert workspace / "masters" / "S01E01_mypodcast_2026-06-19.mp3" in paths
+        assert workspace / "masters" / "S01E01_mypodcast_2026-06-19.mp3" not in paths
 
     def test_flat_master_scoped_by_slug(self, workspace):
         # A different show sharing the same tag must NOT be collected.
@@ -206,9 +208,14 @@ class TestRemoveEpisodeCLI:
         assert not (workspace / "configs" / "mypodcast" / "cast_S01E01.json").exists()
         assert not (workspace / "stems" / "mypodcast" / "S01E01").exists()
         assert not (workspace / "daw" / "mypodcast" / "S01E01").exists()
-        assert not (workspace / "masters" / "mypodcast" / "S01E01_master.mp3").exists()
-        assert not (workspace / "masters" / "S01E01_mypodcast_2026-06-19.mp3").exists()
         assert not (workspace / "voice_samples" / "S01E01").exists()
+
+    def test_masters_survive_removal(self, workspace):
+        # masters/ is never touched by remove-episode.
+        _scaffold_episode(workspace, "mypodcast", "S01E01")
+        _run_main(["xil-remove-episode", "S01E01", "--show", "mypodcast", "--yes"])
+        assert (workspace / "masters" / "mypodcast" / "S01E01_master.mp3").exists()
+        assert (workspace / "masters" / "S01E01_mypodcast_2026-06-19.mp3").exists()
 
     def test_script_survives_removal(self, workspace):
         script = _scaffold_episode(workspace, "mypodcast", "S01E01")
