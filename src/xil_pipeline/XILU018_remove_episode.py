@@ -18,7 +18,8 @@ the source production script untouched.  The following are removed:
   * legacy root files: cast_{slug}_{tag}.json, sfx_{slug}_{tag}.json
   * legacy parsed files in parsed/ (flat naming, pre-0.1.8 layout)
 
-Shared assets (SFX/, logs/, masters/) and the source script (scripts/) are never touched.
+Shared assets (SFX/, logs/, masters/), the source script (scripts/), and the
+timeline sound-edit journal (configs/{slug}/sfx_{tag}_edits.jsonl) are never touched.
 
 Usage::
 
@@ -218,7 +219,7 @@ def get_parser() -> argparse.ArgumentParser:
         prog="xil-remove-episode",
         description=(
             "Remove all workspace files for a single episode. "
-            "The source production script and masters/ are never touched. "
+            "The source production script, masters/, and the sfx edit journal are never touched. "
             "Shared assets (SFX/, logs/) are never touched."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

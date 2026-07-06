@@ -217,6 +217,16 @@ class TestRemoveEpisodeCLI:
         assert (workspace / "masters" / "mypodcast" / "S01E01_master.mp3").exists()
         assert (workspace / "masters" / "S01E01_mypodcast_2026-06-19.mp3").exists()
 
+    def test_sfx_edit_journal_survives_removal(self, workspace):
+        # sfx_{tag}_edits.jsonl is the recovery journal for timeline sound
+        # edits — preserved like masters/ so a re-init + re-parse restores
+        # the episode's tuning.
+        _scaffold_episode(workspace, "mypodcast", "S01E01")
+        journal = workspace / "configs" / "mypodcast" / "sfx_S01E01_edits.jsonl"
+        journal.write_text('{"ts": "t", "key": "K", "fields": {}}\n', encoding="utf-8")
+        _run_main(["xil-remove-episode", "S01E01", "--show", "mypodcast", "--yes"])
+        assert journal.exists()
+
     def test_script_survives_removal(self, workspace):
         script = _scaffold_episode(workspace, "mypodcast", "S01E01")
         _run_main(["xil-remove-episode", "S01E01", "--show", "mypodcast", "--yes"])

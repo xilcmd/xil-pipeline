@@ -310,6 +310,102 @@ def write_sfx_grade(path: str, status: str) -> None:
     tags.save(path)
 
 
+# ─── SFX edit journal ─────────────────────────────────────────────────────────
+# Timeline sound edits (volume/ramps/play_duration) are saved into the SFX
+# config, but generate_sfx_config() rewrites that file as a fresh skeleton
+# whenever it is absent at parse time — so a cleared config would silently
+# lose every hand-tuned override.  Each edit is therefore also appended to a
+# sidecar journal that survives the config (and `xil remove-episode`), and
+# can be replayed onto a regenerated skeleton.
+
+SFX_EDIT_FIELDS = ("volume_percentage", "ramp_in_seconds",
+                   "ramp_out_seconds", "play_duration")
+
+
+def sfx_edits_path(sfx_path: str) -> str:
+    """Return the edit-journal path for an SFX config: ``sfx_X.json`` → ``sfx_X_edits.jsonl``."""
+    base, _ = os.path.splitext(sfx_path)
+    return f"{base}_edits.jsonl"
+
+
+def append_sfx_edit(sfx_path: str, key: str, fields: dict) -> None:
+    """Append one edit record to the journal beside *sfx_path*.
+
+    Args:
+        sfx_path: Path of the SFX config the edit was applied to.
+        key: Effect key (the direction text) that was edited.
+        fields: Editable-field values; ``None`` means "clear this override".
+    """
+    # Preserve exactly the fields given (explicit None included) so replay
+    # reproduces the save's clear-vs-set semantics.
+    record = {
+        "ts": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+        "key": key,
+        "fields": dict(fields),
+    }
+    journal = sfx_edits_path(sfx_path)
+    os.makedirs(os.path.dirname(journal) or ".", exist_ok=True)
+    with open(journal, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def replay_sfx_edits(sfx_path: str, dry_run: bool = False) -> tuple[int, list[str]]:
+    """Reapply journaled edits to the SFX config at *sfx_path*.
+
+    Records are applied in journal order (last write wins), with the same
+    semantics as the timeline-editor save route: ``None`` removes the
+    override, any other value sets it.  Keys absent from the current
+    ``effects`` dict are still created (a renamed direction leaves a
+    harmless orphan) but reported so the caller can warn.
+
+    Args:
+        sfx_path: SFX config to update in place.
+        dry_run: When True, compute but do not write.
+
+    Returns:
+        ``(records_applied, orphan_keys)`` — ``(0, [])`` when no journal exists.
+    """
+    journal = sfx_edits_path(sfx_path)
+    if not os.path.exists(journal):
+        return 0, []
+
+    with open(sfx_path, encoding="utf-8") as f:
+        data = json.load(f)
+    effects = data.setdefault("effects", {})
+
+    applied = 0
+    orphans: list[str] = []
+    with open(journal, encoding="utf-8") as f:
+        for lineno, line in enumerate(f, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+                key = record["key"]
+                fields = record["fields"]
+            except (json.JSONDecodeError, KeyError, TypeError):
+                logger.warning(f"  Skipping malformed journal line {lineno} in {journal}")
+                continue
+            if key not in effects and key not in orphans:
+                orphans.append(key)
+            effect = effects.setdefault(key, {})
+            for field in SFX_EDIT_FIELDS:
+                if field not in fields:
+                    continue
+                if fields[field] is None:
+                    effect.pop(field, None)
+                else:
+                    effect[field] = fields[field]
+            applied += 1
+
+    if applied and not dry_run:
+        with open(sfx_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+    return applied, orphans
+
+
 def tag_wav(
     path: str,
     show: str = "Sample Show",
