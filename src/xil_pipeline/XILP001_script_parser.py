@@ -1421,6 +1421,15 @@ def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = 
           f"({silence_count} silence, {sfx_count} sfx "
           f"— review prompts before generation)")
 
+    # A fresh skeleton wipes any hand-tuned per-cue overrides — reapply the
+    # timeline editor's edit journal (sfx_{tag}_edits.jsonl) if one exists.
+    from xil_pipeline.sfx_common import replay_sfx_edits, sfx_edits_path
+    applied, orphans = replay_sfx_edits(sfx_path)
+    if applied:
+        orphan_note = f" ({len(orphans)} orphaned key(s))" if orphans else ""
+        logger.info(f"Reapplied {applied} timeline sound edit(s) from "
+                    f"{sfx_edits_path(sfx_path)}{orphan_note}")
+
 
 def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
     """Add missing ``source`` fields to an existing SFX config from parsed hints.

@@ -702,3 +702,45 @@ class TestConfigLoadersGuarded:
         inside = tmp_path / "workspace" / "cast_S01E01.json"
         inside.write_text('{"cast": {}}')
         assert gui.load_cast_config(str(inside)) == '{"cast": {}}'
+
+
+class TestSfxRouteJournaling:
+    """Every successful /xil/update-sfx save is journaled to
+    sfx_{tag}_edits.jsonl so edits survive config regeneration."""
+
+    @pytest.fixture
+    def client(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "myshow"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "sfx_S01E01.json").write_text(json.dumps({
+            "defaults": {}, "effects": {"MUSIC: THEME": {}}}))
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from xil_pipeline.xil_gui import _register_sfx_routes
+        app = FastAPI()
+        _register_sfx_routes(app)
+        return TestClient(app)
+
+    def _journal(self, tmp_path):
+        return tmp_path / "configs" / "myshow" / "sfx_S01E01_edits.jsonl"
+
+    def test_successful_save_appends_one_record(self, client, tmp_path):
+        r = client.post("/xil/update-sfx", json={
+            "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
+            "volume_percentage": 33, "play_duration": 66})
+        assert r.status_code == 200
+        lines = self._journal(tmp_path).read_text().splitlines()
+        assert len(lines) == 1
+        rec = json.loads(lines[0])
+        assert rec["key"] == "MUSIC: THEME"
+        assert rec["fields"]["volume_percentage"] == 33
+        assert rec["fields"]["play_duration"] == 66
+        assert rec["fields"]["ramp_in_seconds"] is None
+
+    def test_rejected_save_journals_nothing(self, client, tmp_path):
+        client.post("/xil/update-sfx", json={
+            "slug": "../../etc", "tag": "S01E01", "key": "X",
+            "volume_percentage": 10})
+        assert not self._journal(tmp_path).exists()

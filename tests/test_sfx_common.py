@@ -996,3 +996,82 @@ class TestGenerateSfxRejected:
             (tmp_path / "stems" / s).unlink()
         sfx_common.generate_sfx(beats, sample_sfx_config, stems_dir, sfx_dir=sfx_dir, client=None)
         assert (tmp_path / "stems" / "004_cold-open_sfx.mp3").exists()
+
+
+# ─── Tests: SFX edit journal (timeline editor recovery) ───
+
+class TestSfxEditJournal:
+    """append_sfx_edit / replay_sfx_edits — the append-only journal that
+    lets timeline sound edits survive sfx_{tag}.json being cleared."""
+
+    @pytest.fixture
+    def cfg(self, tmp_path):
+        p = tmp_path / "sfx_S01E01.json"
+        p.write_text(json.dumps({
+            "defaults": {"volume_percentage": 20},
+            "effects": {"MUSIC: THEME": {"prompt": "theme", "duration_seconds": 15.0}},
+        }), encoding="utf-8")
+        return str(p)
+
+    def test_edits_path_convention(self):
+        assert sfx_common.sfx_edits_path("/a/b/sfx_S01E01.json") == "/a/b/sfx_S01E01_edits.jsonl"
+
+    def test_append_creates_and_appends(self, cfg):
+        sfx_common.append_sfx_edit(cfg, "MUSIC: THEME", {"volume_percentage": 33})
+        sfx_common.append_sfx_edit(cfg, "MUSIC: THEME", {"volume_percentage": 44})
+        lines = open(sfx_common.sfx_edits_path(cfg), encoding="utf-8").read().splitlines()
+        assert len(lines) == 2
+        rec = json.loads(lines[0])
+        assert rec["key"] == "MUSIC: THEME"
+        assert rec["fields"] == {"volume_percentage": 33}
+        assert "ts" in rec
+
+    def test_replay_last_write_wins(self, cfg):
+        sfx_common.append_sfx_edit(cfg, "MUSIC: THEME", {"volume_percentage": 33})
+        sfx_common.append_sfx_edit(cfg, "MUSIC: THEME", {"volume_percentage": 44})
+        applied, orphans = sfx_common.replay_sfx_edits(cfg)
+        assert applied == 2
+        assert orphans == []
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        assert data["effects"]["MUSIC: THEME"]["volume_percentage"] == 44
+
+    def test_replay_null_clears_field(self, cfg):
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        data["effects"]["MUSIC: THEME"]["volume_percentage"] = 99
+        open(cfg, "w", encoding="utf-8").write(json.dumps(data))
+        sfx_common.append_sfx_edit(cfg, "MUSIC: THEME", {"volume_percentage": None, "ramp_in_seconds": 2.5})
+        sfx_common.replay_sfx_edits(cfg)
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        assert "volume_percentage" not in data["effects"]["MUSIC: THEME"]
+        assert data["effects"]["MUSIC: THEME"]["ramp_in_seconds"] == 2.5
+
+    def test_replay_orphan_key_applied_and_reported(self, cfg):
+        sfx_common.append_sfx_edit(cfg, "SFX: GONE FROM SCRIPT", {"volume_percentage": 55})
+        applied, orphans = sfx_common.replay_sfx_edits(cfg)
+        assert applied == 1
+        assert orphans == ["SFX: GONE FROM SCRIPT"]
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        assert data["effects"]["SFX: GONE FROM SCRIPT"] == {"volume_percentage": 55}
+
+    def test_replay_missing_journal_is_noop(self, cfg):
+        before = open(cfg, encoding="utf-8").read()
+        assert sfx_common.replay_sfx_edits(cfg) == (0, [])
+        assert open(cfg, encoding="utf-8").read() == before
+
+    def test_replay_dry_run_does_not_write(self, cfg):
+        sfx_common.append_sfx_edit(cfg, "MUSIC: THEME", {"volume_percentage": 33})
+        before = open(cfg, encoding="utf-8").read()
+        applied, _ = sfx_common.replay_sfx_edits(cfg, dry_run=True)
+        assert applied == 1
+        assert open(cfg, encoding="utf-8").read() == before
+
+    def test_replay_skips_malformed_lines(self, cfg):
+        sfx_common.append_sfx_edit(cfg, "MUSIC: THEME", {"volume_percentage": 33})
+        with open(sfx_common.sfx_edits_path(cfg), "a", encoding="utf-8") as f:
+            f.write("not json at all\n")
+        sfx_common.append_sfx_edit(cfg, "MUSIC: THEME", {"play_duration": 66})
+        applied, _ = sfx_common.replay_sfx_edits(cfg)
+        assert applied == 2
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        assert data["effects"]["MUSIC: THEME"]["volume_percentage"] == 33
+        assert data["effects"]["MUSIC: THEME"]["play_duration"] == 66

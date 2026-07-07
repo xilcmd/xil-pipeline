@@ -2016,6 +2016,14 @@ def _register_sfx_routes(app) -> None:
         with open(sfx_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.write("\n")
+        # Journal the edit so it survives sfx_{tag}.json being cleared and
+        # regenerated (replayed by generate_sfx_config / xil sfx-restore).
+        # A journal failure must never fail the save itself.
+        try:
+            from xil_pipeline.sfx_common import SFX_EDIT_FIELDS, append_sfx_edit
+            append_sfx_edit(sfx_path, key_b, {f: body.get(f) for f in SFX_EDIT_FIELDS})
+        except Exception as exc:
+            _log_activity(f"[WARN] sfx edit journal write failed: {exc}")
         _log_activity(f"SFX edit via timeline: {slug_b}/{tag_b} → {key_b!r}")
         return _JSONResponse({"ok": True, "message": f"Saved {key_b!r} — re-run xil daw to apply."})
 

@@ -135,6 +135,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(after parse, before produce)",
     ),
+    "sfx-restore": CommandSpec(
+        "xil_pipeline.XILU020_sfx_restore",
+        "reapply journaled timeline sound edits onto the SFX config",
+        _UTILITY,
+        "(recover timeline sound edits)",
+    ),
     "episode-summary": CommandSpec(
         "xil_pipeline.XILU014_episode_summary",
         "write one-row-per-episode summary CSV (lines, words, TTS chars)",

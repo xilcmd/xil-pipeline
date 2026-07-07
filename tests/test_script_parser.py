@@ -2309,3 +2309,25 @@ class TestShowOverride:
             data = json.load(f)
         assert data["show"] == "Signals"
         assert (tmp_path / "parsed" / "signals" / "parsed_V01C01.csv").exists()
+
+
+class TestGenerateSfxConfigReplaysJournal:
+    """A regenerated skeleton must reapply journaled timeline edits, so a
+    cleared sfx_{tag}.json does not silently lose the user's sound tuning."""
+
+    def test_regenerated_config_contains_journaled_edits(self, tmp_path):
+        script_file = tmp_path / "test_script.md"
+        script_file.write_text(MINIMAL_SCRIPT, encoding="utf-8")
+        parsed = parser.parse_script(str(script_file))
+        sfx_path = str(tmp_path / "sfx_S01E01.json")
+
+        from xil_pipeline.sfx_common import append_sfx_edit
+        append_sfx_edit(sfx_path, "BEAT", {"volume_percentage": 42})
+
+        parser.generate_sfx_config(parsed, sfx_path)
+
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert config["effects"]["BEAT"]["volume_percentage"] == 42
+        # skeleton fields still intact
+        assert config["effects"]["BEAT"]["type"] == "silence"
