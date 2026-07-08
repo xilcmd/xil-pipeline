@@ -32,6 +32,7 @@ python XILU005_discover_SFX.py --sfx-dir SFX/   # override local scan directory
 
 import argparse
 import datetime
+import glob
 import json as _json
 import os
 import shutil
@@ -78,7 +79,7 @@ def _fmt_size(bytes_: int) -> str:
 # Local SFX directory scan
 # ---------------------------------------------------------------------------
 
-def _read_local_record(path: str) -> dict:
+def _read_local_record(path: str, sfx_root: str) -> dict:
     """Extract metadata from a locally generated SFX MP3 file.
 
     Reads ID3 tags written by ``tag_mp3()`` in ``sfx_common.py``:
@@ -86,9 +87,18 @@ def _read_local_record(path: str) -> dict:
     - TPE1  → artist
     - USLT  → generation prompt (stored as lyrics)
     Duration and bitrate come from mutagen audio headers.
+
+    Args:
+        path: Path to the MP3 file.
+        sfx_root: The directory ``fetch_local_records`` was scanning —
+            used to derive which per-show subdirectory (if any) *path*
+            lives in.
     """
     filename = os.path.basename(path)
     size_bytes = os.path.getsize(path)
+
+    rel_dir = os.path.relpath(os.path.dirname(path), sfx_root)
+    show = "" if rel_dir == "." else rel_dir.split(os.sep)[0]
 
     prompt = ""
     title = ""
@@ -121,6 +131,7 @@ def _read_local_record(path: str) -> dict:
         "source":       "local",
         "filename":     filename,
         "path":         path,
+        "show":         show,
         "prompt":       prompt,
         "title":        title,
         "artist":       artist,
@@ -132,16 +143,20 @@ def _read_local_record(path: str) -> dict:
 
 
 def fetch_local_records(sfx_dir: str) -> list[dict]:
-    """Scan *sfx_dir* and return one record per ``.mp3`` file."""
+    """Scan *sfx_dir* and return one record per ``.mp3`` file.
+
+    Recurses into per-show subdirectories (the ``SFX/{slug}/`` hierarchical
+    layout) as well as the flat shared pool at the top level, so both are
+    discovered in a single call.
+    """
     if not os.path.isdir(sfx_dir):
         logger.warning(f"SFX directory not found: {sfx_dir}")
         return []
 
     records = []
-    for fname in sorted(os.listdir(sfx_dir)):
-        if not fname.lower().endswith(".mp3"):
-            continue
-        records.append(_read_local_record(os.path.join(sfx_dir, fname)))
+    pattern = os.path.join(sfx_dir, "**", "*.mp3")
+    for path in sorted(glob.glob(pattern, recursive=True)):
+        records.append(_read_local_record(path, sfx_dir))
     return records
 
 
@@ -242,6 +257,7 @@ def fetch_api_records(api_key: str, max_items: int | None = None) -> list[dict]:
 def print_verbose_local(rec: dict) -> None:
     """Print all fields for a local SFX record."""
     logger.info(f"  File           : {rec['filename']}")
+    logger.info(f"  Show           : {rec['show'] or '(shared pool)'}")
     prompt_display = rec["prompt"] if rec["prompt"] else "— (no prompt tag)"
     logger.info(f"  Prompt         : {prompt_display}")
     if rec["title"]:
@@ -260,7 +276,8 @@ def print_compact_local(rec: dict) -> None:
     size = _fmt_size(rec["size_bytes"])
     prompt = rec["prompt"][:72] + "…" if len(rec["prompt"]) > 72 else rec["prompt"]
     meta = f"{dur:6s}  {size:8s}"
-    logger.info(f"  {rec['filename']:<38}  {meta}")
+    name = f"[{rec['show']}] {rec['filename']}" if rec["show"] else rec["filename"]
+    logger.info(f"  {name:<38}  {meta}")
     if prompt:
         logger.info(f"    {prompt}")
 

@@ -513,24 +513,54 @@ def _sfx_dir(slug: str = "") -> str:
 
 
 def _scan_sfx_grades() -> dict[str, str]:
-    """Rebuild _sfx_grade_cache from disk for every SFX/*.mp3. Returns the cache."""
+    """Rebuild _sfx_grade_cache from disk for every SFX/*.mp3.
+
+    Recurses into per-show subdirectories (the ``SFX/{slug}/`` hierarchical
+    layout) as well as the flat shared pool, so both are found. Returns the
+    cache.
+    """
     _sfx_grade_cache.clear()
     sfx_dir = _sfx_dir()
     if os.path.isdir(sfx_dir):
-        for path in sorted(glob.glob(os.path.join(sfx_dir, "*.mp3"))):
+        pattern = os.path.join(sfx_dir, "**", "*.mp3")
+        for path in sorted(glob.glob(pattern, recursive=True)):
             _sfx_grade_cache[path] = _read_sfx_grade(path)
     return _sfx_grade_cache
 
 
+def _sfx_show_label(path: str, root: str) -> str:
+    """Return the per-show subdirectory name for *path* under *root*.
+
+    Returns "" for files directly in *root* (the flat shared pool) and for
+    any path that isn't actually nested under *root* (defensive — cache
+    entries seeded in tests with synthetic paths must not produce a
+    spurious ``[..]`` label).
+    """
+    try:
+        rel_dir = os.path.relpath(os.path.dirname(path), root)
+    except ValueError:
+        return ""
+    if rel_dir in (".", "") or rel_dir.startswith(os.pardir):
+        return ""
+    return rel_dir.split(os.sep)[0]
+
+
 def _sfx_choices(grade_filter: str = "all") -> list[tuple[str, str]]:
-    """Return [(glyph + filename, path), ...] from the cache, filtered by grade."""
+    """Return [(glyph + filename, path), ...] from the cache, filtered by grade.
+
+    Files from a per-show subdirectory are prefixed with ``[show]`` since
+    two shows can legitimately use the same filename (e.g. ``beat.mp3``).
+    """
+    root = _sfx_dir()
     out: list[tuple[str, str]] = []
     for path, grade in sorted(_sfx_grade_cache.items()):
         if grade_filter == "ungraded" and grade:
             continue
         if grade_filter in _GRADES and grade != grade_filter:
             continue
-        label = f"{_GRADE_GLYPH.get(grade, '•')}  {os.path.basename(path)}"
+        show = _sfx_show_label(path, root)
+        name = f"[{show}] {os.path.basename(path)}" if show else os.path.basename(path)
+        label = f"{_GRADE_GLYPH.get(grade, '•')}  {name}"
         out.append((label, path))
     return out
 
