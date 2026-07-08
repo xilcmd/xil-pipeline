@@ -490,6 +490,40 @@ class TestSfxChoicesAndScan:
         assert [p for _, p in _sfx_choices("rejected")] == ["/SFX/no.mp3"]
         assert len(_sfx_choices("all")) == 3
 
+    def test_scan_includes_hierarchical_show_subdir_files(self, tmp_path, monkeypatch):
+        """SFX/{slug}/ files (PR #23 hierarchical layout) must be found
+        alongside the flat shared pool, not silently skipped."""
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        sfx = tmp_path / "SFX"
+        _make_mp3(sfx / "shared.mp3")
+        _make_mp3(sfx / "myshow" / "beat.mp3")
+        cache = _scan_sfx_grades()
+        assert str(sfx / "shared.mp3") in cache
+        assert str(sfx / "myshow" / "beat.mp3") in cache
+        assert len(cache) == 2
+
+    def test_choices_label_disambiguates_same_named_files_across_shows(self, tmp_path, monkeypatch):
+        """Two shows can legitimately use the same filename (confirmed in the
+        real library: beat.mp3, intro-music.mp3) — the dropdown label must
+        show which show each one is, or they're indistinguishable."""
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        sfx = tmp_path / "SFX"
+        _make_mp3(sfx / "showa" / "beat.mp3")
+        _make_mp3(sfx / "showb" / "beat.mp3")
+        _scan_sfx_grades()
+        labels = [lbl for lbl, _ in _sfx_choices("all")]
+        assert any("showa" in lbl and "beat.mp3" in lbl for lbl in labels)
+        assert any("showb" in lbl and "beat.mp3" in lbl for lbl in labels)
+        assert labels[0] != labels[1]
+
+    def test_choices_label_unchanged_for_flat_pool_synthetic_paths(self):
+        """Pre-existing behavior for the flat pool (and for any cache entries
+        that aren't actually nested under the real SFX root) must not gain a
+        spurious [..] prefix from relpath on unrelated paths."""
+        self._seed_cache({"/SFX/ok.mp3": "accurate"})
+        labels = dict((lbl.split("  ", 1)[1], lbl[0]) for lbl, _ in _sfx_choices("all"))
+        assert "ok.mp3" in labels
+
     def test_scan_populates_cache_from_disk(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
         sfx = tmp_path / "SFX"
