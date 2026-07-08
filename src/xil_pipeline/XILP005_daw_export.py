@@ -68,7 +68,12 @@ from xil_pipeline.models import (
     resolve_slug,
 )
 from xil_pipeline.sfx_common import run_banner, tag_wav
-from xil_pipeline.timeline_viz import build_timeline_data, render_html_timeline, render_terminal_timeline
+from xil_pipeline.timeline_viz import (
+    build_timeline_data,
+    render_html_timeline,
+    render_terminal_timeline,
+    render_text_timeline_map,
+)
 
 logger = get_logger(__name__)
 
@@ -632,22 +637,27 @@ def export_daw_layers(
         else:
             logger.warning("Audacity Macros directory not found — macro not written.")
 
-    # --- Timeline visualization (optional) ---
-    if timeline or timeline_html:
-        dlg_labels = compute_dialogue_labels(stem_plans, cue_timeline)
-        td = build_timeline_data(
-            tag, total_ms / 1000.0,
-            dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
+    # --- Timeline map + visualization ---
+    # Label computation is pure (no audio loads), so the text map is written
+    # on every run; the terminal/HTML renders stay flag-gated.
+    dlg_labels = compute_dialogue_labels(stem_plans, cue_timeline)
+    td = build_timeline_data(
+        tag, total_ms / 1000.0,
+        dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
+    )
+    txt_path = render_text_timeline_map(
+        td, os.path.join(output_dir, f"{tag}_timeline.txt"), slug=slug,
+    )
+    logger.info(f"    Written: {txt_path}")
+    if timeline:
+        print(render_terminal_timeline(td))
+    if timeline_html:
+        html_path = os.path.join(output_dir, f"{tag}_timeline.html")
+        render_html_timeline(
+            td, html_path, stems_dir=stems_dir, slug=slug, tag=tag,
+            layers_dir=output_dir,
         )
-        if timeline:
-            print(render_terminal_timeline(td))
-        if timeline_html:
-            html_path = os.path.join(output_dir, f"{tag}_timeline.html")
-            render_html_timeline(
-                td, html_path, stems_dir=stems_dir, slug=slug, tag=tag,
-                layers_dir=output_dir,
-            )
-            logger.info(f"    Written: {html_path}")
+        logger.info(f"    Written: {html_path}")
 
     logger.info("")
     logger.info(f"--- Done! {len(layer_files)} layer WAVs in {output_dir}/ ---")
@@ -770,31 +780,35 @@ def main() -> None:
             dry_run_daw(tag, stem_plans, entries_index, output_dir, stems_dir,
                         sfx_config=sfx_config, cast_config=config,
                         vintage_scenes=resolved_vintage)
-            if args.timeline or args.timeline_html:
-                total_ms, timeline = build_foreground_timeline_only(
-                    stem_plans, gap_ms=args.gap_ms
+            # Timeline map is written on every dry-run; renders stay gated.
+            total_ms, timeline = build_foreground_timeline_only(
+                stem_plans, gap_ms=args.gap_ms
+            )
+            dlg_labels = compute_dialogue_labels(stem_plans, timeline)
+            amb_labels = compute_ambience_labels(stem_plans, timeline, total_ms)
+            mus_labels = compute_music_labels(
+                stem_plans, timeline, total_ms,
+                include_foreground_override=True,
+            )
+            sfx_labels = compute_sfx_labels(stem_plans, timeline, total_ms)
+            vf_labels = compute_vintage_filter_labels(stem_plans, timeline, total_ms)
+            td = build_timeline_data(
+                tag, total_ms / 1000.0,
+                dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
+            )
+            txt_path = render_text_timeline_map(
+                td, os.path.join(output_dir, f"{tag}_timeline.txt"), slug=slug,
+            )
+            logger.info(f"    Written: {txt_path}")
+            if args.timeline:
+                print(render_terminal_timeline(td))
+            if args.timeline_html:
+                html_path = os.path.join(output_dir, f"{tag}_timeline.html")
+                render_html_timeline(
+                    td, html_path, stems_dir=stems_dir, slug=slug, tag=tag,
+                    layers_dir=output_dir,
                 )
-                dlg_labels = compute_dialogue_labels(stem_plans, timeline)
-                amb_labels = compute_ambience_labels(stem_plans, timeline, total_ms)
-                mus_labels = compute_music_labels(
-                    stem_plans, timeline, total_ms,
-                    include_foreground_override=True,
-                )
-                sfx_labels = compute_sfx_labels(stem_plans, timeline, total_ms)
-                vf_labels = compute_vintage_filter_labels(stem_plans, timeline, total_ms)
-                td = build_timeline_data(
-                    tag, total_ms / 1000.0,
-                    dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
-                )
-                if args.timeline:
-                    print(render_terminal_timeline(td))
-                if args.timeline_html:
-                    html_path = os.path.join(output_dir, f"{tag}_timeline.html")
-                    render_html_timeline(
-                        td, html_path, stems_dir=stems_dir, slug=slug, tag=tag,
-                        layers_dir=output_dir,
-                    )
-                    logger.info(f"    Written: {html_path}")
+                logger.info(f"    Written: {html_path}")
             return
 
         export_daw_layers(

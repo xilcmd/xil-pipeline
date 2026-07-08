@@ -854,3 +854,77 @@ class TestTransport:
         html = self._render(tmp_path, layers_dir=None)
         assert "const LAYER_AUDIO = {};" in html
         assert "run xil daw to enable full-mix playback" in html
+
+
+# ─── Tests: text timeline map ({tag}_timeline.txt cue sheet) ───
+
+class TestTextTimelineMap:
+    """Human-readable chronological map of foreground timing —
+    dialogue + SFX interleaved, music/ambience omitted."""
+
+    def _render(self, tmp_path, data, **kwargs):
+        out = str(tmp_path / "tl.txt")
+        result = timeline_viz.render_text_timeline_map(data, out, **kwargs)
+        return result, open(out, encoding="utf-8").read()
+
+    def test_writes_file_and_returns_path(self, sample_data, tmp_path):
+        result, text = self._render(tmp_path, sample_data)
+        assert result == str(tmp_path / "tl.txt")
+        assert text.endswith("\n")
+
+    def test_dialogue_and_sfx_interleaved_by_start_time(self, sample_data, tmp_path):
+        _, text = self._render(tmp_path, sample_data)
+        rows = [l for l in text.splitlines() if l and not l.startswith("#")]
+        assert any(" DLG " in r for r in rows)
+        assert any(" SFX " in r for r in rows)
+        # starts non-decreasing: parse leading m:ss.t
+        def start_of(row):
+            t = row.strip().split()[0]
+            m, rest = t.split(":")
+            return int(m) * 60 + float(rest)
+        starts = [start_of(r) for r in rows]
+        assert starts == sorted(starts)
+
+    def test_music_and_ambience_omitted(self, sample_data, tmp_path):
+        _, text = self._render(tmp_path, sample_data)
+        assert "INTRO MUSIC" not in text
+        assert "MUSIC: THEME STING" not in text
+        assert "AMBIENCE" not in text.replace("music/ambience omitted", "")
+
+    def test_seq_and_snippet_rendering(self, tmp_path):
+        data = build_timeline_data(
+            tag="TEST", total_s=30.0,
+            dlg_labels=[(1.0, 5.0, "narrator", None, None, None,
+                         "Woonsocket, Rhode Island", None, 5, "chatterbox")],
+            amb_labels=[],
+            mus_labels=[],
+            sfx_labels=[(6.0, 7.0, "BEAT", None, None, None, None, None, 8)],
+        )
+        _, text = self._render(tmp_path, data)
+        rows = [l for l in text.splitlines() if l and not l.startswith("#")]
+        dlg_row = next(l for l in rows if " DLG " in l)
+        assert "#005" in dlg_row
+        assert "narrator" in dlg_row
+        assert "“Woonsocket, Rhode Island…”" in dlg_row
+        beat_row = next(l for l in rows if " SFX " in l)
+        assert "#008" in beat_row
+        assert "BEAT" in beat_row
+        assert "“" not in beat_row  # no empty quotes on SFX rows
+
+    def test_no_sfx_layer_still_renders(self, tmp_path):
+        data = build_timeline_data(
+            tag="TEST", total_s=10.0,
+            dlg_labels=[(0.0, 5.0, "adam")],
+            amb_labels=[], mus_labels=[], sfx_labels=[],
+        )
+        _, text = self._render(tmp_path, data)
+        assert " DLG " in text
+
+    def test_header_contains_tag_duration_and_omission_note(self, sample_data, tmp_path):
+        _, text = self._render(tmp_path, sample_data, slug="myshow")
+        head = text.splitlines()[0:4]
+        joined = "\n".join(head)
+        assert "S02E03" in joined
+        assert "myshow" in joined
+        assert "3:40" in joined            # 220.0s duration
+        assert "music/ambience omitted" in joined
