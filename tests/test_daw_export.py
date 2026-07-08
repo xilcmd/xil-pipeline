@@ -495,3 +495,22 @@ class TestExportDawLayersTimelineParam:
 
         captured = capsys.readouterr()
         assert len(captured.out) > 0, "Expected ASCII timeline on stdout when timeline=True"
+
+
+# ─── Tests: text timeline map written on every export ───
+
+class TestTimelineTextMapOutput:
+    def test_text_map_written_even_without_timeline_flags(
+        self, config, stems_dir, parsed_file, tmp_path
+    ):
+        """{tag}_timeline.txt is unconditional — no flag gates it."""
+        output_dir = str(tmp_path / "daw" / "S01E01")
+        daw.export_daw_layers(
+            config, stems_dir, parsed_file, output_dir, "S01E01",
+            timeline=False, timeline_html=False,
+        )
+        txt = os.path.join(output_dir, "S01E01_timeline.txt")
+        assert os.path.exists(txt)
+        content = open(txt, encoding="utf-8").read()
+        assert content.startswith("# Timeline map: S01E01")
+        assert "music/ambience omitted" in content

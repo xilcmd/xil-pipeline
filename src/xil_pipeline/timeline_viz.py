@@ -835,6 +835,61 @@ document.getElementById('layers').addEventListener('click', function(e) {{
 """
 
 
+def _fmt_mmss_tenths(seconds: float) -> str:
+    """Format seconds as ``M:SS.t`` (tenths), right-aligned to 7 chars."""
+    m = int(seconds) // 60
+    s = seconds - m * 60
+    return f"{m}:{s:04.1f}".rjust(7)
+
+
+def render_text_timeline_map(
+    data: TimelineData,
+    output_path: str,
+    *,
+    slug: str = "",
+) -> str:
+    """Write a human-readable cue sheet of the episode's foreground timing.
+
+    Dialogue and SFX spans interleaved chronologically; music and ambience
+    are omitted — they are background layers that do not move the
+    foreground timeline.
+
+    Args:
+        data: Timeline data from :func:`build_timeline_data`.
+        output_path: Path to write the text map.
+        slug: Show slug for the header (omitted when empty).
+
+    Returns:
+        The path written (same as *output_path*).
+    """
+    spans = list(data.layers.get("dialogue", [])) + list(data.layers.get("sfx", []))
+    spans.sort(key=lambda sp: (sp.start_s, sp.seq if sp.seq is not None else 0))
+    dialogue_ids = {id(sp) for sp in data.layers.get("dialogue", [])}
+
+    show_part = f" — {slug}" if slug else ""
+    lines = [
+        f"# Timeline map: {data.tag}{show_part} ({_format_time(data.total_duration_s)})",
+        "# dialogue + SFX foreground timing; music/ambience omitted",
+        "#",
+        "#  START      END       LAYER  SEQ   WHO/WHAT",
+    ]
+    for sp in spans:
+        layer = "DLG" if id(sp) in dialogue_ids else "SFX"
+        seq = f"#{sp.seq:03d}" if sp.seq is not None else "    "
+        who = sp.label
+        if layer == "DLG" and sp.snippet:
+            who = f"{sp.label}  “{sp.snippet}…”"
+        lines.append(
+            f" {_fmt_mmss_tenths(sp.start_s)} – {_fmt_mmss_tenths(sp.end_s)}   "
+            f"{layer}   {seq}  {who}"
+        )
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    return output_path
+
+
 def render_html_timeline(
     data: TimelineData,
     output_path: str,
