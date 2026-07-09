@@ -371,7 +371,17 @@ def get_parser() -> argparse.ArgumentParser:
     """Return the argument parser for xil-publish."""
     parser = argparse.ArgumentParser(
         prog="xil-publish",
-        description="Generate social media post drafts from parsed episode data",
+        description=(
+            "Generate social media post drafts from parsed episode data. Reads "
+            "a parsed episode JSON and calls the Claude API to draft three "
+            "ready-to-edit post variants (Hype, Quote, Spotlight) for Facebook "
+            "or Instagram, written to posts/<slug>/<tag>_posts.md."
+        ),
+        epilog=(
+            "Requires the ANTHROPIC_API_KEY environment variable (except with "
+            "--dry-run) and the [publish] extra: pip install "
+            "'xil-pipeline[publish]'."
+        ),
     )
     tag_group = parser.add_mutually_exclusive_group()
     tag_group.add_argument("--episode", help="Episode tag (e.g. S04E01)")

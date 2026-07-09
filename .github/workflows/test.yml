@@ -42,5 +42,8 @@ jobs:
         run: pip install -e ".[all,dev]"
       - name: Lint
         run: ruff check src/xil_pipeline/
+      - name: Man page drift check
+        if: runner.os == 'Linux'
+        run: python docs/build_man.py --check
       - name: Run tests
         run: pytest tests/ -v --tb=short
