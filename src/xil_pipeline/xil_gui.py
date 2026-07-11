@@ -2058,10 +2058,32 @@ def _register_sfx_routes(app) -> None:
         return _JSONResponse({"ok": True, "message": f"Saved {key_b!r} — re-run xil daw to apply."})
 
 
+def _print_workspace_banner() -> Path:
+    """Print the resolved workspace root before the server starts.
+
+    XIL_PROJECTROOT is read once per process at launch and then frozen for
+    that process's lifetime — a stale value (wrong terminal, un-sourced
+    shell rc file, typo) silently persists until the process is actually
+    killed and relaunched, and is otherwise invisible until you dig into
+    the Setup tab. Printing it up front, before Gradio's own startup
+    banner, makes a misconfigured workspace impossible to miss.
+
+    Returns:
+        The resolved workspace path (for callers that want it without a
+        second lookup).
+    """
+    workspace = get_workspace_root()
+    print(f"xil-gui: workspace root = {workspace}")
+    if not workspace.is_dir():
+        print(f"xil-gui: WARNING — workspace root does not exist: {workspace}")
+    return workspace
+
+
 def main() -> None:
     """CLI entry point for the Gradio web dashboard."""
     global _activity_log
     args = get_parser().parse_args()
+    _print_workspace_banner()
     if args.output:
         _activity_log = open(args.output, "a", encoding="utf-8", buffering=1)
     try:
