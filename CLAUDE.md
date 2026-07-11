@@ -557,6 +557,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILU017_*` — remove show (delete all workspace files for a given show slug; `--dry-run` safe; `--yes` skips confirmation prompt; `--include-scripts` also removes `scripts/*_{slug}_*.md` files; `SFX/` and `logs/` are never touched; accepts show name or slug; clears `.active_show` when it points to the removed show)
 - `XILU018_*` — remove episode (delete all workspace artifacts for a single episode tag — cast/sfx configs, parsed JSON/CSV, stems dir, DAW dir, master MP3s, cues, posts, voice_samples; `--dry-run` safe; `--yes` skips confirmation prompt; source script in `scripts/`, shared `SFX/`, and `logs/` are never touched; handles both normalized and legacy layouts)
 - `xil_gui.py` — Gradio web dashboard (`xil-gui` entry point); requires `[gui]` extra; nine tabs in order: Setup (with content type selector), Project, Episodes, Run Stage, Speakers, Cast Config, SFX Config, Audio Preview, Timeline
+- `xil_use.py` — active show context switcher (`xil-use` entry point / `xil use`); no args lists shows in `configs/` and marks the active one; with a show name or slug (multi-word names may be unquoted) writes `<workspace>/.active_show`
 - `XILP001_*` — script parser
 - `XILP002_*` — voice generation (ElevenLabs TTS)
 - `XILP003_*` — audio assembly (stems → master MP3, two-pass multi-track mix)
@@ -916,19 +917,21 @@ pytest tests/ -v
 
 ## Man Pages
 
-Unix man pages for all 23 CLI commands are pre-generated and committed to `man/man1/`. They are installed automatically when the package is built into a wheel and installed via pip.
+Unix man pages for all 37 CLI commands are pre-generated and committed to `man/man1/`. They are installed automatically when the package is built into a wheel and installed via pip.
 
 **Regenerating after CLI changes** (run whenever flags or descriptions change):
 
 ```bash
 pip install -e ".[dev]"      # includes argparse-manpage
-python docs/build_man.py  # regenerate all 20 argparse-based pages
+python docs/build_man.py  # regenerate all 36 argparse-based pages
 # xil.1 is hand-crafted — edit man/man1/xil.1 directly when the dispatcher changes
 ```
 
 Regenerate a single page: `python docs/build_man.py xil-parse`
 
 Always commit the regenerated `.1` files alongside any CLI flag change. The `get_parser()` function in each module (extracted from `main()`) is what `build_man.py` calls to obtain the parser — keep it in sync with any `add_argument` changes.
+
+**Drift protection**: `python docs/build_man.py --check` exits 1 if any committed page is stale relative to its parser (the comparison ignores the `.TH` date field, so it is stable across days). CI runs this check on Linux after the lint step, and `tests/test_man_pages.py` cross-checks `pyproject.toml [project.scripts]` against the `COMMANDS` registry in `build_man.py` — a new CLI entry point without man-page registration fails the suite. The SEE ALSO block on generated pages is derived from `COMMANDS` automatically. Every new console script must be added to `COMMANDS` in `docs/build_man.py` (or `HAND_CRAFTED` for manually maintained pages like `xil.1`).
 
 **Post-install access on Debian** (for `pip install --user`):
 

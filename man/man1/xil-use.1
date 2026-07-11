@@ -1,41 +1,56 @@
-.TH XIL\-USE "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.TH XIL\-USE "1" "2026\-07\-09" "xil\-pipeline 0.3.1" "User Commands"
 .SH NAME
-xil\-use \- set or display the active show context
+xil\-use
 .SH SYNOPSIS
 .B xil\-use
-.br
-.B xil\-use
-\fI\,SHOW\/\fR
+[-h] [show ...]
 .SH DESCRIPTION
-Without arguments, lists all shows discovered in the current workspace (each
-\fBconfigs/\fR\fI<slug>\fR\fB/project.json\fR) and marks the currently active show with
-an asterisk.
-.PP
-With a show name or slug argument, switches the active show to that show.
-Subsequent commands that auto\-detect the show (parse, produce, status, etc.)
-will use the newly active show until changed again.
-.PP
-The active show is stored in \fI<workspace>\fR/.active_show.
-.SH ARGUMENTS
+Set or display the active show context. Without arguments, lists all shows discovered in the workspace (each configs/<slug>/project.json) and marks the currently active show with an asterisk. With a show name or slug, switches the active show; subsequent commands that auto\-detect the show (parse, produce, status, ...) use it until changed again.
+
 .TP
-.I SHOW
-Show name or slug to activate (e.g. \fB"Night Owls"\fR or \fBnightowls\fR).
-Both forms are accepted.  Omit to list available shows.
-.SH EXAMPLES
-.TP
-List all shows:
-.B xil use
-.TP
-Switch to a show by name:
-.B xil use "The Woonsocket Wonders"
-.TP
-Switch to a show by slug:
-.B xil use thewoonsocketwonders
-.TP
-Via unified dispatcher:
-.B xil use
+\fBshow\fR
+show name or slug to activate (omit to list available shows)
+
+.SH COMMENTS
+The active show is stored in <workspace>/.active_show. A multi\-word show name
+may be given unquoted; all arguments are joined with spaces.
+
 .SH SEE ALSO
 .BR xil (1),
-.BR xil\-init (1)
+.BR xil-init (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-studio-onboard (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-stem-log (1),
+.BR xil-migrate-workspace (1),
+.BR xil-remove-show (1),
+.BR xil-remove-episode (1),
+.BR xil-status (1),
+.BR xil-sfx-restore (1),
+.BR xil-db-profile (1),
+.BR xil-sfx-csv (1),
+.BR xil-parsed-csv (1),
+.BR xil-sfx-hydrate (1),
+.BR xil-episode-summary (1),
+.BR xil-stem-verify (1),
+.BR xil-stem-compare (1),
+.BR xil-publish (1),
+.BR xil-gui (1)
 .SH AUTHOR
 John Brissette <xilcmd@gmail.com>

@@ -475,7 +475,7 @@ def get_parser() -> argparse.ArgumentParser:
         "--sfx-dir",
         default=SFX_DIR,
         metavar="DIR",
-        help=f"Local SFX directory to scan (default: {SFX_DIR}/)",
+        help="Local SFX directory to scan (default: <workspace>/SFX/)",
     )
     parser.add_argument(
         "--search",

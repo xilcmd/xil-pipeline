@@ -94,6 +94,7 @@ xil-remove-episode    = "xil_pipeline.XILU018_remove_episode:main"
 xil-status            = "xil_pipeline.XILU019_episode_status:main"
 xil-init              = "xil_pipeline.xil_init:main"
 xil-gui               = "xil_pipeline.xil_gui:main"
+xil-use               = "xil_pipeline.xil_use:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/xil_pipeline"]
