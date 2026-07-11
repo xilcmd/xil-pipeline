@@ -1,43 +1,61 @@
-.TH XIL\-EPISODE\-SUMMARY "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.TH XIL\-EPISODE\-SUMMARY "1" "2026\-07\-09" "xil\-pipeline 0.3.1" "User Commands"
 .SH NAME
-xil\-episode\-summary \- write a one\-row\-per\-episode summary CSV from all parsed JSON files
+xil\-episode\-summary
 .SH SYNOPSIS
 .B xil\-episode\-summary
-[\-h] [\-\-output FILE] [\-\-show NAME] [\-\-stdout]
+[-h] [--output FILE] [--show NAME] [--stdout]
 .SH DESCRIPTION
-Scans all
-.B parsed_<TAG>.json
-files under the current show's
-.B parsed/\fR\fI<slug>\fR/
-directory and writes a summary CSV with one row per episode.  Columns include
-the episode tag, title, total entry count, dialogue count, direction count,
-section list, and word count.
-.PP
-Useful for tracking progress across a season or auditing show\-level metrics.
+Write a one\-row\-per\-episode summary CSV from all parsed_<tag>.json files.
+
 .SH OPTIONS
 .TP
 \fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
-Write CSV to FILE (default: \fI<workspace>\fR/parsed/\fI<slug>\fR/episode_summary.csv)
+Output CSV path (default: <workspace>/episode_summary.csv)
+
 .TP
 \fB\-\-show\fR \fI\,NAME\/\fR
-Show name or slug override (default: resolved from project.json / active show)
+Filter to a single show name, e.g. 'THE 413' (case\-insensitive)
+
 .TP
 \fB\-\-stdout\fR
-Write CSV to stdout \(em no banner, safe to pipe
-.SH EXAMPLES
-.TP
-Generate a season summary for the active show:
-.B xil episode\-summary
-.TP
-Write to a named file:
-.B xil episode\-summary \-\-output season1_summary.csv
-.TP
-Pipe to column for aligned display:
-.B xil episode\-summary \-\-stdout | column \-t \-s,
+Write CSV to stdout — no banner, safe to pipe
+
 .SH SEE ALSO
 .BR xil (1),
-.BR xil\-parse (1),
-.BR xil\-parsed\-csv (1),
-.BR xil\-status (1)
+.BR xil-init (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-studio-onboard (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-stem-log (1),
+.BR xil-migrate-workspace (1),
+.BR xil-remove-show (1),
+.BR xil-remove-episode (1),
+.BR xil-status (1),
+.BR xil-sfx-restore (1),
+.BR xil-db-profile (1),
+.BR xil-sfx-csv (1),
+.BR xil-parsed-csv (1),
+.BR xil-sfx-hydrate (1),
+.BR xil-stem-verify (1),
+.BR xil-stem-compare (1),
+.BR xil-publish (1),
+.BR xil-gui (1),
+.BR xil-use (1)
 .SH AUTHOR
 John Brissette <xilcmd@gmail.com>

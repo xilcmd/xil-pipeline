@@ -13,6 +13,7 @@ Usage::
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -40,9 +41,35 @@ def _available_shows(root: Path) -> list[tuple[str, str]]:
     return results
 
 
+def get_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for xil-use."""
+    parser = argparse.ArgumentParser(
+        prog="xil-use",
+        description=(
+            "Set or display the active show context. Without arguments, lists all "
+            "shows discovered in the workspace (each configs/<slug>/project.json) "
+            "and marks the currently active show with an asterisk. With a show "
+            "name or slug, switches the active show; subsequent commands that "
+            "auto-detect the show (parse, produce, status, ...) use it until "
+            "changed again."
+        ),
+        epilog=(
+            "The active show is stored in <workspace>/.active_show. A multi-word "
+            "show name may be given unquoted; all arguments are joined with spaces."
+        ),
+    )
+    parser.add_argument(
+        "show",
+        nargs="*",
+        help="show name or slug to activate (omit to list available shows)",
+    )
+    return parser
+
+
 def main() -> int:
+    """CLI entry point for the active-show context switcher."""
     configure_logging()
-    args = sys.argv[1:]
+    args = get_parser().parse_args().show
 
     root = get_workspace_root()
     shows = _available_shows(root)

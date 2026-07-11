@@ -153,6 +153,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(after produce / import)",
     ),
+    "stem-compare": CommandSpec(
+        "xil_pipeline.XILU016_stem_compare",
+        "cross-reference a stem-verify transcript report against the parsed script",
+        _UTILITY,
+        "(after stem-verify)",
+    ),
     "remove-show": CommandSpec(
         "xil_pipeline.XILU017_remove_show",
         "remove all workspace files for a show (--dry-run safe)",

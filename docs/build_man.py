@@ -11,9 +11,13 @@ hand-crafted (man/man1/xil.1) and is never overwritten by this script.
 
 Usage::
 
-    python docs/build_man.py               # regenerate all 20 pages
+    python docs/build_man.py               # regenerate all registered pages
     python docs/build_man.py xil-parse     # regenerate one page
     python docs/build_man.py --check       # exit 1 if any file is stale
+
+The ``--check`` comparison ignores the date field on the ``.TH`` line, so it
+is stable across days (argparse-manpage stamps the current date unless
+``SOURCE_DATE_EPOCH`` is set).
 
 Requirements::
 
@@ -25,6 +29,7 @@ Requirements::
 
 import argparse
 import importlib
+import re
 import sys
 from pathlib import Path
 
@@ -60,37 +65,30 @@ COMMANDS: list[tuple[str, str]] = [
     ("xil-remove-episode", "xil_pipeline.XILU018_remove_episode"),
     ("xil-status", "xil_pipeline.XILU019_episode_status"),
     ("xil-sfx-restore", "xil_pipeline.XILU020_sfx_restore"),
+    ("xil-db-profile",       "xil_pipeline.XILU010_db_profile"),
+    ("xil-sfx-csv",          "xil_pipeline.XILU011_sfx_csv"),
+    ("xil-parsed-csv",       "xil_pipeline.XILU012_parsed_csv"),
+    ("xil-sfx-hydrate",      "xil_pipeline.XILU013_sfx_hydrate"),
+    ("xil-episode-summary",  "xil_pipeline.XILU014_episode_summary"),
+    ("xil-stem-verify",      "xil_pipeline.XILU015_stem_verify"),
+    ("xil-stem-compare",     "xil_pipeline.XILU016_stem_compare"),
+    ("xil-publish",          "xil_pipeline.XILP012_publish"),
+    ("xil-gui",              "xil_pipeline.xil_gui"),
+    ("xil-use",              "xil_pipeline.xil_use"),
 ]
 
-SEE_ALSO_LINES = [
-    ".SH SEE ALSO",
-    ".BR xil (1),",
-    ".BR xil-scan (1),",
-    ".BR xil-parse (1),",
-    ".BR xil-cues (1),",
-    ".BR xil-produce (1),",
-    ".BR xil-assemble (1),",
-    ".BR xil-studio-onboard (1),",
-    ".BR xil-daw (1),",
-    ".BR xil-migrate (1),",
-    ".BR xil-cleanup (1),",
-    ".BR xil-import (1),",
-    ".BR xil-regen (1),",
-    ".BR xil-master (1),",
-    ".BR xil-voices (1),",
-    ".BR xil-csv-join (1),",
-    ".BR xil-sfx (1),",
-    ".BR xil-sample (1),",
-    ".BR xil-sfx-lib (1),",
-    ".BR xil-splice (1),",
-    ".BR xil-mp3-hash (1),",
-    ".BR xil-migrate-workspace (1),",
-    ".BR xil-init (1)",
-    ".SH AUTHOR",
-    "John Brissette <xilcmd@gmail.com>",
-]
+def _see_also_block(current: str) -> str:
+    """Return the SEE ALSO + AUTHOR troff block, derived from COMMANDS.
 
-SEE_ALSO_BLOCK = "\n" + "\n".join(SEE_ALSO_LINES) + "\n"
+    Lists ``xil`` plus every registered command except *current* (a page
+    should not reference itself), so the block can never drift from the
+    COMMANDS registry.
+    """
+    names = ["xil"] + [n for n, _ in COMMANDS if n != current]
+    refs = [f".BR {n} (1)," for n in names]
+    refs[-1] = refs[-1].rstrip(",")
+    lines = [".SH SEE ALSO", *refs, ".SH AUTHOR", "John Brissette <xilcmd@gmail.com>"]
+    return "\n" + "\n".join(lines) + "\n"
 
 
 def _import_manpage():
@@ -127,7 +125,19 @@ def generate_one(cmd_name: str, mod_path: str, Manpage) -> str:  # noqa: N803
     mp.source = f"xil-pipeline {_get_version()}"
     mp.manual = "User Commands"
     mp.section = 1
-    return str(mp) + SEE_ALSO_BLOCK
+    return str(mp) + _see_also_block(cmd_name)
+
+
+_TH_DATE_RE = re.compile(r'^(\.TH .*?")\d{4}\\?-\d{2}\\?-\d{2}(")', flags=re.MULTILINE)
+
+
+def _mask_th_date(troff: str) -> str:
+    """Return *troff* with the date field of any ``.TH`` line masked.
+
+    argparse-manpage stamps the current date into ``.TH`` unless
+    ``SOURCE_DATE_EPOCH`` is set; masking keeps ``--check`` stable across days.
+    """
+    return _TH_DATE_RE.sub(r"\1DATE\2", troff)
 
 
 def build(target: str | None, check: bool) -> int:
@@ -162,7 +172,8 @@ def build(target: str | None, check: bool) -> int:
             continue
 
         if check:
-            if out_path.exists() and out_path.read_text(encoding="utf-8") == troff:
+            on_disk = out_path.read_text(encoding="utf-8") if out_path.exists() else ""
+            if _mask_th_date(on_disk) == _mask_th_date(troff):
                 print(f"OK       {out_path.name}")
             else:
                 print(f"STALE    {out_path.name}")

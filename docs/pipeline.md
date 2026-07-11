@@ -2226,7 +2226,7 @@ classDiagram
 
 ## Man Pages
 
-All 26 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
+All 37 CLI commands ship with Unix man pages, installed automatically when the package is pip-installed.
 
 ### Accessing man pages
 
@@ -2252,7 +2252,10 @@ Man pages are pre-generated from each command's `get_parser()` function and comm
 
 ```bash
 pip install -e ".[dev]"      # includes argparse-manpage
-python docs/build_man.py  # regenerate all 20 argparse-based pages
+python docs/build_man.py  # regenerate all 36 argparse-based pages
+python docs/build_man.py --check  # exit 1 if any committed page is stale (runs in CI)
 ```
 
 The `xil.1` dispatcher page (`man/man1/xil.1`) is hand-crafted and must be updated manually when the dispatcher's command list changes.
+
+Drift protection: CI runs `--check` on Linux after the lint step (the comparison ignores the `.TH` date field), and `tests/test_man_pages.py` cross-checks `pyproject.toml [project.scripts]` against the `COMMANDS` registry in `docs/build_man.py` — a new CLI entry point without man-page registration fails the test suite.

@@ -1960,12 +1960,22 @@ def get_parser() -> argparse.ArgumentParser:
     """Return the argument parser for xil-gui."""
     parser = argparse.ArgumentParser(
         prog="xil-gui",
-        description="Launch the xil-pipeline web dashboard (Gradio).",
+        description=(
+            "Launch the xil-pipeline web dashboard (Gradio). Opens a browser UI "
+            "with nine tabs: Setup (initialize a workspace / select the active "
+            "show), Project (edit project.json), Episodes (workspace overview "
+            "with parse/stems/DAW/master status), Run Stage (launch pipeline "
+            "stages with live log streaming; dry-run on by default), Speakers, "
+            "Cast Config and SFX Config (edit the respective JSON configs), "
+            "Audio Preview (browse and play stems in the browser), and Timeline "
+            "(interactive HTML timeline)."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Requires the [gui] extra:\n"
             "  pip install 'xil-pipeline[gui]'\n\n"
-            "Partner sharing (temporary 72h public URL):\n"
+            "Partner sharing (temporary 72h public URL, open access, no auth —\n"
+            "share only with trusted collaborators):\n"
             "  xil-gui --share\n"
         ),
     )

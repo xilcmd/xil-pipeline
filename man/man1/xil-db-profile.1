@@ -1,47 +1,65 @@
-.TH XIL\-DB\-PROFILE "1" "2026\-07\-02" "xil\-pipeline 0.3.0" "User Commands"
+.TH XIL\-DB\-PROFILE "1" "2026\-07\-09" "xil\-pipeline 0.3.1" "User Commands"
 .SH NAME
-xil\-db\-profile \- profile MP3 audio levels: peak, average, and minimum dBFS
+xil\-db\-profile
 .SH SYNOPSIS
 .B xil\-db\-profile
-[\-h] [\fI\,PATH\/\fR] [\-\-output FILE] [\-\-absolute] [\-\-json]
+[-h] [--output FILE] [--absolute] [--json] [path]
 .SH DESCRIPTION
-Recursively scans a directory (or a single MP3 file) and reports the peak,
-average (RMS), and minimum dBFS loudness for each file.  Useful for
-normalisation auditing before assembly or mastering.
-.PP
-When
-.I PATH
-is omitted, scans the shared
-.B SFX/
-directory under the current workspace root.
-.SH ARGUMENTS
+Profile MP3 audio levels: peak, average, and minimum dBFS
+
 .TP
-.I PATH
-Directory or MP3 file to scan (default: \fI<workspace>\fR/SFX/)
+\fBpath\fR
+MP3 file or directory to scan recursively (default: workspace SFX/ folder)
+
 .SH OPTIONS
 .TP
 \fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
-Write results to FILE instead of stdout
+Write results to FILE as CSV in addition to logging
+
 .TP
 \fB\-\-absolute\fR
-Print absolute file paths (default: relative to scan root)
+Print absolute paths (default: relative to scan root)
+
 .TP
 \fB\-\-json\fR
-Output a JSON array to stdout \(em no banner, safe to pipe to jq
-.SH EXAMPLES
-.TP
-Profile the SFX library:
-.B xil db\-profile
-.TP
-Profile a single episode's stems:
-.B xil db\-profile stems/the413/S01E01 \-\-json
-.TP
-Save a CSV\-compatible report to a file:
-.B xil db\-profile \-\-output loudness.txt
+Output a JSON array to stdout — no banner, safe to pipe to jq
+
 .SH SEE ALSO
 .BR xil (1),
-.BR xil\-assemble (1),
-.BR xil\-master (1),
-.BR xil\-sfx\-lib (1)
+.BR xil-init (1),
+.BR xil-scan (1),
+.BR xil-parse (1),
+.BR xil-cues (1),
+.BR xil-produce (1),
+.BR xil-assemble (1),
+.BR xil-studio-onboard (1),
+.BR xil-daw (1),
+.BR xil-migrate (1),
+.BR xil-cleanup (1),
+.BR xil-import (1),
+.BR xil-regen (1),
+.BR xil-master (1),
+.BR xil-voices (1),
+.BR xil-csv-join (1),
+.BR xil-sfx (1),
+.BR xil-sample (1),
+.BR xil-sfx-lib (1),
+.BR xil-splice (1),
+.BR xil-mp3-hash (1),
+.BR xil-stem-log (1),
+.BR xil-migrate-workspace (1),
+.BR xil-remove-show (1),
+.BR xil-remove-episode (1),
+.BR xil-status (1),
+.BR xil-sfx-restore (1),
+.BR xil-sfx-csv (1),
+.BR xil-parsed-csv (1),
+.BR xil-sfx-hydrate (1),
+.BR xil-episode-summary (1),
+.BR xil-stem-verify (1),
+.BR xil-stem-compare (1),
+.BR xil-publish (1),
+.BR xil-gui (1),
+.BR xil-use (1)
 .SH AUTHOR
 John Brissette <xilcmd@gmail.com>
