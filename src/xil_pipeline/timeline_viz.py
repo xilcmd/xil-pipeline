@@ -474,23 +474,102 @@ _TRANSPORT_JS = """\
 // === DAW-style transport: synced full-mix playback + playhead ===
 const MIX_ORDER = ['dialogue','sfx','music','ambience','vintage_filter'];
 let mixEls = null, mixMaster = null, mixPlaying = false;
+let mixState = 'idle';   // idle -> loading -> ready
+let mixAbort = null;     // AbortController for the in-flight prefetch
+const mixMuted = {};     // layer -> muted?  (recorded even before the mix is built)
 let phRaf = null, syncIv = null;
 
-function ensureMix() {
-  if (mixEls) return;
-  mixEls = {};
-  for (const k of MIX_ORDER) {
-    if (!LAYER_AUDIO[k]) continue;
-    const a = new Audio('/gradio_api/file=' + LAYER_AUDIO[k]);
-    a.preload = 'auto';
-    mixEls[k] = a;
-  }
-  mixMaster = mixEls['dialogue'] || mixEls[Object.keys(mixEls)[0]];
-  mixMaster.addEventListener('ended', pauseMix);
+function hideMixLoading() {
+  const box = document.getElementById('mix-loading');
+  box.classList.remove('visible');
+  box.classList.remove('error');
 }
 
-function playMix() {
-  ensureMix();
+function showMixError(msg) {
+  const box = document.getElementById('mix-loading');
+  box.classList.add('visible');
+  box.classList.add('error');
+  document.getElementById('mix-loading-text').textContent = msg;
+  document.getElementById('mix-loading-layers').innerHTML = '';
+}
+
+// Prefetch all layer WAVs to Blobs with an aggregate byte-progress readout.
+// Resolves true once the mix elements exist; false when idle-with-no-audio,
+// already loading (caller should treat the click as a cancel), or aborted.
+async function ensureMix() {
+  if (mixState === 'ready') return true;
+  if (mixState === 'loading') return false;
+  const keys = MIX_ORDER.filter(function(k) { return LAYER_AUDIO[k]; });
+  if (!keys.length) return false;
+  mixState = 'loading';
+  mixAbort = new AbortController();
+  const prog = {};
+  keys.forEach(function(k) { prog[k] = {received: 0, total: 0}; });
+  const box = document.getElementById('mix-loading');
+  box.classList.add('visible');
+  box.classList.remove('error');
+  document.getElementById('mix-loading-text').textContent = 'Loading audio\\u2026';
+  document.getElementById('mix-loading-layers').innerHTML = '';
+  document.getElementById('transport-play').innerHTML = '&#8987;';
+  function repaint() {
+    let recv = 0, total = 0, allKnown = true;
+    const rows = [];
+    for (const k of keys) {
+      recv += prog[k].received;
+      total += prog[k].total;
+      if (!prog[k].total) allKnown = false;
+      rows.push('<span>' + LABELS[k] + ' ' + fmtMB(prog[k].received) +
+                (prog[k].total ? ' / ' + fmtMB(prog[k].total) : '') + '</span>');
+    }
+    let txt = 'Loading audio\\u2026 ';
+    if (allKnown && total) {
+      txt += Math.round(recv / total * 100) + '% (' + fmtMB(recv) + ' / ' + fmtMB(total) + ')';
+    } else {
+      txt += fmtMB(recv);
+    }
+    document.getElementById('mix-loading-text').textContent = txt;
+    document.getElementById('mix-loading-layers').innerHTML = rows.join('');
+  }
+  try {
+    const urls = await Promise.all(keys.map(function(k) {
+      return fetchAudioBlob(LAYER_AUDIO[k], function(received, total) {
+        prog[k].received = received;
+        prog[k].total = total;
+        repaint();
+      }, mixAbort.signal);
+    }));
+    mixEls = {};
+    keys.forEach(function(k, i) {
+      const a = new Audio(urls[i]);
+      a.preload = 'auto';
+      a.muted = !!mixMuted[k];
+      mixEls[k] = a;
+    });
+    mixMaster = mixEls['dialogue'] || mixEls[keys[0]];
+    mixMaster.addEventListener('ended', pauseMix);
+    mixState = 'ready';
+    hideMixLoading();
+    document.getElementById('transport-play').innerHTML = '&#9205;';
+    return true;
+  } catch (err) {
+    mixState = 'idle';
+    mixEls = null;
+    mixMaster = null;
+    document.getElementById('transport-play').innerHTML = '&#9205;';
+    if (err && err.name === 'AbortError') {
+      hideMixLoading();
+    } else {
+      showMixError('Load failed: ' + (err && err.message ? err.message : err));
+    }
+    return false;
+  }
+}
+
+async function playMix() {
+  if (mixState === 'loading') { mixAbort.abort(); return; }  // toggle = cancel
+  const token = ++_playToken;
+  if (!await ensureMix()) return;
+  if (token !== _playToken) return;  // user clicked a clip mid-load
   if (!mixMaster) return;
   // Mutual exclusion: stop the single-stem preview
   clearTimeout(clickTimer);
@@ -542,8 +621,8 @@ function phTick() {
   }
 }
 
-function seekTo(t) {
-  ensureMix();
+async function seekTo(t) {
+  if (!await ensureMix()) return;
   if (!mixMaster) return;
   t = Math.max(0, Math.min(t, TOTAL));
   for (const k in mixEls) mixEls[k].currentTime = t;
@@ -562,12 +641,18 @@ document.getElementById('ruler').addEventListener('click', function(e) {
   seekTo(x / (BASE_WIDTH * zoom) * TOTAL);
 });
 
+document.getElementById('mix-loading-cancel').addEventListener('click', function() {
+  if (mixState === 'loading' && mixAbort) mixAbort.abort();
+  else hideMixLoading();  // dismiss a lingering error state
+});
+
+// Record mute preference without triggering the prefetch — a pre-load
+// toggle must not start a multi-GB download over the NAS.
 document.querySelectorAll('.mute-toggle input').forEach(function(cb) {
   if (!LAYER_AUDIO[cb.dataset.layer]) cb.disabled = true;
   cb.addEventListener('change', function() {
-    ensureMix();
-    const el = mixEls[this.dataset.layer];
-    if (el) el.muted = this.checked;
+    mixMuted[this.dataset.layer] = this.checked;
+    if (mixEls && mixEls[this.dataset.layer]) mixEls[this.dataset.layer].muted = this.checked;
   });
 });
 
@@ -578,6 +663,60 @@ if (!Object.keys(LAYER_AUDIO).length) {
   document.getElementById('transport-hint').style.display = 'inline';
 } else {
   document.getElementById('transport-time').textContent = '0:00 / ' + fmtTime(TOTAL);
+}
+"""
+
+_LOADER_CSS = """\
+  #mix-loading { display:none; align-items:center; gap:12px; margin-bottom:10px;
+    background:#1d2b3a; border:1px solid #345; padding:6px 12px; border-radius:4px; }
+  #mix-loading.visible { display:flex; }
+  #mix-loading.error { background:#3a1d1d; border-color:#844; }
+  #mix-loading.error #mix-loading-text { color:#ef9a9a; }
+  #mix-loading-cancel { background:#333; color:#ccc; border:1px solid #666; padding:2px 10px;
+    border-radius:3px; cursor:pointer; font-size:11px; }
+  #mix-loading-cancel:hover { background:#444; }
+  #mix-loading-text { font-size:12px; color:#9fd0ff; font-variant-numeric:tabular-nums; }
+  #mix-loading-layers { display:flex; gap:10px; font-size:11px; color:#7a8aa0;
+    font-variant-numeric:tabular-nums; }
+"""
+
+_LOADER_HTML = """\
+<div id="mix-loading">
+  <button id="mix-loading-cancel" title="Cancel loading">Cancel</button>
+  <span id="mix-loading-text">Loading audio&hellip;</span>
+  <div id="mix-loading-layers"></div>
+</div>
+"""
+
+_LOADER_JS = """\
+// === NAS-aware audio prefetch: fetch-to-Blob with byte progress ===
+// Workspace reads may cross a NAS mount; streaming <audio> from
+// /gradio_api/file= gives zero feedback while gigabytes trickle in.
+const _blobCache = {};  // full URL (incl. ?v= cache-buster) -> object URL
+let _playToken = 0;     // bumped on each play intent; stale awaits bail
+
+function fmtMB(bytes) {
+  return Math.round(bytes / 1048576) + ' MB';
+}
+
+async function fetchAudioBlob(url, onProgress, signal) {
+  if (_blobCache[url]) return _blobCache[url];
+  const resp = await fetch(url, {signal: signal});
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let received = 0;
+  for (;;) {
+    const r = await reader.read();
+    if (r.done) break;
+    chunks.push(r.value);
+    received += r.value.length;
+    if (onProgress) onProgress(received, total);
+  }
+  const objUrl = URL.createObjectURL(new Blob(chunks));
+  _blobCache[url] = objUrl;
+  return objUrl;
 }
 """
 
@@ -604,6 +743,7 @@ _HTML_TEMPLATE = """\
   .span {{ position: absolute; height: 100%; border-radius: 2px; cursor: pointer; min-width: 2px; opacity: 0.85; transition: opacity 0.15s; }}
   .span:hover {{ opacity: 1; z-index: 10; }}
   .span.playing {{ outline: 2px solid rgba(255,255,255,0.9); opacity: 1; z-index: 11; }}
+  .span.loading {{ outline: 2px dashed rgba(255,255,255,0.7); opacity: 1; z-index: 11; }}
   #floattip {{ display: none; position: fixed; background: #333; color: #fff; padding: 6px 10px; border-radius: 4px;
     font-size: 12px; white-space: nowrap; z-index: 1000; pointer-events: none;
     box-shadow: 0 2px 8px rgba(0,0,0,0.5); line-height: 1.5; }}
@@ -627,7 +767,7 @@ _HTML_TEMPLATE = """\
   #xil-player.active {{ display: block; }}
   #player-label {{ font-size: 11px; color: #aaa; margin-bottom: 3px; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }}
-{modal_css}{transport_css}</style>
+{modal_css}{transport_css}{loader_css}</style>
 </head>
 <body>
 <div id="xil-player">
@@ -643,6 +783,7 @@ _HTML_TEMPLATE = """\
   <span class="zoom-info" id="zoom-info">100%</span>
 </div>
 {transport_html}
+{loader_html}
 <div id="floattip"></div>
 <div class="timeline-container" id="tc">
   <div class="timeline-inner" id="ti">
@@ -761,6 +902,8 @@ document.getElementById('tc').addEventListener('wheel', function(e) {{
 
 render();
 
+{loader_js}
+
 {modal_js}
 
 // === Preview playback with sound profile ===
@@ -777,19 +920,40 @@ function ensureAudioGraph() {{
   gainNode.connect(audioCtx.destination);
 }}
 
-function playSpan(el) {{
+async function playSpan(el) {{
   const seq = el.dataset.seq;
   const fp = CLIPS[seq];
   if (!fp) return;
-  if (mixPlaying) pauseMix();  // mutual exclusion with the full-mix transport
+  const token = ++_playToken;
   document.querySelectorAll('.span.playing').forEach(function(s) {{ s.classList.remove('playing'); }});
-  el.classList.add('playing');
+  document.querySelectorAll('.span.loading').forEach(function(s) {{ s.classList.remove('loading'); }});
   const audioEl = document.getElementById('audio-el');
   const ti = el.dataset.ti;
   const rawLabel = ti != null ? (tips[ti] || '').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim() : seq;
-  document.getElementById('player-label').textContent = rawLabel;
-  audioEl.src = '/gradio_api/file=' + fp;
+  const label = document.getElementById('player-label');
+  // .active first — the player strip is display:none until then, and the
+  // loading readout must be visible while the clip crosses the NAS.
   document.getElementById('xil-player').classList.add('active');
+  el.classList.add('loading');
+  label.textContent = 'Loading\\u2026';
+  let src;
+  try {{
+    src = await fetchAudioBlob(fp, function(received, total) {{
+      label.textContent = total
+        ? 'Loading\\u2026 ' + Math.round(received / total * 100) + '%'
+        : 'Loading\\u2026 ' + fmtMB(received);
+    }});
+  }} catch (err) {{
+    el.classList.remove('loading');
+    label.textContent = '\\u26a0 ' + (err && err.message ? err.message : err);
+    return;
+  }}
+  el.classList.remove('loading');
+  if (token !== _playToken) return;  // user clicked elsewhere mid-load
+  if (mixPlaying) pauseMix();  // mutual exclusion with the full-mix transport
+  el.classList.add('playing');
+  label.textContent = rawLabel;
+  audioEl.src = src;
 
   ensureAudioGraph();
   if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -918,7 +1082,23 @@ def render_html_timeline(
     Returns:
         The path written (same as *output_path*).
     """
-    # Build seq → absolute path mapping for click-to-play
+    # Audio URLs are stored RELATIVE to the timeline file's own directory so
+    # the artifact is root-agnostic: the same file works whether the GUI
+    # serves it from a local root or a NAS mount (the iframe loads it via
+    # /gradio_api/file=<abs timeline path>, and the browser resolves relative
+    # refs against that document URL). A ?v={mtime} cache-buster still keys the
+    # browser blob cache so a regenerated asset self-invalidates.
+    out_dir = os.path.dirname(os.path.abspath(output_path))
+
+    def _rel_audio(full_abs: str) -> str:
+        try:
+            rel = os.path.relpath(full_abs, out_dir)
+        except ValueError:
+            rel = full_abs  # different drive (Windows) — fall back to absolute
+        rel = rel.replace(os.sep, "/")
+        return f"{rel}?v={int(os.path.getmtime(full_abs))}"
+
+    # Build seq → relative path mapping for click-to-play
     import re as _re
     _seq_re = _re.compile(r"^(n?)(\d+)_")
     clips: dict[str, str] = {}
@@ -929,7 +1109,8 @@ def render_html_timeline(
             m = _seq_re.match(fname)
             if m:
                 seq = -int(m.group(2)) if m.group(1) == "n" else int(m.group(2))
-                clips[str(seq)] = os.path.abspath(os.path.join(stems_dir, fname))
+                full = os.path.abspath(os.path.join(stems_dir, fname))
+                clips[str(seq)] = _rel_audio(full)
     clips_json = json.dumps(clips)
 
     # Build JSON-serializable structure
@@ -966,7 +1147,7 @@ def render_html_timeline(
         for key in ("dialogue", "sfx", "music", "ambience", "vintage_filter"):
             wav = os.path.join(layers_dir, f"{data.tag}_layer_{key}.wav")
             if os.path.exists(wav):
-                layer_audio[key] = f"{os.path.abspath(wav)}?v={int(os.path.getmtime(wav))}"
+                layer_audio[key] = _rel_audio(os.path.abspath(wav))
 
     content = _HTML_TEMPLATE.format(
         tag=html.escape(data.tag),
@@ -983,6 +1164,9 @@ def render_html_timeline(
         transport_css=_TRANSPORT_CSS,
         transport_html=_TRANSPORT_HTML,
         transport_js=_TRANSPORT_JS,
+        loader_css=_LOADER_CSS,
+        loader_html=_LOADER_HTML,
+        loader_js=_LOADER_JS,
     )
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

@@ -9,6 +9,7 @@ import os
 
 import pytest
 
+import xil_pipeline.xil_gui as xil_gui
 from xil_pipeline.xil_gui import (
     _analyze_script_header,
     _ep_choice,
@@ -318,6 +319,12 @@ class TestEpChoice:
 # ── _refresh_episodes ─────────────────────────────────────────────────────────
 
 class TestRefreshEpisodes:
+    @pytest.fixture(autouse=True)
+    def _isolate_cache(self):
+        xil_gui._EPISODES_CACHE.clear()
+        yield
+        xil_gui._EPISODES_CACHE.clear()
+
     def test_empty_workspace_returns_empty_list(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
         assert _refresh_episodes() == []
@@ -359,6 +366,84 @@ class TestRefreshEpisodes:
         desc = _refresh_episodes()[0][2]
         assert "[The Holiday Shift]" in desc
         assert "The Empty Booth" in desc
+
+
+class TestRefreshEpisodesCache:
+    """Rows are memoised per workspace root so every browser connect
+    (demo.load fires _refresh_episodes) doesn't re-stat the whole workspace —
+    prohibitive when XIL_PROJECTROOT is a NAS mount."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_cache(self):
+        xil_gui._EPISODES_CACHE.clear()
+        yield
+        xil_gui._EPISODES_CACHE.clear()
+
+    def _count_stage_status(self, monkeypatch):
+        calls = []
+        real = xil_gui._stage_status
+
+        def counting(slug, tag):
+            calls.append((slug, tag))
+            return real(slug, tag)
+
+        monkeypatch.setattr(xil_gui, "_stage_status", counting)
+        return calls
+
+    def test_second_call_within_ttl_returns_cached_rows(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S01E01")
+        calls = self._count_stage_status(monkeypatch)
+        first = _refresh_episodes()
+        assert len(calls) == 1
+        second = _refresh_episodes()
+        assert len(calls) == 1          # no rescan
+        assert second == first
+
+    def test_force_rescans(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S01E01")
+        calls = self._count_stage_status(monkeypatch)
+        _refresh_episodes()
+        _refresh_episodes(force=True)
+        assert len(calls) == 2
+
+    def test_force_result_replaces_cache(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S01E01")
+        _refresh_episodes()
+        _write_cast(tmp_path, "the413", "S01E02")
+        rows = _refresh_episodes(force=True)
+        assert len(rows) == 2
+        assert len(_refresh_episodes()) == 2   # cached copy is the fresh one
+
+    def test_expired_ttl_rescans(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        _write_cast(tmp_path, "the413", "S01E01")
+        calls = self._count_stage_status(monkeypatch)
+        _refresh_episodes()
+        root = str(xil_gui.get_workspace_root())
+        ts, rows = xil_gui._EPISODES_CACHE[root]
+        xil_gui._EPISODES_CACHE[root] = (ts - xil_gui._EPISODES_TTL_S - 1, rows)
+        _refresh_episodes()
+        assert len(calls) == 2
+
+    def test_empty_workspace_result_is_cached_too(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        assert _refresh_episodes() == []
+        assert str(xil_gui.get_workspace_root()) in xil_gui._EPISODES_CACHE
+
+    def test_different_workspace_roots_are_separate_entries(self, tmp_path, monkeypatch):
+        ws_a = tmp_path / "a"
+        ws_b = tmp_path / "b"
+        monkeypatch.setenv("XIL_PROJECTROOT", str(ws_a))
+        _write_cast(ws_a, "the413", "S01E01")
+        rows_a = _refresh_episodes()
+        monkeypatch.setenv("XIL_PROJECTROOT", str(ws_b))
+        _write_cast(ws_b, "other", "S02E02")
+        rows_b = _refresh_episodes()
+        assert rows_a != rows_b
+        assert rows_b[0][0] == "S02E02"
 
 
 # ── _stage_status (staleness, via the xil-status engine) ───────────────────────
@@ -534,6 +619,220 @@ class TestSfxChoicesAndScan:
         assert cache[str(sfx / "one.mp3")] == "accurate"
         assert cache[str(sfx / "two.mp3")] == ""
         assert len(cache) == 2
+
+
+class TestSfxGradeCachePersistence:
+    """Grades are memoised in SFX/.xil_grade_cache.json keyed by (size, mtime)
+    so a rescan is one directory walk instead of ~842 serial ID3 reads —
+    prohibitive when XIL_PROJECTROOT is a NAS mount."""
+
+    def _count_id3_reads(self, monkeypatch):
+        calls = []
+        real = xil_gui._read_sfx_grade
+
+        def counting(path):
+            calls.append(path)
+            return real(path)
+
+        monkeypatch.setattr(xil_gui, "_read_sfx_grade", counting)
+        return calls
+
+    def _cache_file(self, tmp_path):
+        return tmp_path / "SFX" / ".xil_grade_cache.json"
+
+    def test_first_scan_writes_cache_file(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        sfx = tmp_path / "SFX"
+        _make_mp3(sfx / "one.mp3")
+        _make_mp3(sfx / "myshow" / "beat.mp3")
+        _write_sfx_grade(str(sfx / "one.mp3"), "accurate")
+        _scan_sfx_grades()
+        data = json.loads(self._cache_file(tmp_path).read_text())
+        assert data["version"] == 1
+        assert data["files"]["one.mp3"]["grade"] == "accurate"
+        assert data["files"][os.path.join("myshow", "beat.mp3")]["grade"] == ""
+
+    def test_second_scan_does_zero_id3_reads(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        sfx = tmp_path / "SFX"
+        _make_mp3(sfx / "one.mp3")
+        _make_mp3(sfx / "two.mp3")
+        _write_sfx_grade(str(sfx / "one.mp3"), "rejected")
+        _scan_sfx_grades()
+        calls = self._count_id3_reads(monkeypatch)
+        cache = _scan_sfx_grades()
+        assert calls == []
+        assert cache[str(sfx / "one.mp3")] == "rejected"
+        assert cache[str(sfx / "two.mp3")] == ""
+
+    def test_modified_file_is_the_only_one_reread(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        sfx = tmp_path / "SFX"
+        _make_mp3(sfx / "one.mp3")
+        _make_mp3(sfx / "two.mp3")
+        _scan_sfx_grades()
+        os.utime(sfx / "two.mp3", (12345, 12345))
+        calls = self._count_id3_reads(monkeypatch)
+        _scan_sfx_grades()
+        assert calls == [str(sfx / "two.mp3")]
+
+    def test_deleted_file_dropped_from_cache_and_file(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        sfx = tmp_path / "SFX"
+        _make_mp3(sfx / "one.mp3")
+        _make_mp3(sfx / "two.mp3")
+        _scan_sfx_grades()
+        (sfx / "two.mp3").unlink()
+        cache = _scan_sfx_grades()
+        assert str(sfx / "two.mp3") not in cache
+        data = json.loads(self._cache_file(tmp_path).read_text())
+        assert "two.mp3" not in data["files"]
+
+    def test_corrupt_cache_file_falls_back_to_full_rescan(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        sfx = tmp_path / "SFX"
+        _make_mp3(sfx / "one.mp3")
+        _write_sfx_grade(str(sfx / "one.mp3"), "accurate")
+        self._cache_file(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+        self._cache_file(tmp_path).write_text("{not json")
+        cache = _scan_sfx_grades()
+        assert cache[str(sfx / "one.mp3")] == "accurate"
+        # and the corrupt file was replaced with a valid one
+        data = json.loads(self._cache_file(tmp_path).read_text())
+        assert data["files"]["one.mp3"]["grade"] == "accurate"
+
+    def test_update_entry_after_grade_write_avoids_reread(self, tmp_path, monkeypatch):
+        """_write_sfx_grade changes the mp3's mtime; _update_grade_cache_entry
+        must store the post-write stat so the next scan is still read-free."""
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        sfx = tmp_path / "SFX"
+        _make_mp3(sfx / "one.mp3")
+        _scan_sfx_grades()
+        _write_sfx_grade(str(sfx / "one.mp3"), "rejected")
+        xil_gui._update_grade_cache_entry(str(sfx / "one.mp3"), "rejected")
+        calls = self._count_id3_reads(monkeypatch)
+        cache = _scan_sfx_grades()
+        assert calls == []
+        assert cache[str(sfx / "one.mp3")] == "rejected"
+
+    def test_update_entry_missing_file_is_silent(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        xil_gui._update_grade_cache_entry(str(tmp_path / "SFX" / "gone.mp3"), "accurate")
+
+
+# ── Local audio cache (NAS workspaces) ───────────────────────────────────────
+
+class TestCachedAudioPath:
+    """_cached_audio_path copies workspace audio to a local cache dir with
+    chunked progress so gr.Audio never streams straight off a slow NAS."""
+
+    @pytest.fixture(autouse=True)
+    def _xdg(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+
+    def test_copies_and_returns_local_path(self, tmp_path):
+        src = tmp_path / "a.mp3"
+        src.write_bytes(b"x" * 1000)
+        out = xil_gui._cached_audio_path(str(src))
+        assert out != str(src)
+        assert out.startswith(str(tmp_path / "xdg"))
+        assert out.endswith(".mp3")
+        with open(out, "rb") as f:
+            assert f.read() == b"x" * 1000
+
+    def test_second_call_is_a_hit_without_recopy(self, tmp_path):
+        src = tmp_path / "a.mp3"
+        src.write_bytes(b"x" * 1000)
+        first = xil_gui._cached_audio_path(str(src))
+        calls = []
+        second = xil_gui._cached_audio_path(str(src), progress_cb=lambda d, t: calls.append(d))
+        assert second == first
+        assert calls == []          # hit → no copy → no progress
+
+    def test_modified_source_gets_new_entry(self, tmp_path):
+        src = tmp_path / "a.mp3"
+        src.write_bytes(b"x" * 1000)
+        first = xil_gui._cached_audio_path(str(src))
+        os.utime(src, (11111, 11111))
+        second = xil_gui._cached_audio_path(str(src))
+        assert second != first
+
+    def test_progress_is_monotonic_and_ends_complete(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(xil_gui, "_AUDIO_COPY_CHUNK", 256)
+        src = tmp_path / "a.wav"
+        src.write_bytes(b"x" * 1000)
+        seen = []
+        xil_gui._cached_audio_path(str(src), progress_cb=lambda d, t: seen.append((d, t)))
+        assert seen[-1] == (1000, 1000)
+        dones = [d for d, _ in seen]
+        assert dones == sorted(dones)
+        assert len(seen) == 4       # ceil(1000 / 256) chunks
+
+    def test_missing_source_returns_src_unchanged(self, tmp_path):
+        missing = str(tmp_path / "nope.mp3")
+        assert xil_gui._cached_audio_path(missing) == missing
+
+    def test_eviction_deletes_oldest_beyond_budget(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(xil_gui, "_AUDIO_CACHE_MAX_BYTES", 2500)
+        cached = []
+        for i in range(3):
+            src = tmp_path / f"f{i}.mp3"
+            src.write_bytes(bytes([i]) * 1000)
+            out = xil_gui._cached_audio_path(str(src))
+            os.utime(out, (1000 + i, 1000 + i))
+            cached.append(out)
+        assert not os.path.exists(cached[0])     # oldest evicted
+        assert os.path.exists(cached[1])
+        assert os.path.exists(cached[2])
+
+
+class TestConcatenateStemsCache:
+    """'▶ All …' output is cached keyed by the input stems' (path,size,mtime)
+    signature — repeat clicks must not re-decode, and the old
+    NamedTemporaryFile leak is gone (everything lives in the bounded cache)."""
+
+    def _seed(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+        stems = tmp_path / "stems" / "the413" / "S01E01"
+        _make_mp3(stems / "001_intro_host.mp3")
+        _make_mp3(stems / "002_beat_fx.mp3")
+        return stems
+
+    def test_concat_lands_in_cache_dir(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        out = xil_gui._concatenate_stems("the413  S01E01", "all")
+        assert out is not None
+        assert os.path.exists(out)
+        assert out.startswith(str(tmp_path / "xdg"))
+
+    def test_repeat_call_is_a_hit_without_redecoding(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        first = xil_gui._concatenate_stems("the413  S01E01", "all")
+        calls = []
+        second = xil_gui._concatenate_stems(
+            "the413  S01E01", "all", progress_cb=lambda i, n: calls.append(i))
+        assert second == first
+        assert calls == []          # hit → no per-stem decode
+
+    def test_changed_stem_produces_new_output(self, tmp_path, monkeypatch):
+        stems = self._seed(tmp_path, monkeypatch)
+        first = xil_gui._concatenate_stems("the413  S01E01", "all")
+        os.utime(stems / "001_intro_host.mp3", (22222, 22222))
+        second = xil_gui._concatenate_stems("the413  S01E01", "all")
+        assert second != first
+
+    def test_no_stray_files_outside_cache_dir(self, tmp_path, monkeypatch):
+        import tempfile
+        self._seed(tmp_path, monkeypatch)
+        before = set(os.listdir(tempfile.gettempdir()))
+        xil_gui._concatenate_stems("the413  S01E01", "all")
+        after = set(os.listdir(tempfile.gettempdir()))
+        assert not {f for f in after - before if f.endswith(".mp3")}
+
+    def test_empty_choice_returns_none(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        assert xil_gui._concatenate_stems("", "all") is None
 
 
 # ── _timeline_iframe_html ─────────────────────────────────────────────────────
