@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import io
 import json
 import os
@@ -31,6 +32,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -392,11 +394,22 @@ def _stage_status(slug: str, tag: str) -> dict[str, str]:
     }
 
 
-def _refresh_episodes() -> list[list[str]]:
+# Rows memoised per workspace root: demo.load fires _refresh_episodes on every
+# browser connect, and the staleness scan stats every stem/daw file per episode
+# — prohibitive when XIL_PROJECTROOT is a NAS mount. The ⟳ button forces.
+_EPISODES_CACHE: dict[str, tuple[float, list[list[str]]]] = {}
+_EPISODES_TTL_S = 300.0
+
+
+def _refresh_episodes(force: bool = False) -> list[list[str]]:
     """Build the Episodes tab table rows from current workspace state."""
+    root = str(get_workspace_root())
+    if not force:
+        hit = _EPISODES_CACHE.get(root)
+        if hit is not None and time.monotonic() - hit[0] < _EPISODES_TTL_S:
+            return hit[1]
+
     episodes = list(_find_episodes())
-    if not episodes:
-        return []
 
     def _eval_one(slug_tag: tuple[str, str]) -> list[str]:
         slug, tag = slug_tag
@@ -407,9 +420,12 @@ def _refresh_episodes() -> list[list[str]]:
             desc = f"[{season_title}]  —  {title}" if title else f"[{season_title}]"
         return [tag, slug, desc, st["parse"], st["produce"], st["daw"], st["master"], st["overall"]]
 
-    workers = min(8, len(episodes))
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        rows = list(ex.map(_eval_one, episodes))
+    rows: list[list[str]] = []
+    if episodes:
+        workers = min(8, len(episodes))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            rows = list(ex.map(_eval_one, episodes))
+    _EPISODES_CACHE[root] = (time.monotonic(), rows)
     return rows
 
 
@@ -464,8 +480,95 @@ def _load_stems(slug: str, tag: str, filter_type: str = "all") -> list[tuple[str
     return choices
 
 
-def _concatenate_stems(ep_choice: str, filter_type: str) -> str | None:
-    """Concatenate all stems of filter_type for ep_choice into a temp MP3. Returns path."""
+# ── Local audio cache (NAS workspaces) ──────────────────────────────────────
+#
+# gr.Audio streams whatever path a handler returns; when XIL_PROJECTROOT is a
+# NAS mount that means silently-slow network reads. _cached_audio_path copies
+# the file into a bounded local cache (chunked, with progress for gr.Progress)
+# and returns the local path — keys carry (size, mtime) so an updated source
+# is a new entry and nothing ever needs explicit invalidation.
+
+_AUDIO_CACHE_MAX_BYTES = 2 * 1024**3
+_AUDIO_COPY_CHUNK = 4 * 1024 * 1024
+
+
+def _audio_cache_dir() -> str:
+    """Local cache dir for workspace audio ($XDG_CACHE_HOME or ~/.cache)."""
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    d = os.path.join(base, "xil-gui", "audio")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _evict_audio_cache(cache_dir: str, keep: str = "") -> None:
+    """Delete oldest-mtime cache files until under _AUDIO_CACHE_MAX_BYTES."""
+    try:
+        entries = []
+        with os.scandir(cache_dir) as it:
+            for e in it:
+                if e.is_file() and e.path != keep:
+                    st = e.stat()
+                    entries.append((st.st_mtime, st.st_size, e.path))
+        total = sum(size for _, size, _ in entries)
+        if keep and os.path.exists(keep):
+            total += os.path.getsize(keep)
+        for _, size, path in sorted(entries):
+            if total <= _AUDIO_CACHE_MAX_BYTES:
+                break
+            try:
+                os.remove(path)
+                total -= size
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def _cached_audio_path(src: str, progress_cb=None) -> str:
+    """Copy src into the local audio cache and return the local path.
+
+    progress_cb(done_bytes, total_bytes) fires per copied chunk (a plain
+    callable so this module stays gradio-free). Cache hits bump the file's
+    mtime (LRU-ish for eviction) and skip the copy. On any OSError the
+    original path is returned unchanged — playback degrades to streaming
+    straight off the workspace rather than breaking.
+    """
+    try:
+        st = os.stat(src)
+        cache_dir = _audio_cache_dir()
+        key = hashlib.sha1(
+            f"{os.path.abspath(src)}|{st.st_size}|{st.st_mtime_ns}".encode()
+        ).hexdigest()
+        dest = os.path.join(cache_dir, key + os.path.splitext(src)[1])
+        if os.path.exists(dest):
+            os.utime(dest)
+            return dest
+        part = dest + ".part"
+        done = 0
+        with open(src, "rb") as fin, open(part, "wb") as fout:
+            while True:
+                chunk = fin.read(_AUDIO_COPY_CHUNK)
+                if not chunk:
+                    break
+                fout.write(chunk)
+                done += len(chunk)
+                if progress_cb:
+                    progress_cb(done, st.st_size)
+        os.replace(part, dest)
+        _evict_audio_cache(cache_dir, keep=dest)
+        return dest
+    except OSError:
+        return src
+
+
+def _concatenate_stems(ep_choice: str, filter_type: str, progress_cb=None) -> str | None:
+    """Concatenate all stems of filter_type for ep_choice into a cached MP3. Returns path.
+
+    The output is keyed by the ordered (path, size, mtime) signature of the
+    input stems, so repeat clicks return the existing file without
+    re-decoding and a re-produced stem naturally rolls the key over.
+    progress_cb(stem_index, stem_count) fires per decoded stem.
+    """
     if not ep_choice:
         return None
     _log_activity(f"PLAY {filter_type} → {ep_choice}")
@@ -474,15 +577,27 @@ def _concatenate_stems(ep_choice: str, filter_type: str) -> str | None:
     if not stems:
         return None
     try:
-        import tempfile
+        sig_parts = [filter_type]
+        for _, path in stems:
+            st = os.stat(path)
+            sig_parts.append(f"{os.path.abspath(path)}|{st.st_size}|{st.st_mtime_ns}")
+        key = hashlib.sha1("\n".join(sig_parts).encode()).hexdigest()
+        out = os.path.join(_audio_cache_dir(), f"concat_{key}.mp3")
+        if os.path.exists(out):
+            os.utime(out)
+            return out
 
         from pydub import AudioSegment
         combined = AudioSegment.empty()
-        for _, path in stems:
-            combined += AudioSegment.from_mp3(path)
-        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-        combined.export(tmp.name, format="mp3")
-        return tmp.name
+        for i, (_, path) in enumerate(stems):
+            if progress_cb:
+                progress_cb(i, len(stems))
+            combined += AudioSegment.from_mp3(_cached_audio_path(path))
+        part = out + ".part"
+        combined.export(part, format="mp3")
+        os.replace(part, out)
+        _evict_audio_cache(_audio_cache_dir(), keep=out)
+        return out
     except Exception:
         return None
 
@@ -512,20 +627,100 @@ def _sfx_dir(slug: str = "") -> str:
     return str(root / "SFX")
 
 
+_GRADE_CACHE_VERSION = 1
+
+
+def _grade_cache_path() -> str:
+    """Path of the persisted grade cache, inside the SFX root."""
+    return os.path.join(_sfx_dir(), ".xil_grade_cache.json")
+
+
+def _load_grade_cache_file() -> dict:
+    """Return the persisted {rel_path: {grade, size, mtime_ns}} map.
+
+    Missing, corrupt, or version-mismatched files return {} — the next scan
+    simply pays the full ID3 pass once and rewrites a good cache.
+    """
+    try:
+        with open(_grade_cache_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("version") != _GRADE_CACHE_VERSION:
+            return {}
+        files = data.get("files", {})
+        return files if isinstance(files, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_grade_cache_file(files: dict) -> None:
+    """Persist the grade map. Best-effort: the cache is a pure accelerator."""
+    try:
+        with open(_grade_cache_path(), "w", encoding="utf-8") as f:
+            json.dump({"version": _GRADE_CACHE_VERSION, "files": files}, f, indent=2)
+            f.write("\n")
+    except OSError:
+        pass
+
+
 def _scan_sfx_grades() -> dict[str, str]:
     """Rebuild _sfx_grade_cache from disk for every SFX/*.mp3.
 
     Recurses into per-show subdirectories (the ``SFX/{slug}/`` hierarchical
     layout) as well as the flat shared pool, so both are found. Returns the
     cache.
+
+    Grades are memoised in SFX/.xil_grade_cache.json keyed by (size, mtime):
+    only new/changed files pay an ID3 read, so a rescan is one directory walk
+    plus stats instead of ~842 file opens — prohibitive on a NAS workspace.
+    Paths in the file are relative to the SFX root so the cache survives
+    mount-point moves.
     """
     _sfx_grade_cache.clear()
     sfx_dir = _sfx_dir()
-    if os.path.isdir(sfx_dir):
-        pattern = os.path.join(sfx_dir, "**", "*.mp3")
-        for path in sorted(glob.glob(pattern, recursive=True)):
-            _sfx_grade_cache[path] = _read_sfx_grade(path)
+    if not os.path.isdir(sfx_dir):
+        return _sfx_grade_cache
+    persisted = _load_grade_cache_file()
+    fresh: dict[str, dict] = {}
+    changed = False
+    pattern = os.path.join(sfx_dir, "**", "*.mp3")
+    for path in sorted(glob.glob(pattern, recursive=True)):
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        rel = os.path.relpath(path, sfx_dir)
+        rec = persisted.get(rel)
+        if rec and rec.get("size") == st.st_size and rec.get("mtime_ns") == st.st_mtime_ns:
+            grade = rec.get("grade", "")
+        else:
+            grade = _read_sfx_grade(path)
+            changed = True
+        fresh[rel] = {"grade": grade, "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+        _sfx_grade_cache[path] = grade
+    if changed or set(fresh) != set(persisted):
+        _save_grade_cache_file(fresh)
     return _sfx_grade_cache
+
+
+def _update_grade_cache_entry(path: str, grade: str) -> None:
+    """Patch one file's record in the persisted grade cache after a grade write.
+
+    The ID3 write changed the mp3's size/mtime; storing the post-write stat
+    keeps the next scan read-free. Best-effort: failure is silent and the next
+    scan self-heals.
+    """
+    try:
+        st = os.stat(path)
+        rel = os.path.relpath(path, _sfx_dir())
+        files = _load_grade_cache_file()
+        files[rel] = {
+            "grade": grade if grade in _GRADES else "",
+            "size": st.st_size,
+            "mtime_ns": st.st_mtime_ns,
+        }
+        _save_grade_cache_file(files)
+    except OSError:
+        pass
 
 
 def _sfx_show_label(path: str, root: str) -> str:
@@ -920,6 +1115,13 @@ def _build_app():
 
     # ── callback helpers ──────────────────────────────────────────────────
 
+    def _copy_progress(progress, label):
+        """Adapt gr.Progress to _cached_audio_path's (done, total) callback."""
+        def cb(done, total):
+            frac = (done / total) if total else None
+            progress(frac, desc=f"Copying {label}… {done >> 20} / {total >> 20} MB")
+        return cb
+
     def on_ep_or_filter_change(choice, filter_type):
         if not choice:
             return gr.update(choices=[], value=None), gr.update(value=None)
@@ -932,14 +1134,16 @@ def _build_app():
             gr.update(value=None),
         )
 
-    def on_stem_select(episode_choice, stem_label, filter_type):
+    def on_stem_select(episode_choice, stem_label, filter_type, progress=gr.Progress()):
         if not episode_choice or not stem_label:
             return gr.update(value=None)
         _log_activity(f"PREVIEW stem → {stem_label}")
         slug, tag = _parse_choice(episode_choice)
         for lbl, path in _load_stems(slug, tag, filter_type):
             if lbl == stem_label:
-                return gr.update(value=path)
+                local = _cached_audio_path(
+                    path, _copy_progress(progress, os.path.basename(path)))
+                return gr.update(value=local)
         return gr.update(value=None)
 
     def on_timeline_ep_change(choice):
@@ -960,7 +1164,7 @@ def _build_app():
 
     def refresh_all():
         new_choices = _episode_choices()
-        rows = _refresh_episodes()
+        rows = _refresh_episodes(force=True)
         return (
             rows,
             gr.update(choices=new_choices),
@@ -1793,18 +1997,32 @@ def _build_app():
                     inputs=[audio_ep_dd, stem_dd, stem_filter],
                     outputs=audio_player,
                 )
+                def _play_all(ep, filter_type, progress):
+                    def cb(i, n):
+                        progress(i / n if n else None, desc=f"Decoding stems… {i + 1} / {n}")
+                    return _concatenate_stems(ep, filter_type, progress_cb=cb)
+
+                def on_play_all_sfx(ep, progress=gr.Progress()):
+                    return _play_all(ep, "sfx", progress)
+
+                def on_play_all_music(ep, progress=gr.Progress()):
+                    return _play_all(ep, "music", progress)
+
+                def on_play_all_ambience(ep, progress=gr.Progress()):
+                    return _play_all(ep, "ambience", progress)
+
                 play_all_sfx_btn.click(
-                    fn=lambda ep: _concatenate_stems(ep, "sfx"),
+                    fn=on_play_all_sfx,
                     inputs=[audio_ep_dd],
                     outputs=[audio_player],
                 )
                 play_all_music_btn.click(
-                    fn=lambda ep: _concatenate_stems(ep, "music"),
+                    fn=on_play_all_music,
                     inputs=[audio_ep_dd],
                     outputs=[audio_player],
                 )
                 play_all_amb_btn.click(
-                    fn=lambda ep: _concatenate_stems(ep, "ambience"),
+                    fn=on_play_all_ambience,
                     inputs=[audio_ep_dd],
                     outputs=[audio_player],
                 )
@@ -1852,12 +2070,14 @@ def _build_app():
                     labels = [lbl for lbl, _ in _sfx_choices(grade_filter_val)]
                     return gr.update(choices=labels, value=labels[0] if labels else None)
 
-                def on_sfx_select(label, grade_filter_val):
+                def on_sfx_select(label, grade_filter_val, progress=gr.Progress()):
                     path = _path_for_label(label, grade_filter_val)
                     if not path:
                         return gr.update(value=None), ""
                     _log_activity(f"GRADE preview → {os.path.basename(path)}")
-                    return gr.update(value=path), _grade_status_md(path)
+                    local = _cached_audio_path(
+                        path, _copy_progress(progress, os.path.basename(path)))
+                    return gr.update(value=local), _grade_status_md(path)
 
                 def _apply_grade(label, grade_filter_val, status):
                     path = _path_for_label(label, grade_filter_val)
@@ -1865,6 +2085,7 @@ def _build_app():
                         return gr.update(), gr.update(), "", _sfx_summary()
                     _write_sfx_grade(path, status)
                     _sfx_grade_cache[path] = status if status in _GRADES else ""
+                    _update_grade_cache_entry(path, status)
                     _log_activity(f"GRADE {status or 'cleared'} → {os.path.basename(path)}")
                     # Rebuild the (filtered) list; if the graded item dropped out of
                     # the current filter, advance to the next item for fast grading.
@@ -1874,7 +2095,7 @@ def _build_app():
                     sel_path = _path_for_label(sel, grade_filter_val) if sel else None
                     return (
                         gr.update(choices=labels, value=sel),
-                        gr.update(value=sel_path),
+                        gr.update(value=_cached_audio_path(sel_path) if sel_path else None),
                         _grade_status_md(sel_path),
                         _sfx_summary(),
                     )

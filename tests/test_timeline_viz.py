@@ -748,7 +748,8 @@ const ids = ['xil-player','player-label','audio-el','zoom-info','floattip','tc',
              'ruler','layers','sfx-modal-overlay','sfx-modal','sfx-modal-title',
              'sfx-modal-fields','sfx-modal-status','sfx-modal-save','sfx-modal-cancel',
              'transport','transport-play','transport-time','transport-mutes',
-             'transport-hint','playhead'];
+             'transport-hint','playhead',
+             'mix-loading','mix-loading-text','mix-loading-layers','mix-loading-cancel'];
 const elements = {};
 ids.forEach(i => elements[i] = el(i));
 global.document = {
@@ -771,7 +772,7 @@ console.log(listeners.join(','));
         registered = result.stdout.strip().split(",")
         for expected in ("sfx-modal-cancel:click", "sfx-modal-save:click",
                          "sfx-modal-overlay:click", "layers:click",
-                         "document:dblclick"):
+                         "document:dblclick", "mix-loading-cancel:click"):
             assert expected in registered, f"listener not registered: {expected}"
 
     def test_preview_gain_graph_wiring(self, tmp_path):
@@ -854,6 +855,142 @@ class TestTransport:
         html = self._render(tmp_path, layers_dir=None)
         assert "const LAYER_AUDIO = {};" in html
         assert "run xil daw to enable full-mix playback" in html
+
+
+# ─── Tests: audio prefetch (NAS-aware loading feedback) ───
+
+class TestAudioPrefetch:
+    """Fetch-to-Blob prefetch with byte progress for the mix and clip previews.
+
+    Streaming/abort behavior is browser-only; these are structural guards on
+    the generated script (the node stub-DOM test covers eval-time safety).
+    """
+
+    def _render(self, tmp_path, stems_dir=None, layers_dir=None):
+        data = build_timeline_data(
+            total_s=10.0, tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")],
+            amb_labels=[], mus_labels=[],
+            sfx_labels=[(3.0, 4.0, "SFX: DOOR")],
+        )
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(
+            data, out,
+            stems_dir=str(stems_dir) if stems_dir is not None else None,
+            slug="myshow", tag="TEST",
+            layers_dir=str(layers_dir) if layers_dir is not None else None,
+        )
+        return open(out, encoding="utf-8").read()
+
+    def test_loader_markup_before_script(self, tmp_path):
+        """The loading strip must be in the DOM before the script runs."""
+        html = self._render(tmp_path)
+        pre_script = html[:html.index("<script>")]
+        for elem_id in ("mix-loading", "mix-loading-text",
+                        "mix-loading-layers", "mix-loading-cancel"):
+            assert f'id="{elem_id}"' in pre_script, f"{elem_id} not before <script>"
+
+    def test_prefetch_helper_present(self, tmp_path):
+        """fetchAudioBlob: streamed fetch with Content-Length progress,
+        blob-URL result, URL-keyed cache, and abort support."""
+        html = self._render(tmp_path)
+        assert "async function fetchAudioBlob" in html
+        assert "Content-Length" in html
+        assert "getReader()" in html
+        assert "createObjectURL" in html
+        assert "_blobCache" in html
+        assert "AbortController" in html
+
+    def test_mix_and_clip_both_prefetch(self, tmp_path):
+        """Both the transport mix and single-clip playSpan await the prefetch:
+        the mix fans out under Promise.all, the clip awaits directly."""
+        html = self._render(tmp_path)
+        # definition + mix call site + clip call site
+        assert html.count("fetchAudioBlob(") >= 3
+        assert "await Promise.all" in html
+        assert "await fetchAudioBlob" in html
+
+    def test_mute_change_does_not_prefetch(self, tmp_path):
+        """Toggling a mute checkbox before loading must record the preference,
+        not trigger a multi-GB download."""
+        html = self._render(tmp_path)
+        idx = html.index("querySelectorAll('.mute-toggle input')")
+        handler = html[idx:idx + 500]
+        assert "ensureMix" not in handler
+        assert "mixMuted" in handler
+
+    def test_clips_carry_cache_buster(self, tmp_path):
+        """CLIPS values need ?v={mtime} so clip blobs self-invalidate on
+        stem regen (the blob cache is keyed by full URL)."""
+        import json as _json
+        import re
+        stems = tmp_path / "stems"
+        stems.mkdir()
+        (stems / "001_intro_host.mp3").write_bytes(b"ID3")
+        html = self._render(tmp_path, stems_dir=stems)
+        clips = _json.loads(re.search(r"const CLIPS = ({.*?});", html).group(1))
+        assert clips, "CLIPS empty — stems dir not picked up"
+        for path in clips.values():
+            assert "?v=" in path
+
+    def test_loading_glyph_and_cancel_wiring(self, tmp_path):
+        """Transport shows an hourglass while loading; the strip's Cancel
+        button aborts the in-flight prefetch."""
+        html = self._render(tmp_path)
+        assert "&#8987;" in html  # hourglass glyph during load
+        assert "getElementById('mix-loading-cancel')" in html
+        assert ".abort()" in html
+
+    def test_playspan_loading_state(self, tmp_path):
+        """playSpan marks the span .loading during fetch and bails if the
+        user clicked elsewhere mid-load (token check)."""
+        html = self._render(tmp_path)
+        assert ".span.loading {" in html
+        assert "classList.add('loading')" in html
+        assert "token !== _playToken" in html
+
+    def test_paths_are_root_agnostic_relative(self, tmp_path):
+        """Timeline embeds audio paths relative to its own location, so an
+        artifact works whether served from a local root or the NAS — no baked
+        absolute XIL_PROJECTROOT prefix, and the prefetch fetches the relative
+        path directly (resolved against the iframe's document URL), never via
+        an absolute '/gradio_api/file=' + path concatenation."""
+        import json as _json
+        import re
+        stems = tmp_path / "stems" / "myshow" / "TEST"
+        stems.mkdir(parents=True)
+        (stems / "001_intro_host.mp3").write_bytes(b"ID3")
+        # Mirror the real layout: the timeline sits in the same dir as the WAVs.
+        ldir = tmp_path / "daw" / "myshow" / "TEST"
+        ldir.mkdir(parents=True)
+        for k in ("dialogue", "sfx", "music", "ambience", "vintage_filter"):
+            (ldir / f"TEST_layer_{k}.wav").write_bytes(b"RIFF")
+        data = build_timeline_data(
+            total_s=10.0, tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")], amb_labels=[], mus_labels=[],
+            sfx_labels=[(3.0, 4.0, "SFX: DOOR")],
+        )
+        out = str(ldir / "TEST_timeline.html")
+        render_html_timeline(
+            data, out, stems_dir=str(stems),
+            slug="myshow", tag="TEST", layers_dir=str(ldir),
+        )
+        html = open(out, encoding="utf-8").read()
+        la = _json.loads(re.search(r"const LAYER_AUDIO = ({.*?});", html).group(1))
+        assert la, "LAYER_AUDIO empty"
+        for p in la.values():
+            assert not p.startswith("/"), f"layer path is absolute: {p}"
+            assert str(tmp_path) not in p, f"workspace root leaked: {p}"
+        # layers share the timeline's dir → bare filename
+        assert la["dialogue"].startswith("TEST_layer_dialogue.wav?v=")
+        clips = _json.loads(re.search(r"const CLIPS = ({.*?});", html).group(1))
+        assert clips, "CLIPS empty"
+        for p in clips.values():
+            assert not p.startswith("/"), f"clip path is absolute: {p}"
+            assert str(tmp_path) not in p, f"workspace root leaked: {p}"
+        # stems are a sibling tree of daw/ → path climbs out with ../
+        assert clips["1"].startswith("../../../stems/myshow/TEST/")
+        assert "'/gradio_api/file=' +" not in html
 
 
 # ─── Tests: text timeline map ({tag}_timeline.txt cue sheet) ───
