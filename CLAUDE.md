@@ -63,7 +63,7 @@ All internal imports use the package namespace: `from xil_pipeline.models import
   venv-audioldm2/bin/pip install --upgrade pip
   # GPU torch built for CUDA 12.4 (the default PyPI wheel targets CUDA 13 and is too new for a 12.6 driver → CPU-only):
   venv-audioldm2/bin/pip install 'torch==2.6.0' --index-url https://download.pytorch.org/whl/cu124
-  venv-audioldm2/bin/pip install diffusers 'transformers==4.49.0' accelerate scipy soundfile pydub audioop-lts
+  venv-audioldm2/bin/pip install diffusers 'transformers==4.49.0' accelerate scipy soundfile pydub audioop-lts torchsde
   ```
 
   Version pins that matter:
