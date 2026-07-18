@@ -290,16 +290,23 @@ sequenceDiagram
 > spending ElevenLabs credits. No API key required. eleven_v3 inline tags are stripped automatically.
 > SFX/music/ambience generation is unaffected. Requires: `pip install xil-pipeline[tts-alt]`
 
-> **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs|audioldm2` (default
-> `elevenlabs`) selects the generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue
+> **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs|audioldm2|stableaudio`
+> (default `elevenlabs`) selects the generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue
 > `--backend`. `audioldm2` runs a local **AudioLDM 2 Large** diffusion model in its own
 > `venv-audioldm2/` (driven by `audioldm2_worker.py`, same persistent JSON-over-stdio subprocess
-> pattern as Chatterbox) — free, GPU-accelerated, no API credits. Model-generated assets are
-> stored backend-tagged (`SFX/<slug>.audioldm2.mp3`) so ElevenLabs and AudioLDM 2 audio coexist
-> and a backend switch never silently reuses the wrong file. Tunables: `--audioldm2-guidance`
-> (prompt adherence, default 3.5), `--audioldm2-steps` (default 200), `--audioldm2-negative-prompt`,
-> `--audioldm2-python` (auto-detected). Generation is delegated through the `SfxBackend` adapter in
-> `sfx_backends.py`, which both `xil-produce` and `xil-sfx` share.
+> pattern as Chatterbox) — free, GPU-accelerated, no API credits. `stableaudio` runs a local
+> **Stable Audio Open 1.0** model (driven by `stableaudio_worker.py`, **sharing the same
+> `venv-audioldm2/`** — `StableAudioPipeline` ships in the installed diffusers) — 44.1 kHz stereo,
+> up to 47.55 s per clip; the weights are license-gated on HuggingFace (one-time: accept the
+> license at the model page, then `HF_TOKEN` or `huggingface-cli login`). Model-generated assets
+> are stored backend-tagged (`SFX/<slug>.audioldm2.mp3`, `SFX/<slug>.stableaudio.mp3`) so audio
+> from different backends coexists and a backend switch never silently reuses the wrong file.
+> Tunables: `--audioldm2-guidance` (prompt adherence, default 3.5), `--audioldm2-steps` (default
+> 200), `--audioldm2-negative-prompt`, `--audioldm2-python` (auto-detected); for Stable Audio,
+> `--stableaudio-guidance` (default 7.0), `--stableaudio-steps` (default 100),
+> `--stableaudio-negative-prompt`, `--stableaudio-seed` (reproducibility), `--stableaudio-python`
+> (defaults to the shared venv-audioldm2 Python). Generation is delegated through the `SfxBackend`
+> adapter in `sfx_backends.py`, which both `xil-produce` and `xil-sfx` share.
 
 ---
 
@@ -772,6 +779,9 @@ xil sfx --episode S02E03
 # Or generate SFX/music/ambience locally for free with AudioLDM 2 (needs venv-audioldm2/):
 xil sfx --episode S02E03 --sfx-backend audioldm2 --gen-sfx --dry-run
 xil sfx --episode S02E03 --sfx-backend audioldm2
+# Or with Stable Audio Open (same venv; HF license-gated weights, seed = reproducible):
+xil sfx --episode S02E03 --sfx-backend stableaudio --gen-sfx --dry-run
+xil sfx --episode S02E03 --sfx-backend stableaudio --stableaudio-seed 42
 
 # 6. Assemble master MP3 or export DAW layers
 xil assemble --episode S02E03
