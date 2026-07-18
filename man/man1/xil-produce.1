@@ -1,9 +1,9 @@
-.TH XIL\-PRODUCE "1" "2026\-07\-09" "xil\-pipeline 0.3.1" "User Commands"
+.TH XIL\-PRODUCE "1" "2026\-07\-18" "xil\-pipeline 0.3.1" "User Commands"
 .SH NAME
 xil\-produce
 .SH SYNOPSIS
 .B xil\-produce
-[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--reconcile] [--apply] [--force] [--start-from START_FROM] [--stop-at STOP_AT] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--exaggeration FLOAT] [--cfg-weight FLOAT] [--sfx-backend BACKEND] [--audioldm2-python PATH] [--audioldm2-guidance FLOAT] [--audioldm2-steps INT] [--audioldm2-negative-prompt STR]
+[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--reconcile] [--apply] [--force] [--start-from START_FROM] [--stop-at STOP_AT] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--exaggeration FLOAT] [--cfg-weight FLOAT] [--sfx-backend BACKEND] [--audioldm2-python PATH] [--audioldm2-guidance FLOAT] [--audioldm2-steps INT] [--audioldm2-negative-prompt STR] [--stableaudio-python PATH] [--stableaudio-guidance FLOAT] [--stableaudio-steps INT] [--stableaudio-negative-prompt STR] [--stableaudio-seed INT]
 .SH DESCRIPTION
 Voice Generation — generate voice stems via ElevenLabs
 
@@ -113,7 +113,9 @@ Backend for SFX/music/ambience generation, independent of the dialogue
 \-\-backend. 'elevenlabs' (default) calls the ElevenLabs Sound Effects API.
 'audioldm2' uses a local AudioLDM 2 Large diffusion model (venv\-audioldm2) —
 free, GPU\-accelerated, writes backend\-tagged assets to
-SFX/<slug>.audioldm2.mp3.
+SFX/<slug>.audioldm2.mp3. 'stableaudio' uses a local Stable Audio Open 1.0
+model (shares venv\-audioldm2; 44.1 kHz stereo, up to 47s per clip; HF license\-
+gated weights) and writes SFX/<slug>.stableaudio.mp3.
 
 .TP
 \fB\-\-audioldm2\-python\fR \fI\,PATH\/\fR
@@ -134,6 +136,32 @@ AudioLDM 2 diffusion inference steps — higher is slower but cleaner (default:
 \fB\-\-audioldm2\-negative\-prompt\fR \fI\,STR\/\fR
 AudioLDM 2 negative prompt (default: 'low quality, noise'). Used only with
 \-\-sfx\-backend audioldm2.
+
+.TP
+\fB\-\-stableaudio\-python\fR \fI\,PATH\/\fR
+Path to the Python executable for the Stable Audio backend (default: auto\-
+detect the shared venv\-audioldm2 Python — StableAudioPipeline ships in the
+same diffusers install). Used only with \-\-sfx\-backend stableaudio.
+
+.TP
+\fB\-\-stableaudio\-guidance\fR \fI\,FLOAT\/\fR
+Stable Audio guidance scale — how closely generation follows the prompt
+(default: 7.0). Used only with \-\-sfx\-backend stableaudio.
+
+.TP
+\fB\-\-stableaudio\-steps\fR \fI\,INT\/\fR
+Stable Audio diffusion inference steps — higher is slower but cleaner
+(default: 100). Used only with \-\-sfx\-backend stableaudio.
+
+.TP
+\fB\-\-stableaudio\-negative\-prompt\fR \fI\,STR\/\fR
+Stable Audio negative prompt (default: 'low quality, average quality'). Used
+only with \-\-sfx\-backend stableaudio.
+
+.TP
+\fB\-\-stableaudio\-seed\fR \fI\,INT\/\fR
+Reproducibility seed for Stable Audio generation (default: nondeterministic).
+Used only with \-\-sfx\-backend stableaudio.
 
 .SH SEE ALSO
 .BR xil (1),
