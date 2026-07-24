@@ -21,10 +21,13 @@ python XILP000_script_scanner.py "scripts/<script>.md" --json
 """
 
 import argparse
+import difflib
 import json
 import os
+import re
 import sys
 
+from xil_pipeline.chatterbox_turbo_worker import ALLOWED_TAGS
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.sfx_common import run_banner
 from xil_pipeline.XILP001_script_parser import (
@@ -309,6 +312,80 @@ def scan_ambience_coverage(lines: list[str]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Paralinguistic tag near-miss detection
+# ---------------------------------------------------------------------------
+
+# Any inline [token]; whole-line stage directions are filtered out separately.
+_INLINE_TAG_RE = re.compile(r"\[([^\[\]]+)\]")
+
+# Similarity floor for suggesting a Turbo cue. Calibrated against real data:
+# genuine mistakes ([laughs], [clears throat], [surprise], [narrating]) score
+# >= 0.73, while legitimate ElevenLabs-only tags ([exhausted], [curious],
+# [french accent]) top out at 0.55 — so 0.72 separates them with margin.
+_NEAR_MISS_CUTOFF = 0.72
+
+# Variants difflib scores too low because the wording diverges. Maps a
+# normalized token to the Turbo cue the writer meant.
+_TAG_ALIASES = {
+    "throat clearing": "clear throat",
+    "throat clear": "clear throat",
+    "cries": "crying",
+    "cry": "crying",
+    "crys": "crying",
+}
+
+
+def scan_paralinguistic_tags(lines: list[str]) -> list[dict]:
+    """Flag inline ``[tags]`` that look like misspelled Chatterbox Turbo cues.
+
+    Turbo renders only the exact tokens in ``ALLOWED_TAGS`` and silently strips
+    everything else, so ``[laughs]`` (no such token) is dropped with no warning
+    at generation time. This catches those near-misses before stems are made.
+
+    Tags that are simply not Turbo cues (ElevenLabs-only ``[exhausted]``,
+    ``[pause]``, …) are left alone — they are valid under other backends.
+
+    Args:
+        lines: Normalized script lines.
+
+    Returns a list of::
+
+        [{"text": str, "suggestion": str, "lines": [int, ...]}, ...]
+    """
+    candidates = sorted(ALLOWED_TAGS)
+    seen: dict[str, dict] = {}
+
+    for i, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        if not line:
+            continue
+        # Filter per token, not per line: is_stage_direction() treats *any*
+        # line starting with "[" as a direction, which would skip the common
+        # case of dialogue opening with a cue ("[sarcastic] Oh, great.").
+        for match in _INLINE_TAG_RE.finditer(line):
+            token = match.group(1).strip()
+            name = " ".join(token.lower().split())
+            # ":" marks a stage direction (SFX:/MUSIC:/AMBIENCE:)
+            if not name or ":" in name or name in ALLOWED_TAGS:
+                continue
+
+            suggestion = _TAG_ALIASES.get(name)
+            if suggestion is None:
+                close = difflib.get_close_matches(
+                    name, candidates, n=1, cutoff=_NEAR_MISS_CUTOFF
+                )
+                if not close:
+                    continue
+                suggestion = close[0]
+
+            if name not in seen:
+                seen[name] = {"text": token, "suggestion": suggestion, "lines": []}
+            seen[name]["lines"].append(i + 1)
+
+    return list(seen.values())
+
+
+# ---------------------------------------------------------------------------
 # Report formatter
 # ---------------------------------------------------------------------------
 
@@ -395,6 +472,24 @@ def format_report(scan: dict, header: dict) -> str:
             lines.append(f"  ⚠  no stop marker for [{item['text']}]  line {item['line']}")
     else:
         lines.append("  ✓  all ambience loops have stop markers (or none present)")
+
+    # Paralinguistic tag near-misses (advisory — Turbo backend only)
+    near_misses = scan.get("paralinguistic_near_misses", [])
+    if near_misses:
+        lines.append("")
+        lines.append(f"PARALINGUISTIC TAG NEAR-MISSES ({len(near_misses)})")
+        for item in near_misses:
+            line_list = ", ".join(str(ln) for ln in item["lines"][:5])
+            if len(item["lines"]) > 5:
+                line_list += f" (+{len(item['lines']) - 5} more)"
+            lines.append(
+                f"  ⚠  [{item['text']}] → did you mean [{item['suggestion']}]?"
+                f"  lines: {line_list}"
+            )
+        lines.append(
+            "\n  ℹ  Chatterbox Turbo renders only its exact cue tokens and silently "
+            "strips the rest; other backends are unaffected."
+        )
 
     # Direction text audit
     dt = scan.get("direction_texts")
@@ -767,6 +862,9 @@ def main():
 
         # Ambience loop coverage
         scan["ambience_unclosed"] = scan_ambience_coverage(lines)
+
+        # Misspelled Chatterbox Turbo cues (advisory, never fatal)
+        scan["paralinguistic_near_misses"] = scan_paralinguistic_tags(lines)
 
         # Direction text audit (only when SFX config is available)
         sfx_path = args.sfx

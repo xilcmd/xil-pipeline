@@ -30,7 +30,7 @@ run_index       integer incremented per ``Phase 1: Generating`` block (proxy for
 log_line        line number of the ``Saved:`` entry (intra-day ordering)
 seq             dialogue sequence number
 speaker         speaker key (e.g. ``adam``, ``sarah``)
-backend         TTS engine: ``eleven_v3``, ``gtts``, or ``chatterbox``
+backend         TTS engine: ``eleven_v3``, ``gtts``, ``chatterbox``, or ``chatterbox-turbo``
 char_count      character count sent to the TTS engine
 stem_path       relative path recorded in log (e.g. ``stems/the413/S03E03/…``)
 stem_filename   basename only
@@ -54,6 +54,13 @@ _RE_ELEVEN = re.compile(
 # gTTS:        > [005] maya via gTTS (100 chars)...
 _RE_GTTS = re.compile(
     r"^\s*>\s*\[(\d+)\]\s+(\S+)\s+via\s+gTTS\s+\((\d+)\s+chars\)",
+)
+
+# Chatterbox Turbo:  > [005] maya via Chatterbox Turbo (100 chars)...
+# Matched before _RE_CHATTERBOX so the looser pattern doesn't swallow "Turbo".
+_RE_CHATTERBOX_TURBO = re.compile(
+    r"^\s*>\s*\[(\d+)\]\s+(\S+)\s+via\s+Chatterbox\s+Turbo\s+\((\d+)\s+chars\)",
+    re.IGNORECASE,
 )
 
 # Chatterbox:  > [005] maya via Chatterbox (100 chars)...
@@ -93,6 +100,7 @@ def _parse_log(log_path: Path) -> list[dict]:
             for pattern, backend_key in (
                 (_RE_ELEVEN, None),   # backend extracted from match group 3
                 (_RE_GTTS, "gtts"),
+                (_RE_CHATTERBOX_TURBO, "chatterbox-turbo"),
                 (_RE_CHATTERBOX, "chatterbox"),
             ):
                 m = pattern.match(line)
