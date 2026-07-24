@@ -1,6 +1,8 @@
 # Python
 venv/
 venv-chatterbox/
+venv-audioldm2/
+venv-whisper/
 logs/
 __pycache__/
 *.pyc
@@ -30,6 +32,18 @@ daw/
 .claude/
 .DS_Store
 **/.DS_Store
+
+# AI-assistant scaffolding (local tool config/index, not shared project content)
+.codesight/
+.cursorrules
+.github/copilot-instructions.md
+AGENTS.md
+codex.md
+codesight-setup.sh
+docs/.codesight/
+docs/.github/
+docs/AGENTS.md
+docs/codex.md
 
 # Secrets (never commit)
 .env
