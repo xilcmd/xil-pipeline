@@ -1018,11 +1018,13 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
         cmd += ["--start-from", str(int(start_from))]
     if stop_at is not None and stop_at > 0:
         cmd += ["--stop-at", str(int(stop_at))]
-    if backend == "chatterbox":
-        if exaggeration != 0.5:
-            cmd += ["--exaggeration", f"{exaggeration:.2f}"]
-        if cfg_weight != 0.5:
-            cmd += ["--cfg-weight", f"{cfg_weight:.2f}"]
+    if backend in ("chatterbox", "chatterbox-turbo"):
+        # exaggeration/cfg-weight apply only to classic Chatterbox; Turbo ignores them.
+        if backend == "chatterbox":
+            if exaggeration != 0.5:
+                cmd += ["--exaggeration", f"{exaggeration:.2f}"]
+            if cfg_weight != 0.5:
+                cmd += ["--cfg-weight", f"{cfg_weight:.2f}"]
         if cb_python and cb_python.strip():
             cmd += ["--chatterbox-python", cb_python.strip()]
     if sfx_backend and sfx_backend != "elevenlabs":
@@ -1210,8 +1212,10 @@ def _build_app():
             return
         cmd = [sys.executable, "-m", "xil_pipeline.xil_init",
                "--show", show_name.strip(), "--type", content_type, "--flat"]
-        if season.strip():
-            cmd += ["--season", season.strip()]
+        # Sample scripts are always named e.g. sample_S01E01.md (SAMPLE_TAG_BY_TYPE),
+        # which bakes in "season 1" — default to it here so the generated header's
+        # season declaration (or lack of one) doesn't disagree with that filename.
+        cmd += ["--season", season.strip() if season.strip() else "1"]
         if season_title.strip():
             cmd += ["--season-title", season_title.strip()]
         _log_activity("CMD: " + " ".join(cmd))
@@ -1337,7 +1341,7 @@ def _build_app():
         with gr.Row():
             refresh_btn = gr.Button("⟳ Refresh", size="sm", scale=0)
 
-        with gr.Tabs():
+        with gr.Tabs(elem_id="app-root"):
 
             # ── Tab 0: Setup ─────────────────────────────────────────
             with gr.Tab("Setup"):
@@ -1377,6 +1381,7 @@ def _build_app():
                 with gr.Row():
                     init_show = gr.Textbox(
                         label="Show name *", placeholder='e.g. "Night Owls"', scale=3,
+                        elem_id="init-show-name",
                     )
                     init_type = gr.Dropdown(
                         label="Content type",
@@ -1393,9 +1398,10 @@ def _build_app():
                         placeholder='e.g. "The Holiday Shift"',
                         scale=3,
                     )
-                init_btn = gr.Button("▶ Create show", variant="primary")
+                init_btn = gr.Button("▶ Create show", variant="primary", elem_id="init-create-btn")
                 init_log = gr.Textbox(
                     label="Output", lines=12, max_lines=12, autoscroll=True, interactive=False,
+                    elem_id="init-log",
                 )
 
                 def run_init_and_refresh(show_name, content_type, season, season_title):
@@ -1523,6 +1529,7 @@ def _build_app():
                                 choices=ep_choices,
                                 allow_custom_value=True,
                                 scale=3,
+                                elem_id="parse-episode",
                             )
                             parse_ep_refresh_btn = gr.Button("⟳", size="sm", scale=0)
                         with gr.Row():
@@ -1546,7 +1553,7 @@ def _build_app():
                             parse_quiet_cb = gr.Checkbox(label="--quiet  (JSON only, skip summary)")
                             parse_debug_cb = gr.Checkbox(label="--debug  (write diagnostic CSV)", value=True)
                             parse_stats_cb = gr.Checkbox(label="--stats  (per-speaker line/word/char distribution)")
-                        parse_btn = gr.Button("▶ Run Parse", variant="primary")
+                        parse_btn = gr.Button("▶ Run Parse", variant="primary", elem_id="parse-run-btn")
 
                     # ── Produce ───────────────────────────────────────
                     with gr.Tab("Produce"):
@@ -1554,7 +1561,7 @@ def _build_app():
                             prod_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
                             prod_backend_dd = gr.Dropdown(
                                 label="--backend  (dialogue voice generator)",
-                                choices=["elevenlabs", "gtts", "chatterbox"],
+                                choices=["elevenlabs", "gtts", "chatterbox", "chatterbox-turbo"],
                                 value="chatterbox",
                             )
                         with gr.Row():
@@ -1578,11 +1585,11 @@ def _build_app():
                                 value=0, minimum=0, precision=0,
                             )
                         prod_exaggeration = gr.Slider(
-                            label="--exaggeration  (Chatterbox only, 0.0–1.0)",
+                            label="--exaggeration  (classic Chatterbox only, ignored by Turbo, 0.0–1.0)",
                             minimum=0.0, maximum=1.0, step=0.05, value=0.5,
                         )
                         prod_cfg_weight = gr.Slider(
-                            label="--cfg-weight  (Chatterbox only, 0.1–1.0)",
+                            label="--cfg-weight  (classic Chatterbox only, ignored by Turbo, 0.1–1.0)",
                             minimum=0.1, maximum=1.0, step=0.05, value=0.5,
                         )
                         prod_cb_python = gr.Textbox(
@@ -1669,6 +1676,7 @@ def _build_app():
 
                 log_box = gr.Textbox(
                     label="Output", lines=24, max_lines=24, autoscroll=True, interactive=False,
+                    elem_id="run-stage-log",
                 )
 
                 # ── Button handlers ───────────────────────────────────
@@ -1693,8 +1701,10 @@ def _build_app():
                     if not tag:
                         if re.match(r"^[A-Z][A-Z0-9]+$", ep):
                             # User typed a raw episode tag (e.g. S01E01) — derive slug
-                            from xil_pipeline.models import resolve_slug
-                            slug = resolve_slug(
+                            # from the active show, falling back to a legacy root
+                            # project.json when no show has been activated.
+                            from xil_pipeline.models import get_active_show, resolve_slug
+                            slug = get_active_show() or resolve_slug(
                                 None,
                                 os.path.join(str(get_workspace_root()), "project.json"),
                             )
