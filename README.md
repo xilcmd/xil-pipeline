@@ -14,6 +14,46 @@ pip install xil-pipeline[all]       # all optional backends (Google GenAI, gTTS,
 pip install xil-pipeline[dev]       # development and testing
 ```
 
+### Optional: local GPU TTS (Chatterbox / Chatterbox Turbo)
+
+The default dialogue backend is the ElevenLabs API. For a free, local, GPU-accelerated
+alternative with per-character voice cloning, set up a dedicated `venv-chatterbox/` at your
+code root (`XIL_CODEROOT`). It hosts **both** the classic Chatterbox model and **Chatterbox
+Turbo** — Turbo natively renders 19 paralinguistic tags (emotion, delivery style, and vocal
+gestures — see [the pipeline guide](docs/pipeline.md#chatterbox-turbo-paralinguistic-tags)).
+This venv carries heavy ML dependencies (PyTorch) and is intentionally kept out of the main
+package; each `xil` command auto-detects it at run time.
+
+```bash
+# First-time setup (CUDA 12.4 wheels shown; adjust for your GPU/driver)
+python -m venv venv-chatterbox
+venv-chatterbox/bin/pip install --upgrade pip
+venv-chatterbox/bin/pip install 'torch==2.6.0' 'torchaudio==2.6.0' \
+    --index-url https://download.pytorch.org/whl/cu124
+venv-chatterbox/bin/pip install chatterbox-tts      # ships both classic and Turbo
+
+# Model weights auto-download from Hugging Face on first run. If the Turbo repo
+# (ResembleAI/chatterbox-turbo) is gated for your account, authenticate first:
+export HF_TOKEN=hf_...                               # or: huggingface-cli login
+```
+
+Then place a per-character reference clip at `voice_refs/<speaker_key>.wav` (Chatterbox Turbo
+requires clips **longer than 5 seconds**) and select the backend:
+
+```bash
+xil-produce --episode S01E01 --backend chatterbox-turbo   # native paralinguistic tags
+xil-produce --episode S01E01 --backend chatterbox         # classic (strips all [tags])
+```
+
+`--chatterbox-python PATH` overrides the auto-detected venv Python. `--exaggeration` /
+`--cfg-weight` apply to classic Chatterbox only — Turbo ignores them.
+
+Under `chatterbox-turbo` you can write cues straight into dialogue —
+`[angry]` `[fear]` `[surprised]` `[happy]` `[crying]` `[sarcastic]` `[whispering]` `[dramatic]`
+`[narration]` `[advertisement]` `[laugh]` `[chuckle]` `[sigh]` `[gasp]` `[groan]` `[cough]`
+`[sniff]` `[shush]` `[clear throat]`. Spelling is exact (no plurals: `[laugh]`, not `[laughs]`);
+any other bracketed tag is stripped, so ElevenLabs-only tags can safely stay in a shared script.
+
 ## Quick Start
 
 See [`samples/Tech_Deep_Dive_S01E04.md`](samples/Tech_Deep_Dive_S01E04.md) for an example of the markdown script format the pipeline expects. It demonstrates dialogue, acting directions, SFX/ambience/music cues, beats, sections, and scenes. [`samples/S01E04_techdeepdive_2026-04-02.mp3`](samples/S01E04_techdeepdive_2026-04-02.mp3) is the rendered output — a two-host tech podcast segment generated entirely from that script.

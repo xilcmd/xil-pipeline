@@ -21,6 +21,7 @@ src/xil_pipeline/          # Python package (42 modules)
   timeline_viz.py          # Timeline visualization
   xil_init.py              # Project scaffolding (xil-init command, --type aware)
   chatterbox_worker.py     # Persistent Chatterbox TTS worker (venv-chatterbox subprocess)
+  chatterbox_turbo_worker.py  # Persistent Chatterbox Turbo TTS worker — native paralinguistic tags (venv-chatterbox)
   whisper_worker.py        # Persistent Faster-Whisper STT worker (venv-whisper subprocess)
   audioldm2_worker.py      # Persistent AudioLDM 2 SFX/music/ambience worker (venv-audioldm2 subprocess)
   stableaudio_worker.py    # Persistent Stable Audio Open SFX/music/ambience worker (shares venv-audioldm2)
@@ -102,7 +103,7 @@ Resolution order for `get_workspace_root()` (in `models.py`):
 ## Code Root (`XIL_CODEROOT`)
 
 The **code root** is where the optional local-model virtualenvs live —
-`venv-chatterbox/` (Chatterbox TTS), `venv-whisper/` (Faster-Whisper STT), and
+`venv-chatterbox/` (Chatterbox TTS — both classic and Turbo), `venv-whisper/` (Faster-Whisper STT), and
 `venv-audioldm2/` (AudioLDM 2 SFX/music/ambience). These carry heavy ML dependencies and
 are **never installed into the main package**; each pipeline command auto-detects them at
 run time.
@@ -254,6 +255,7 @@ xil scan --backfill-cast --yes           # write CAST: blocks to all scripts tha
 - `--speakers PATH` overrides the speaker list (see Speaker Configuration)
 - `--harvest-cast` scans all `scripts/*.md`, collects CAST: entries, and reports characters missing from speakers.json; `--yes` adds them automatically; `--scripts-dir DIR` overrides the default scripts directory
 - `--backfill-cast` adds CAST: blocks to scripts that don't have one, inferring speakers from existing parsed JSON (most reliable) or body scan against speakers.json; `--yes` writes files, default is dry-run; `--scripts-dir DIR` overrides the default scripts directory
+- **PARALINGUISTIC TAG NEAR-MISSES** report section: flags inline `[tags]` that look like misspelled Chatterbox Turbo cues (`[laughs]` → `[laugh]`, `[clears throat]` → `[clear throat]`, `[surprise]` → `[surprised]`) and suggests the correct token. Turbo silently strips unknown tags, so these otherwise fail invisibly at produce time. Detection is `difflib` similarity ≥ 0.72 against `ALLOWED_TAGS` plus an alias map for variants difflib scores too low; tags that simply aren't Turbo cues (ElevenLabs-only `[exhausted]`, `[pause]`, `[curious]`) are never flagged. **Advisory only — never affects the exit code**, since the same script may target the ElevenLabs backend. Implemented by `scan_paralinguistic_tags()`; the scan JSON carries it under `paralinguistic_near_misses`
 
 ## Architecture: Nine-Stage Pipeline (+ Cues Ingester Pre-Processing)
 
@@ -326,8 +328,27 @@ xil produce --episode S01E01 --dry-run
 - Supports `--terse` to truncate each line to 3 words (minimizes TTS character cost)
 - Supports `--gen-sfx`, `--gen-music`, `--gen-ambience` to generate only the specified categories of stems (replaces deprecated `--sfx-music` which is kept as a shorthand for all three)
 - Supports `--local-only` (used with `--gen-sfx`/`--gen-music`/`--gen-ambience`) to skip any effect that would require an API call — only assets already in `SFX/` (CACHED) or silence entries are placed; no credits spent
-- Supports `--backend elevenlabs|gtts|chatterbox` (default: `elevenlabs`): `gtts` routes all dialogue voice stems through Google Translate TTS at no cost — flat single voice, useful for duration checks; `chatterbox` uses local Chatterbox TTS with per-character zero-shot voice cloning from `voice_refs/<key>.wav` reference clips — near-production quality, GPU-accelerated, free after setup; SFX/music/ambience generation is unaffected by `--backend`; eleven_v3 inline tags are stripped before gTTS/Chatterbox calls
+- Supports `--backend elevenlabs|gtts|chatterbox|chatterbox-turbo` (default: `elevenlabs`): `gtts` routes all dialogue voice stems through Google Translate TTS at no cost — flat single voice, useful for duration checks; `chatterbox` uses local Chatterbox TTS with per-character zero-shot voice cloning from `voice_refs/<key>.wav` reference clips — near-production quality, GPU-accelerated, free after setup; `chatterbox-turbo` uses the local **Chatterbox Turbo** model (same `venv-chatterbox`) which natively renders 19 paralinguistic tags (see Chatterbox Turbo Paralinguistic Tags below); SFX/music/ambience generation is unaffected by `--backend`. Tag handling differs by backend: eleven_v3 native tags are passed through to ElevenLabs; classic `chatterbox`/`gtts` **strip all `[tags]`**; `chatterbox-turbo` **keeps allow-listed paralinguistic tags** and strips the rest (e.g. ElevenLabs-only `[exhausted]`)
 - `--backend chatterbox` options: `--chatterbox-python PATH` (default: auto-detect `./venv-chatterbox/bin/python3`); `--voice-refs DIR` (default: `voice_refs/`) for per-speaker `.wav` reference clips; `--exaggeration FLOAT` emotion level 0.0–1.0 (default: 0.5); missing voice refs fall back to Chatterbox default voice
+- `--backend chatterbox-turbo` shares `--chatterbox-python`/`--voice-refs` with classic Chatterbox and reuses `venv-chatterbox` (Turbo ships in the same `chatterbox-tts` package). Differences: **ignores** `--exaggeration`/`--cfg-weight` (Turbo does not support them); reference clips **must be >5 seconds** (Turbo asserts this); Turbo conditionals are cached separately as `voice_refs/<key>.turbo.conds.pt`. If the model repo is gated, set `HF_TOKEN` before first run
+
+#### Chatterbox Turbo Paralinguistic Tags
+
+`ResembleAI/chatterbox-turbo` renders **19** paralinguistic cues as dedicated tokens (IDs 50257–50275 in the model's `added_tokens.json`). Write them inline in script dialogue; `chatterbox_turbo_worker.py` keeps these and strips every other bracketed token before generation.
+
+| Category | Tags |
+| --- | --- |
+| Emotion | `[angry]` `[fear]` `[surprised]` `[happy]` `[crying]` `[sarcastic]` |
+| Delivery style | `[whispering]` `[dramatic]` `[narration]` `[advertisement]` |
+| Vocal gesture | `[laugh]` `[chuckle]` `[sigh]` `[gasp]` `[groan]` `[cough]` `[sniff]` `[shush]` `[clear throat]` |
+
+Authoring rules:
+
+- **Exact spelling only — there are no plural or variant forms.** `[laugh]` is a token; `[laughs]`, `[chuckles]`, `[coughs]` are not, and are stripped. Likewise `[clear throat]` (with the space) is the token — `[clears throat]` and `[throat clearing]` are stripped.
+- Matching is case-insensitive, so `[LAUGH]` and `[Angry]` both work.
+- Any tag outside this set is removed, which is what makes ElevenLabs-only tags (`[exhausted]`, `[pause]`) safe to leave in a shared script — they are honoured under `--backend elevenlabs` and dropped under `chatterbox-turbo`.
+- The allow-list lives in `ALLOWED_TAGS` in `chatterbox_turbo_worker.py` and is pinned by `tests/test_chatterbox_turbo_worker.py`. It is derived from the model's tokenizer, not from prose docs — re-derive from `added_tokens.json` after a model bump rather than editing by hand.
+- Only the `chatterbox-turbo` backend understands these. Classic `chatterbox` and `gtts` strip all `[tags]`; ElevenLabs has its own separate tag vocabulary.
 - Supports `--sfx-backend elevenlabs|audioldm2|stableaudio` (default: `elevenlabs`) — an **independent** backend axis for SFX/MUSIC/AMBIENCE generation, orthogonal to the dialogue `--backend`. `audioldm2` runs a local AudioLDM 2 Large diffusion model (`venv-audioldm2/`, via `audioldm2_worker.py`) — free, GPU-accelerated, no API credits. `stableaudio` runs a local Stable Audio Open 1.0 model (`stableaudio_worker.py`, **sharing the same `venv-audioldm2/`** — `StableAudioPipeline` ships in the installed diffusers) — 44.1 kHz stereo, ≤47.55 s per clip, HF license-gated weights (one-time accept + `HF_TOKEN`/`huggingface-cli login`). Model-generated assets are stored backend-tagged as `SFX/<slug>.audioldm2.mp3` / `SFX/<slug>.stableaudio.mp3` so they coexist with ElevenLabs assets and switching backends does not silently reuse the wrong audio; `silence`/`source` assets stay backend-independent (plain name). ElevenLabs API key is only required when `--sfx-backend elevenlabs` and SFX generation is requested (or the dialogue backend is elevenlabs)
 - `--sfx-backend audioldm2` options: `--audioldm2-python PATH` (default: auto-detect `./venv-audioldm2/bin/python3`); `--audioldm2-guidance FLOAT` guidance scale / prompt adherence (default: 3.5); `--audioldm2-steps INT` diffusion inference steps (default: 200); `--audioldm2-negative-prompt STR` (default: `"low quality, noise"`). AudioLDM 2 emits 16 kHz audio and quantises `duration_seconds` to its latent rate, so very short SFX may run slightly long
 - `--sfx-backend stableaudio` options: `--stableaudio-python PATH` (default: auto-detect the shared `venv-audioldm2` Python); `--stableaudio-guidance FLOAT` (default: 7.0); `--stableaudio-steps INT` (default: 100); `--stableaudio-negative-prompt STR` (default: `"low quality, average quality"`); `--stableaudio-seed INT` reproducibility seed (default: nondeterministic). Durations beyond the model max (47.55 s) are clamped in the worker with a warning
@@ -714,11 +735,11 @@ xil sample --episode S02E03 --force
 
 - `--episode` or `--tag` (one required) or `--cast PATH` to specify the cast config
 - `--show` overrides the show name used for slug derivation (see Project Configuration)
-- `--backend elevenlabs|gtts|chatterbox` (default: `elevenlabs`): selects TTS backend for sample generation
+- `--backend elevenlabs|gtts|chatterbox|chatterbox-turbo` (default: `elevenlabs`): selects TTS backend for sample generation (`chatterbox-turbo` renders the 19 native paralinguistic tags — see Chatterbox Turbo Paralinguistic Tags under Stage 2; reuses `venv-chatterbox`, needs reference clips >5 s, ignores `--exaggeration`). Putting a tag in `--sample-text` (e.g. `"[sarcastic] I am {name}"`) is a quick way to audition a cue against a voice ref
 - Default sample text: `"I am {name} not yo momma"`; override with `--sample-text` (use `{name}` placeholder)
 - Output: `voice_samples/{TAG}/{backend}/{actor}.mp3` — backend subdirectory enables side-by-side comparison
 - Skips members with `voice_id=TBD` (ElevenLabs only); `--force` regenerates existing samples
-- `--chatterbox-python PATH`, `--voice-refs DIR`, `--exaggeration FLOAT` — Chatterbox-specific options (same as `xil-produce`)
+- `--chatterbox-python PATH`, `--voice-refs DIR`, `--exaggeration FLOAT` — Chatterbox-specific options (same as `xil-produce`; `--exaggeration` is ignored under `chatterbox-turbo`)
 - Requires `ELEVENLABS_API_KEY` for `--backend elevenlabs`
 
 ### SFX Library Discovery
@@ -795,7 +816,7 @@ xil-stem-log --episode S03E03 --audit --audit-threshold 20
 - `--show` print CSV to stdout (equivalent to `--output -`)
 - `--audit` cross-references logged `char_count` values against the current parsed JSON and flags stems whose logged character count differs from the current text length by more than `--audit-threshold` percent (default: 10); useful for detecting stale stems after script edits
 - `--audit-threshold N` percentage threshold for the `--audit` flag (default: 10)
-- Parses `logs/xil_YYYY-MM-DD.log` files; three regex patterns match ElevenLabs, gTTS, and Chatterbox generation lines
+- Parses `logs/xil_YYYY-MM-DD.log` files; regex patterns match ElevenLabs, gTTS, Chatterbox, and Chatterbox Turbo generation lines
 - State machine: generation line → saved line → SHA256 line → emits one record
 - `run_index` counter increments per `Phase 1: Generating` marker, grouping stems by production run
 - Output columns: `log_date`, `log_file`, `run_index`, `log_line`, `seq`, `speaker`, `backend`, `char_count`, `stem_path`, `stem_filename`, `sha256`

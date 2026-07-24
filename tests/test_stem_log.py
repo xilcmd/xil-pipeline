@@ -48,6 +48,13 @@ CHATTERBOX_LOG = """\
   SHA256: cbcbcbcbcbcbcbcb
 """
 
+CHATTERBOX_TURBO_LOG = """\
+--- Phase 1: Generating ---
+  > [004] tina via Chatterbox Turbo (90 chars)...
+  Saved: stems/the413/S03E03/004_cold-open_tina.mp3
+  SHA256: dededededededede
+"""
+
 
 def _write_log(tmp_path: Path, name: str, content: str) -> Path:
     p = tmp_path / name
@@ -84,6 +91,14 @@ def test_parse_chatterbox_entry(tmp_path):
     records = _parse_log(lf)
     assert len(records) == 1
     assert records[0]["backend"] == "chatterbox"
+
+
+def test_parse_chatterbox_turbo_entry(tmp_path):
+    lf = _write_log(tmp_path, "xil_2026-04-05.log", CHATTERBOX_TURBO_LOG)
+    records = _parse_log(lf)
+    assert len(records) == 1
+    assert records[0]["backend"] == "chatterbox-turbo"
+    assert records[0]["char_count"] == 90
 
 
 def test_run_index_increments(tmp_path):

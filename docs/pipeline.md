@@ -290,6 +290,48 @@ sequenceDiagram
 > spending ElevenLabs credits. No API key required. eleven_v3 inline tags are stripped automatically.
 > SFX/music/ambience generation is unaffected. Requires: `pip install xil-pipeline[tts-alt]`
 
+> **Local voice clones:** `--backend chatterbox` and `--backend chatterbox-turbo` run local
+> GPU TTS in `venv-chatterbox/` (driven by `chatterbox_worker.py` / `chatterbox_turbo_worker.py`),
+> cloning each character from `voice_refs/<key>.wav`. Classic `chatterbox` strips all `[tags]`;
+> **`chatterbox-turbo`** natively renders 19 paralinguistic cues (see below) and strips the rest.
+> Turbo reuses the same venv, requires reference clips **>5 s**, ignores
+> `--exaggeration`/`--cfg-weight`, and caches conditionals as `voice_refs/<key>.turbo.conds.pt`.
+
+#### Chatterbox Turbo paralinguistic tags
+
+`ResembleAI/chatterbox-turbo` carries dedicated tokens for exactly these 19 cues (IDs 50257–50275
+in the model's `added_tokens.json`). Write them inline in dialogue; `chatterbox_turbo_worker.py`
+keeps them and strips every other bracketed token before generation.
+
+| Category | Tags |
+| --- | --- |
+| Emotion | `[angry]` `[fear]` `[surprised]` `[happy]` `[crying]` `[sarcastic]` |
+| Delivery style | `[whispering]` `[dramatic]` `[narration]` `[advertisement]` |
+| Vocal gesture | `[laugh]` `[chuckle]` `[sigh]` `[gasp]` `[groan]` `[cough]` `[sniff]` `[shush]` `[clear throat]` |
+
+```markdown
+ADAM
+[sarcastic] Oh, that went perfectly. [sigh]
+```
+
+Spelling is exact — there are **no plural forms**. `[laugh]` is a token; `[laughs]`, `[chuckles]`,
+and `[coughs]` are not and get stripped. `[clear throat]` keeps the space; `[clears throat]` and
+`[throat clearing]` are stripped. Matching is case-insensitive. Because unknown tags are removed,
+ElevenLabs-only tags such as `[exhausted]` and `[pause]` can stay in a shared script — honoured
+under `--backend elevenlabs`, dropped under `chatterbox-turbo`.
+
+`xil scan` catches these mistakes before any audio is generated — its
+**PARALINGUISTIC TAG NEAR-MISSES** section flags `[laughs]`, `[clears throat]`, `[surprise]` and
+similar with the correct token to use. The check is advisory and never changes the exit code, since
+the same script may be produced through ElevenLabs where those tags mean something else.
+
+Audition a cue without a full run:
+
+```bash
+xil sample --episode S01E01 --backend chatterbox-turbo \
+    --sample-text "[sarcastic] I am {name}, and this is fine."
+```
+
 > **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs|audioldm2|stableaudio`
 > (default `elevenlabs`) selects the generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue
 > `--backend`. `audioldm2` runs a local **AudioLDM 2 Large** diffusion model in its own
@@ -1084,7 +1126,7 @@ flowchart TD
     One or more daily log files`"]
     PARSE["`Parse log lines
     Regex patterns per backend:
-    elevenlabs / gtts / chatterbox`"]
+    elevenlabs / gtts / chatterbox / chatterbox-turbo`"]
     STATE["`State machine
     generation line → saved → SHA256`"]
     RUNIDX["`run_index

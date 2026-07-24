@@ -653,8 +653,9 @@ def generate_voices(
             if backend == "gtts":
                 logger.info(" > [%03d] %s via gTTS (%d chars)...", entry['seq'], speaker, len(text))
                 _gtts_generate(text, tmp_path)
-            elif backend == "chatterbox":
-                logger.info(" > [%03d] %s via Chatterbox (%d chars)...", entry['seq'], speaker, len(text))
+            elif backend in ("chatterbox", "chatterbox-turbo"):
+                label = "Chatterbox Turbo" if backend == "chatterbox-turbo" else "Chatterbox"
+                logger.info(" > [%03d] %s via %s (%d chars)...", entry['seq'], speaker, label, len(text))
                 assert chatterbox_client is not None
                 chatterbox_client.generate(text, tmp_path, speaker)
             else:
@@ -752,11 +753,14 @@ def _gtts_generate(text: str, out_path: str) -> None:
 
 
 class _ChatterboxClient:
-    """Persistent subprocess bridge to the Chatterbox TTS worker.
+    """Persistent subprocess bridge to the Chatterbox (or Turbo) TTS worker.
 
-    The worker script (``chatterbox_worker.py``) runs under the chatterbox
-    venv Python and keeps the model loaded across all generation requests.
-    Communication uses newline-delimited JSON on stdin/stdout.
+    The worker script runs under the chatterbox venv Python and keeps the model
+    loaded across all generation requests.  Communication uses newline-delimited
+    JSON on stdin/stdout.  With ``turbo=True`` the client drives
+    ``chatterbox_turbo_worker.py`` (``ChatterboxTurboTTS``, native paralinguistic
+    tags) instead of the classic ``chatterbox_worker.py``; both ship in the same
+    ``venv-chatterbox``.
 
     Args:
         python_path: Path to the chatterbox venv Python executable.
@@ -765,10 +769,14 @@ class _ChatterboxClient:
             Chatterbox's default voice.
         device: ``"cuda"`` (default) or ``"cpu"``.
         exaggeration: Emotion exaggeration level (0.0 = flat, 1.0 = dramatic).
+            Ignored when ``turbo=True`` (Turbo does not support it).
         cfg_weight: CFG weight controlling pacing/delivery (~0.3–0.5 typical).
+            Ignored when ``turbo=True`` (Turbo does not support it).
+        turbo: Use the Chatterbox Turbo worker/model instead of classic.
     """
 
     _WORKER = os.path.join(os.path.dirname(__file__), "chatterbox_worker.py")
+    _WORKER_TURBO = os.path.join(os.path.dirname(__file__), "chatterbox_turbo_worker.py")
 
     def __init__(
         self,
@@ -777,19 +785,26 @@ class _ChatterboxClient:
         device: str = "cuda",
         exaggeration: float = 0.5,
         cfg_weight: float = 0.5,
+        turbo: bool = False,
     ) -> None:
         self._python = python_path
         self._voice_refs_dir = voice_refs_dir
         self._device = device
         self._exaggeration = exaggeration
         self._cfg_weight = cfg_weight
+        self._turbo = turbo
         self._proc: subprocess.Popen | None = None
+
+    @property
+    def _label(self) -> str:
+        return "Chatterbox Turbo" if self._turbo else "Chatterbox"
 
     def _start(self) -> None:
         """Spawn the Chatterbox worker subprocess and wait for its ready signal."""
-        logger.info("Starting Chatterbox worker (%s, %s)…", self._python, self._device)
+        worker = self._WORKER_TURBO if self._turbo else self._WORKER
+        logger.info("Starting %s worker (%s, %s)…", self._label, self._python, self._device)
         self._proc = subprocess.Popen(
-            [self._python, self._WORKER, self._device],
+            [self._python, worker, self._device],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=sys.stderr,
@@ -802,7 +817,7 @@ class _ChatterboxClient:
             raw = self._proc.stdout.readline()
             if not raw:
                 raise RuntimeError(
-                    "Chatterbox worker exited before sending ready signal. "
+                    f"{self._label} worker exited before sending ready signal. "
                     "Check that venv-chatterbox is correctly set up and the model is downloaded."
                 )
             raw = raw.strip()
@@ -811,12 +826,12 @@ class _ChatterboxClient:
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
-                logger.debug("Chatterbox worker startup: %s", raw)
+                logger.debug("%s worker startup: %s", self._label, raw)
                 continue
             if msg.get("ready"):
                 break
-            logger.debug("Chatterbox worker startup: %s", raw)
-        logger.info("Chatterbox worker ready (sample_rate=%d)", msg["sr"])
+            logger.debug("%s worker startup: %s", self._label, raw)
+        logger.info("%s worker ready (sample_rate=%d)", self._label, msg["sr"])
 
     def _ref_for(self, speaker_key: str) -> str | None:
         """Return the voice reference file path for *speaker_key*, or None if absent."""
@@ -827,8 +842,13 @@ class _ChatterboxClient:
         return None
 
     def _cond_for(self, speaker_key: str) -> str:
-        """Return the Chatterbox conditioning tensor path for *speaker_key*."""
-        return os.path.join(self._voice_refs_dir, f"{speaker_key}.conds.pt")
+        """Return the conditioning tensor path for *speaker_key*.
+
+        Turbo conditionals are not interchangeable with classic ones, so the
+        Turbo client uses a distinct ``.turbo.conds.pt`` suffix.
+        """
+        suffix = ".turbo.conds.pt" if self._turbo else ".conds.pt"
+        return os.path.join(self._voice_refs_dir, f"{speaker_key}{suffix}")
 
     def generate(self, text: str, out_path: str, speaker_key: str) -> None:
         if self._proc is None:
@@ -841,18 +861,39 @@ class _ChatterboxClient:
             "out_path": out_path,
             "ref_audio": ref,
             "cond_path": self._cond_for(speaker_key),
-            "exaggeration": self._exaggeration,
-            "cfg_weight": self._cfg_weight,
         }
+        if not self._turbo:
+            # Turbo ignores these — omit them to avoid per-line warnings.
+            req["exaggeration"] = self._exaggeration
+            req["cfg_weight"] = self._cfg_weight
         assert self._proc is not None
         self._proc.stdin.write(json.dumps(req) + "\n")
         self._proc.stdin.flush()
-        raw = self._proc.stdout.readline()
-        if not raw:
-            raise RuntimeError("Chatterbox worker closed pipe unexpectedly.")
-        resp = json.loads(raw)
+        resp = self._read_response()
         if "error" in resp:
-            raise RuntimeError(f"Chatterbox: {resp['error']}")
+            raise RuntimeError(f"{self._label}: {resp['error']}")
+
+    def _read_response(self) -> dict:
+        """Read worker stdout until a JSON protocol line arrives.
+
+        Model libraries can print progress to stdout mid-generation (Turbo's
+        s3gen emits "S3 Token -> Mel Inference…"). The worker reroutes that to
+        stderr, but tolerate it here too so a stale worker — or any future
+        library that writes straight to fd 1 — degrades to a log line instead
+        of a JSONDecodeError mid-episode.
+        """
+        assert self._proc is not None
+        while True:
+            raw = self._proc.stdout.readline()
+            if not raw:
+                raise RuntimeError(f"{self._label} worker closed pipe unexpectedly.")
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                logger.debug("%s worker: %s", self._label, raw)
 
     def close(self) -> None:
         if self._proc is not None:
@@ -876,8 +917,8 @@ def _tts_segment(text: str, out_path: str, voice_id: str, speed: float | None,
     if backend == "gtts":
         _gtts_generate(text, out_path)
         return
-    if backend == "chatterbox":
-        assert chatterbox_client is not None, "chatterbox_client required for backend='chatterbox'"
+    if backend in ("chatterbox", "chatterbox-turbo"):
+        assert chatterbox_client is not None, f"chatterbox_client required for backend={backend!r}"
         chatterbox_client.generate(text, out_path, speaker_key or "")
         return
     tmp_fd, tmp_path = tempfile.mkstemp(
@@ -1078,7 +1119,7 @@ def get_parser() -> argparse.ArgumentParser:
                         help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
     parser.add_argument("--local-only", action="store_true",
                         help="Only place stems for effects already present in SFX/; skip API generation")
-    parser.add_argument("--backend", choices=["elevenlabs", "gtts", "chatterbox"],
+    parser.add_argument("--backend", choices=["elevenlabs", "gtts", "chatterbox", "chatterbox-turbo"],
                         default="elevenlabs", metavar="BACKEND",
                         help=(
                             "TTS backend for dialogue voice stems. 'elevenlabs' (default) calls "
@@ -1087,15 +1128,23 @@ def get_parser() -> argparse.ArgumentParser:
                             "checking episode duration before spending API credits. "
                             "'chatterbox' uses local Chatterbox TTS with per-character voice "
                             "cloning from voice_refs/<key>.wav reference clips — near-production "
-                            "quality, free, GPU-accelerated. "
+                            "quality, free, GPU-accelerated (all [tags] stripped). "
+                            "'chatterbox-turbo' uses the local Chatterbox Turbo model in the same "
+                            "venv-chatterbox: it natively renders 19 paralinguistic tags — "
+                            "[angry] [fear] [surprised] [happy] [crying] [sarcastic] [whispering] "
+                            "[dramatic] [narration] [advertisement] [laugh] [chuckle] [sigh] "
+                            "[gasp] [groan] [cough] [sniff] [shush] [clear throat] — and strips "
+                            "every other bracketed tag. Spelling is exact: there are no plural "
+                            "forms ([laugh], not [laughs]). Requires reference clips >5s and "
+                            "ignores --exaggeration/--cfg-weight. "
                             "Requires: pip install xil-pipeline[tts-alt] (gtts) or "
-                            "a configured venv-chatterbox (chatterbox)."
+                            "a configured venv-chatterbox (chatterbox / chatterbox-turbo)."
                         ))
     parser.add_argument("--chatterbox-python", default=None, metavar="PATH",
                         help=(
                             "Path to the Python executable in the chatterbox venv "
                             "(default: auto-detect ./venv-chatterbox/bin/python3). "
-                            "Used only with --backend chatterbox."
+                            "Used with --backend chatterbox or chatterbox-turbo."
                         ))
     parser.add_argument("--voice-refs", default=None, metavar="DIR",
                         help=(
@@ -1107,14 +1156,14 @@ def get_parser() -> argparse.ArgumentParser:
                         help=(
                             "Chatterbox emotion exaggeration level: 0.0 = flat/monotone, "
                             "1.0 = dramatically expressive (default: 0.5). "
-                            "Used only with --backend chatterbox."
+                            "Used only with --backend chatterbox (ignored by chatterbox-turbo)."
                         ))
     parser.add_argument("--cfg-weight", type=float, default=0.5, metavar="FLOAT",
                         help=(
                             "Chatterbox CFG weight controlling pacing/delivery: lower values "
                             "(e.g. 0.3) produce slower, more deliberate speech and help "
                             "compensate for acceleration at high exaggeration (default: 0.5). "
-                            "Used only with --backend chatterbox."
+                            "Used only with --backend chatterbox (ignored by chatterbox-turbo)."
                         ))
     parser.add_argument("--sfx-backend", choices=["elevenlabs", "audioldm2", "stableaudio"],
                         default="elevenlabs", metavar="BACKEND",
@@ -1265,7 +1314,7 @@ def main() -> None:
         if args.voice_refs is None:
             args.voice_refs = str(get_workspace_root() / "voice_refs")
 
-        if args.backend == "chatterbox":
+        if args.backend in ("chatterbox", "chatterbox-turbo"):
             _print_voice_refs_table(config, args.voice_refs)
 
         if args.reconcile:
@@ -1301,9 +1350,10 @@ def main() -> None:
                         logger.error(_msg)
                     sys.exit(1)
 
-            # --- Chatterbox client (backend=chatterbox only) ---
+            # --- Chatterbox client (backend=chatterbox or chatterbox-turbo) ---
             chatterbox_client: _ChatterboxClient | None = None
-            if args.backend == "chatterbox":
+            if args.backend in ("chatterbox", "chatterbox-turbo"):
+                turbo = args.backend == "chatterbox-turbo"
                 # Resolution: --chatterbox-python → $XIL_CODEROOT/venv-chatterbox
                 # (exclusive when set) → auto-detect (workspace root, then repo root).
                 cb_python = resolve_venv_python("venv-chatterbox", args.chatterbox_python)
@@ -1314,11 +1364,17 @@ def main() -> None:
                         "or create venv-chatterbox/ in the workspace or repo root."
                     )
                     sys.exit(1)
+                if turbo and (args.exaggeration != 0.5 or args.cfg_weight != 0.5):
+                    logger.warning(
+                        "--exaggeration/--cfg-weight are ignored by chatterbox-turbo; "
+                        "Turbo does not support them."
+                    )
                 chatterbox_client = _ChatterboxClient(
                     python_path=cb_python,
                     voice_refs_dir=args.voice_refs,
                     exaggeration=args.exaggeration,
                     cfg_weight=args.cfg_weight,
+                    turbo=turbo,
                 )
 
             # --- SFX backend (built only when SFX generation is requested) ---

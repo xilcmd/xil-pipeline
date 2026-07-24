@@ -989,3 +989,47 @@ class TestAtomicStemWrites:
             producer.generate_voices(_ATOMIC_CONFIG, [_atomic_entry()], str(tmp_path), backend="gtts")
         assert not stem.exists()
         assert list(tmp_path.glob("*.tmp")) == []
+
+
+# ─── Tests: Chatterbox worker protocol tolerance (regression) ───
+
+class _FakeProc:
+    """Minimal stand-in for the worker subprocess: canned stdout, captured stdin."""
+
+    def __init__(self, stdout_lines):
+        self._lines = list(stdout_lines)
+        self.stdin = unittest.mock.MagicMock()
+        self.stdout = unittest.mock.MagicMock()
+        self.stdout.readline.side_effect = lambda: self._lines.pop(0) if self._lines else ""
+
+
+class TestChatterboxClientProtocol:
+    """Turbo's s3gen prints progress to stdout mid-generation; a bare
+    json.loads on the first line crashed the whole run (JSONDecodeError)."""
+
+    def _client(self, stdout_lines, tmp_path):
+        client = producer._ChatterboxClient(
+            python_path="/nonexistent/python",
+            voice_refs_dir=str(tmp_path),
+            turbo=True,
+        )
+        client._proc = _FakeProc(stdout_lines)
+        return client
+
+    def test_generate_skips_non_json_progress_lines(self, tmp_path):
+        client = self._client(
+            ["S3 Token -> Mel Inference...\n", '{"done": true}\n'], tmp_path
+        )
+        client.generate("hello", str(tmp_path / "out.mp3"), "narrator")  # must not raise
+
+    def test_generate_surfaces_worker_error_after_noise(self, tmp_path):
+        client = self._client(
+            ["loaded PerthNet (Implicit)\n", '{"error": "boom"}\n'], tmp_path
+        )
+        with pytest.raises(RuntimeError, match="boom"):
+            client.generate("hello", str(tmp_path / "out.mp3"), "narrator")
+
+    def test_generate_raises_when_pipe_closes(self, tmp_path):
+        client = self._client(["noise with no json\n"], tmp_path)
+        with pytest.raises(RuntimeError, match="closed pipe"):
+            client.generate("hello", str(tmp_path / "out.mp3"), "narrator")
