@@ -20,7 +20,7 @@ The default dialogue backend is the ElevenLabs API. For a free, local, GPU-accel
 alternative with per-character voice cloning, set up a dedicated `venv-chatterbox/` at your
 code root (`XIL_CODEROOT`). It hosts **both** the classic Chatterbox model and **Chatterbox
 Turbo** — Turbo natively renders 19 paralinguistic tags (emotion, delivery style, and vocal
-gestures — see [the pipeline guide](docs/pipeline.md#chatterbox-turbo-paralinguistic-tags)).
+gestures — see [the pipeline guide](https://xil-pipeline.readthedocs.io/en/latest/pipeline/#chatterbox-turbo-paralinguistic-tags)).
 This venv carries heavy ML dependencies (PyTorch) and is intentionally kept out of the main
 package; each `xil` command auto-detects it at run time.
 
