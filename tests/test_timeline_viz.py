@@ -748,7 +748,7 @@ const ids = ['xil-player','player-label','audio-el','zoom-info','floattip','tc',
              'ruler','layers','sfx-modal-overlay','sfx-modal','sfx-modal-title',
              'sfx-modal-fields','sfx-modal-status','sfx-modal-save','sfx-modal-cancel',
              'transport','transport-restart','transport-play','transport-time','transport-mutes',
-             'transport-hint','playhead',
+             'transport-hint','playhead','sections-track','scenes-track',
              'mix-loading','mix-loading-text','mix-loading-layers','mix-loading-cancel'];
 const elements = {};
 ids.forEach(i => elements[i] = el(i));
@@ -873,6 +873,55 @@ class TestTransport:
         html = self._render(tmp_path, layers_dir=None)
         assert "const LAYER_AUDIO = {};" in html
         assert "run xil daw to enable full-mix playback" in html
+
+
+class TestStructureBands:
+    """Section/scene bands rendered above the minute ruler."""
+
+    def _render(self, tmp_path, **kwargs):
+        data = build_timeline_data(
+            total_s=20.0, tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")],
+            amb_labels=[], mus_labels=[], sfx_labels=[],
+            **kwargs,
+        )
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(data, out)
+        return open(out, encoding="utf-8").read()
+
+    def test_band_markup_present(self, tmp_path):
+        html = self._render(tmp_path)
+        assert 'id="sections-track"' in html
+        assert 'id="scenes-track"' in html
+        assert "structure-block" in html          # CSS class
+        assert ">Sections<" in html and ">Scenes<" in html   # gutter labels
+
+    def test_bands_serialized_into_data(self, tmp_path):
+        html = self._render(
+            tmp_path,
+            section_bands=[(0.0, 10.0, "cold-open"), (10.0, 20.0, "act1")],
+            scene_bands=[(5.0, 20.0, "scene-1")],
+        )
+        assert '"sections": [' in html
+        assert '"label": "cold-open"' in html
+        assert '"label": "act1"' in html
+        assert '"label": "scene-1"' in html
+
+    def test_bands_default_to_empty(self, tmp_path):
+        html = self._render(tmp_path)
+        assert '"sections": []' in html
+        assert '"scenes": []' in html
+
+    def test_bands_not_counted_as_assets(self, tmp_path):
+        """Structure bands live outside DATA.layers, so the asset count is unchanged."""
+        plain = self._render(tmp_path)
+        with_bands = self._render(
+            tmp_path,
+            section_bands=[(0.0, 20.0, "act1")],
+            scene_bands=[(0.0, 20.0, "scene-1")],
+        )
+        assert "1 assets across 5 layers" in plain
+        assert "1 assets across 5 layers" in with_bands
 
 
 # ─── Tests: audio prefetch (NAS-aware loading feedback) ───

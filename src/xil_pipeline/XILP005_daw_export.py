@@ -57,6 +57,7 @@ from xil_pipeline.mix_common import (
     compute_music_labels,
     compute_sfx_labels,
     compute_vintage_filter_labels,
+    derive_structure_bands,
     load_entries_index,
 )
 from xil_pipeline.models import (
@@ -644,6 +645,8 @@ def export_daw_layers(
     td = build_timeline_data(
         tag, total_ms / 1000.0,
         dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
+        section_bands=derive_structure_bands(entries_index, cue_timeline, total_ms, "section"),
+        scene_bands=derive_structure_bands(entries_index, cue_timeline, total_ms, "scene"),
     )
     txt_path = render_text_timeline_map(
         td, os.path.join(output_dir, f"{tag}_timeline.txt"), slug=slug,
@@ -795,6 +798,8 @@ def main() -> None:
             td = build_timeline_data(
                 tag, total_ms / 1000.0,
                 dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
+                section_bands=derive_structure_bands(entries_index, timeline, total_ms, "section"),
+                scene_bands=derive_structure_bands(entries_index, timeline, total_ms, "scene"),
             )
             txt_path = render_text_timeline_map(
                 td, os.path.join(output_dir, f"{tag}_timeline.txt"), slug=slug,

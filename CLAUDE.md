@@ -430,6 +430,8 @@ xil daw --episode S01E01 --timeline --timeline-html
 - `--save-aup3` includes a `SaveProject2` command in the generated `{TAG}_open_in_audacity.py` helper script (requires mod-script-pipe in Audacity)
 - `--timeline` prints an ASCII multitrack timeline to stdout (works with `--dry-run` via fast mutagen header reads)
 - `--timeline-html` writes a self-contained interactive HTML timeline to `daw/{TAG}/{TAG}_timeline.html` (hover tooltips, Ctrl+scroll zoom)
+- The HTML timeline shows two **structure bands above the minute ruler** — Sections (`cold-open`, `act1`, …) over Scenes (`scene-1`, …) — derived from the parsed entries' `section`/`scene` fields via `derive_structure_bands()` in `mix_common.py`. Band boundaries come from the first *stemmed* entry of each group (section/scene headers carry no stem); entries with no scene (e.g. preamble) leave a deliberate gap
+- **The HTML is a static artifact**: all CSS/JS/data are inlined at generation time and the GUI only reads the file off disk, so renderer changes never reach already-generated timelines. Regenerate cheaply — without re-exporting layer WAVs — with `xil daw --episode {TAG} --dry-run --timeline-html`
 - Preamble/postamble stems are picked up automatically via `collect_stem_plans()` — they are regular seq-numbered entries in the parsed JSON (no special negative-seq handling)
 - No ElevenLabs API key required — no API calls made
 - Shared mixing logic imported from `mix_common.py`; visualization via `timeline_viz.py`
