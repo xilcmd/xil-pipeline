@@ -1570,7 +1570,7 @@ def _build_app():
                             prod_backend_dd = gr.Dropdown(
                                 label="--backend  (dialogue voice generator)",
                                 choices=["elevenlabs", "gtts", "chatterbox", "chatterbox-turbo"],
-                                value="chatterbox",
+                                value="chatterbox-turbo",
                                 elem_id="prod-backend",
                             )
                         with gr.Row():
