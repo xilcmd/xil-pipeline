@@ -1,4 +1,24 @@
 {
+    // Python formatting is Ruff, configured by [tool.ruff] in pyproject.toml
+    // (line-length = 120). Pinning the formatter here stops editors from
+    // falling back to black/autopep8, whose 88-column default silently
+    // rewraps whole files.
+    //
+    // NOTE: these apply only when the FOLDER is open. Opening a single file
+    // (e.g. Explorer -> "Open with Code") gives Ruff no project root, so it
+    // falls back to its built-in 88-column default and reflows the file on
+    // save. Open the repo folder, not individual files.
+    //
+    // formatOnSave is deliberately NOT enabled: 82 of 90 files predate
+    // ruff-format, so saving would rewrite them wholesale and bury real
+    // changes in formatting churn. Format explicitly (Shift+Alt+F) on code
+    // you own, or run `ruff format <path>` as a deliberate, reviewable pass.
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.rulers": [
+            120
+        ]
+    },
     "cSpell.words": [
         "Williamstown"
     ]
