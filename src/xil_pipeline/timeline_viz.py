@@ -437,9 +437,9 @@ document.getElementById('sfx-modal-save').addEventListener('click', function() {
 _TRANSPORT_CSS = """\
   #transport { display:flex; gap:14px; align-items:center; margin-bottom:10px;
     background:#222238; padding:6px 12px; border-radius:4px; }
-  #transport-play { background:#333; color:#eee; border:1px solid #666; width:34px; height:26px;
+  #transport-play, #transport-restart { background:#333; color:#eee; border:1px solid #666; width:34px; height:26px;
     border-radius:4px; cursor:pointer; font-size:13px; line-height:1; }
-  #transport-play:hover { background:#444; }
+  #transport-play:hover, #transport-restart:hover { background:#444; }
   #transport-time { font-size:12px; color:#b0b0ff; font-variant-numeric:tabular-nums; min-width:110px; }
   #transport-mutes { display:flex; gap:10px; }
   .mute-caption { font-size:11px; color:#777; text-transform:uppercase; letter-spacing:0.05em; align-self:center; }
@@ -456,7 +456,8 @@ _TRANSPORT_CSS = """\
 
 _TRANSPORT_HTML = """\
 <div id="transport">
-  <button id="transport-play" title="Play/pause full mix">&#9205;</button>
+  <button id="transport-restart" title="Return to start" aria-label="Return to start">&#9198;</button>
+  <button id="transport-play" title="Play/pause full mix" aria-label="Play/pause full mix">&#9205;</button>
   <span id="transport-time">0:00 / 0:00</span>
   <span id="transport-mutes">
     <span class="mute-caption">Mute:</span>
@@ -634,6 +635,21 @@ document.getElementById('transport-play').addEventListener('click', function() {
   if (mixPlaying) pauseMix(); else playMix();
 });
 
+// Return to start (accessibility): seekTo(0) preserves play/pause state —
+// keeps playing if playing, stays paused if paused.
+document.getElementById('transport-restart').addEventListener('click', function() {
+  seekTo(0);
+});
+
+document.addEventListener('keydown', function(e) {
+  // Home = return to start. Ignore while typing or when the SFX dialog is open.
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const modal = document.getElementById('sfx-modal-overlay');
+  if (modal && modal.style.display !== 'none' && modal.style.display !== '') return;
+  if (e.key === 'Home') { e.preventDefault(); seekTo(0); }
+});
+
 document.getElementById('ruler').addEventListener('click', function(e) {
   const rect = this.getBoundingClientRect();
   const x = e.clientX - rect.left - 90;
@@ -657,6 +673,7 @@ document.querySelectorAll('.mute-toggle input').forEach(function(cb) {
 });
 
 if (!Object.keys(LAYER_AUDIO).length) {
+  document.getElementById('transport-restart').style.display = 'none';
   document.getElementById('transport-play').style.display = 'none';
   document.getElementById('transport-time').style.display = 'none';
   document.getElementById('transport-mutes').style.display = 'none';

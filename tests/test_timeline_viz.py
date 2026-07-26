@@ -747,7 +747,7 @@ function el(id) {
 const ids = ['xil-player','player-label','audio-el','zoom-info','floattip','tc','ti',
              'ruler','layers','sfx-modal-overlay','sfx-modal','sfx-modal-title',
              'sfx-modal-fields','sfx-modal-status','sfx-modal-save','sfx-modal-cancel',
-             'transport','transport-play','transport-time','transport-mutes',
+             'transport','transport-restart','transport-play','transport-time','transport-mutes',
              'transport-hint','playhead',
              'mix-loading','mix-loading-text','mix-loading-layers','mix-loading-cancel'];
 const elements = {};
@@ -850,6 +850,24 @@ class TestTransport:
         assert "mute-toggle" in html
         assert "seekTo" in html          # ruler-seek handler
         assert "requestAnimationFrame" in html
+
+    def test_return_to_start_button(self, tmp_path):
+        """Issue #41: accessible 'return to start' control alongside play/pause."""
+        ldir = tmp_path / "daw"
+        ldir.mkdir()
+        html = self._render(tmp_path, layers_dir=ldir, wav_keys=self.LAYER_KEYS)
+        # Button markup + accessible labelling
+        assert 'id="transport-restart"' in html
+        assert 'aria-label="Return to start"' in html
+        assert "&#9198;" in html                       # ⏮ skip-to-start glyph
+        assert 'aria-label="Play/pause full mix"' in html   # a11y parity on play button
+        # Click restarts via the existing state-preserving seek
+        assert "getElementById('transport-restart').addEventListener('click'" in html
+        assert "seekTo(0)" in html
+        # Keyboard accessibility: Home key returns to start
+        assert "e.key === 'Home'" in html
+        # Restart is hidden when there is no full mix to control
+        assert "getElementById('transport-restart').style.display = 'none'" in html
 
     def test_no_layers_dir_renders_empty_layer_audio(self, tmp_path):
         html = self._render(tmp_path, layers_dir=None)
