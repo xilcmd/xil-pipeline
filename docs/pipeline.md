@@ -1122,8 +1122,9 @@ xil-stem-log --logs-dir /path/to/logs
 
 ```mermaid
 flowchart TD
-    LOGS["`📂 logs/xil_YYYY-MM-DD.log
-    One or more daily log files`"]
+    LOGS["`📂 logs/xil_v2_YYYY-MM-DD.log
+    Structured: ts|LEVEL|stage|msg
+    (v1 xil_*.log transcripts also read)`"]
     PARSE["`Parse log lines
     Regex patterns per backend:
     elevenlabs / gtts / chatterbox / chatterbox-turbo`"]

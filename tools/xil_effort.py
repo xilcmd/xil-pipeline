@@ -51,14 +51,23 @@ for d in commits: day_commits[d] += 1
 for d in merges:  day_merges[d]  += 1
 
 # --- gather: pipeline logs ---
-# Primary format: xil_YYYY-MM-DD.log files containing captured stdout.
-# Date comes from the filename. Runs are counted by occurrences of the
-# per-invocation banner (default "VOICE REFS", override with --run-marker);
-# other ALL-CAPS section headers are tallied as a section-mix breakdown.
-# HTTP trace lines are ignored. Lines in "timestamp | command | args" form
-# are also understood, for any future structured logging.
-FNAME_DATE = re.compile(r"xil_(\d{4}-\d{2}-\d{2})\.log$")
+# Two on-disk formats are understood:
+#
+#   v2 (structured)   xil_v2_YYYY-MM-DD.log — every line is
+#                     "<iso-ts>|<LEVEL>|<stage>|<message>".  Stage names are
+#                     tallied directly and runs are counted from the
+#                     "|RUN|<stage>|BEGIN ..." banner written by run_banner().
+#   v1 (stdout dump)  xil_YYYY-MM-DD.log / xil_v1_YYYY-MM-DD.log — captured
+#                     stdout with no per-line metadata.  The date comes from
+#                     the filename, runs are counted by occurrences of the
+#                     per-invocation banner (default "VOICE REFS", override
+#                     with --run-marker), and other ALL-CAPS section headers
+#                     are tallied as a section-mix breakdown.
+#
+# HTTP trace lines are ignored in both.
+FNAME_DATE = re.compile(r"xil_(?:v\d+_)?(\d{4}-\d{2}-\d{2})\.log$")
 HEADER     = re.compile(r"^([A-Z][A-Z0-9_/-]+(?: [A-Z0-9_/-]+)+)")
+LEVEL      = re.compile(r"^[A-Z]+$")
 
 matched_files = 0
 for pattern in args.log:
@@ -75,12 +84,24 @@ for pattern in args.log:
                 if len(parts) >= 2 and len(parts[0]) >= 10:
                     try:
                         day = dt.date.fromisoformat(parts[0][:10]).isoformat()
-                        day_pipe[day] += 1
-                        cmd_counts[parts[1]] += 1
-                        piped += 1
-                        continue
                     except ValueError:
                         pass
+                    else:
+                        # v2 puts the level second and the stage third; the
+                        # older anticipated shape was "timestamp|command|args".
+                        if len(parts) >= 3 and LEVEL.match(parts[1]):
+                            # v2: count one unit of activity per invocation, so
+                            # the daily figure stays a RUN count comparable with
+                            # v1 days rather than becoming a line count.
+                            stage = parts[2]
+                            if parts[1] == "RUN" and parts[-1].startswith("BEGIN"):
+                                day_pipe[day] += 1
+                        else:
+                            stage = parts[1]
+                            day_pipe[day] += 1
+                        cmd_counts[stage] += 1
+                        piped += 1
+                        continue
                 h = HEADER.match(line)
                 if h:
                     name = h.group(1)
@@ -90,7 +111,7 @@ for pattern in args.log:
                         runs += 1
                     else:
                         cmd_counts[name] += 1
-        if piped == 0 and fname_day:                # stdout-dump style log
+        if piped == 0 and fname_day:                # v1 stdout-dump style log
             day_pipe[fname_day] += max(runs, 1)
 
 if not day_pipe:

@@ -14,6 +14,7 @@ The project is packaged as `xil-pipeline` (import name `xil_pipeline`) using hat
 src/xil_pipeline/          # Python package (42 modules)
   __init__.py              # version + key re-exports
   xil.py                   # Unified `xil` command dispatcher
+  log_config.py            # Logging setup — pretty console + structured v2 log file
   models.py                # Pydantic data models, slug/path resolution
   mix_common.py            # Shared mixing utilities
   sfx_common.py            # SFX library management, ID3 tagging
@@ -797,6 +798,26 @@ xil splice --episode S02E03 --insert-after 322 \
 - Recomputes the `stats` block after modification
 - No ElevenLabs API key required — no API calls made
 
+### Logging
+
+`log_config.py` writes **two formats from one logger** — the console stays human-readable, the file is machine-readable.
+
+- **Console (stdout)** — unchanged: plain `INFO`, `[!]` for warnings, `[ERROR]`/`[CRITICAL]`, `[debug]`. The `run_banner()` bars print here as always.
+- **File** — `logs/xil_v2_YYYY-MM-DD.log`, one record per line:
+
+```text
+2026-07-26T19:03:00-0400|RUN|produce|BEGIN argv="xil produce --episode S01E01 --backend chatterbox-turbo" pid=1234 ver=0.3.1 cwd=/mnt/cloudsy/xil-projects
+2026-07-26T19:03:02-0400|INFO|produce|  > [006] adam via Chatterbox Turbo (282 chars)...
+2026-07-26T19:05:22-0400|RUN|produce|END elapsed=142.3s
+```
+
+- Fields are `<iso-8601 ts>|<LEVEL>|<stage>|<message>`. **The message may contain `|`** — split off only the three leading fields.
+- `stage` comes from `sys.argv[0]`: both `xil-produce` and `xil produce` yield `produce`.
+- Each invocation is bracketed by `RUN` records from `run_banner()` — the `BEGIN` line records the full command, so any block of output can be traced to what produced it.
+- Whitespace-only records are dropped from the file (console spacing only); multi-line messages get one prefixed line each.
+- A record can be routed to one sink via `logger.log(..., extra={"console": False})` or `{"file": False}` — used to keep the decorative bars on the terminal and the `BEGIN`/`END` records in the file.
+- **v1 → v2**: pre-v2 logs were a bare stdout transcript named `xil_YYYY-MM-DD.log`. Run `python3 tools/migrate_logs_v1.py` (`-n` to preview) to rename them to `xil_v1_YYYY-MM-DD.log` so the format is unambiguous from the filename. Both formats are still parsed by `xil-stem-log` and `tools/xil_effort.py`.
+
 ### Stem Log Report
 
 `XILU008_stem_log_report.py` — Parses daily pipeline log files into a chronological stem generation CSV. Useful for auditing what was generated, when, with which backend, and confirming SHA256 checksums.
@@ -818,9 +839,10 @@ xil-stem-log --episode S03E03 --audit --audit-threshold 20
 - `--show` print CSV to stdout (equivalent to `--output -`)
 - `--audit` cross-references logged `char_count` values against the current parsed JSON and flags stems whose logged character count differs from the current text length by more than `--audit-threshold` percent (default: 10); useful for detecting stale stems after script edits
 - `--audit-threshold N` percentage threshold for the `--audit` flag (default: 10)
-- Parses `logs/xil_YYYY-MM-DD.log` files; regex patterns match ElevenLabs, gTTS, Chatterbox, and Chatterbox Turbo generation lines
+- Parses both log formats — v2 `logs/xil_v2_YYYY-MM-DD.log` (structured; the `ts|LEVEL|stage|` prefix is stripped before matching) and v1 `logs/xil_YYYY-MM-DD.log` / `xil_v1_*` (bare stdout transcript); regex patterns match ElevenLabs, gTTS, Chatterbox, and Chatterbox Turbo generation lines
 - State machine: generation line → saved line → SHA256 line → emits one record
-- `run_index` counter increments per `Phase 1: Generating` marker, grouping stems by production run
+- `run_index` groups stems by production run — from `run_banner`'s `RUN … BEGIN` record in v2 logs, or the `Phase 1: Generating` marker in v1 logs (never both, so runs aren't double-counted)
+- Log files are ordered by the date in the filename, so v1 and v2 files interleave chronologically
 - Output columns: `log_date`, `log_file`, `run_index`, `log_line`, `seq`, `speaker`, `backend`, `char_count`, `stem_path`, `stem_filename`, `sha256`
 - No ElevenLabs API key required — reads local log files only
 

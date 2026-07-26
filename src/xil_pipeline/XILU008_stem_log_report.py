@@ -4,9 +4,20 @@
 
 """Stem generation log reporter.
 
-Parses daily ``logs/xil_YYYY-MM-DD.log`` files and produces a CSV
-chronology of every dialogue MP3 stem that was generated, including
-its backend, SHA-256 hash, and approximate creation context.
+Parses daily log files and produces a CSV chronology of every dialogue MP3
+stem that was generated, including its backend, SHA-256 hash, and approximate
+creation context.
+
+Both on-disk log formats are read:
+
+- **v2** ``logs/xil_v2_YYYY-MM-DD.log`` — structured, every line prefixed
+  ``<iso-ts>|<LEVEL>|<stage>|``.  The prefix is stripped before matching, and
+  each invocation is delimited by ``run_banner``'s ``RUN … BEGIN`` record.
+- **v1** ``logs/xil_YYYY-MM-DD.log`` / ``xil_v1_YYYY-MM-DD.log`` — the older
+  bare stdout transcript, delimited by ``--- Phase 1: Generating`` headers.
+
+Files are ordered by the date in the filename rather than by name, so v1 and
+v2 logs interleave chronologically.
 
 **Usage:**
 
@@ -78,6 +89,27 @@ _RE_SHA256 = re.compile(r"^\s*SHA256:\s+([0-9a-fA-F]+)")
 # Run boundary
 _RE_PHASE1 = re.compile(r"^---\s*Phase 1:\s*Generating")
 
+# v2 structured log prefix: "<iso-ts>|<LEVEL>|<stage>|<message>".  v1 logs
+# (xil_v1_*.log and the original xil_<date>.log) have no prefix; both formats
+# are parsed by stripping the prefix when present and matching as before.
+_RE_V2_PREFIX = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^|]*\|[A-Z]+\|[^|]*\|"
+)
+
+# v2 per-invocation boundary, written by run_banner(): "...|RUN|<stage>|BEGIN ..."
+_RE_RUN_BEGIN = re.compile(r"^BEGIN\b")
+
+
+def _strip_v2_prefix(line: str) -> str:
+    """Strip the ``ts|level|stage|`` prefix from a v2 log line.
+
+    Returns *line* unchanged when it carries no prefix (v1 logs), so the same
+    parser handles both formats.  The message itself may contain ``|``, so only
+    the fixed three-field prefix is removed.
+    """
+    m = _RE_V2_PREFIX.match(line)
+    return line[m.end():] if m else line
+
 
 def _parse_log(log_path: Path) -> list[dict]:
     """Return list of stem records parsed from a single log file."""
@@ -89,9 +121,16 @@ def _parse_log(log_path: Path) -> list[dict]:
 
     with log_path.open(encoding="utf-8", errors="replace") as fh:
         for lineno, raw in enumerate(fh, start=1):
-            line = raw.rstrip("\n")
+            # v2 lines carry a "ts|level|stage|" prefix; v1 lines do not.
+            stripped = raw.rstrip("\n")
+            is_v2 = bool(_RE_V2_PREFIX.match(stripped))
+            line = _strip_v2_prefix(stripped)
 
-            if _RE_PHASE1.match(line):
+            # Run boundary.  v2 logs are bracketed by run_banner's RUN BEGIN
+            # record, which is the true per-invocation marker.  v1 logs have no
+            # such record, so the Phase 1 header is the only boundary available
+            # — but counting it in a v2 log too would double-count every run.
+            if _RE_RUN_BEGIN.match(line) if is_v2 else _RE_PHASE1.match(line):
                 run_index += 1
                 pending = None
                 continue
@@ -268,7 +307,11 @@ def main() -> None:
         print(f"[ERROR] Logs directory not found: {logs_dir}", file=sys.stderr)
         sys.exit(1)
 
-    log_files = sorted(logs_dir.glob("xil_*.log"))
+    # Sort by the date embedded in the filename, not the raw name: with the
+    # versioned convention (xil_v1_<date>.log / xil_v2_<date>.log) a plain
+    # filename sort would place every v1 file before every v2 file and scramble
+    # the chronology across the format boundary.
+    log_files = sorted(logs_dir.glob("xil_*.log"), key=lambda p: (_date_from_filename(p.name), p.name))
     if args.since:
         log_files = [f for f in log_files if _date_from_filename(f.name) >= args.since]
 
