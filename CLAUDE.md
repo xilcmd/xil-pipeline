@@ -831,6 +831,7 @@ pip install 'xil-pipeline[gui]'
 xil-gui                        # opens http://localhost:7860
 xil-gui --share                # generates a public ngrok URL for partner access (72h, no auth)
 xil-gui --port 8080            # custom port
+xil-gui --verbose              # detailed logs for the Timeline SFX dialog (open/save)
 xil gui                        # via unified dispatcher
 ```
 

@@ -1,9 +1,9 @@
-.TH XIL\-GUI "1" "2026\-07\-09" "xil\-pipeline 0.3.1" "User Commands"
+.TH XIL\-GUI "1" "2026\-07\-24" "xil\-pipeline 0.3.1" "User Commands"
 .SH NAME
 xil\-gui
 .SH SYNOPSIS
 .B xil\-gui
-[-h] [--port PORT] [--host HOST] [--share] [--output FILE]
+[-h] [--port PORT] [--host HOST] [--share] [--output FILE] [--verbose]
 .SH DESCRIPTION
 Launch the xil\-pipeline web dashboard (Gradio). Opens a browser UI with nine tabs: Setup (initialize a workspace / select the active show), Project (edit project.json), Episodes (workspace overview with parse/stems/DAW/master status), Run Stage (launch pipeline stages with live log streaming; dry\-run on by default), Speakers, Cast Config and SFX Config (edit the respective JSON configs), Audio Preview (browse and play stems in the browser), and Timeline (interactive HTML timeline).
 
@@ -23,6 +23,10 @@ Generate a public ngrok URL for partner access (open, no auth)
 .TP
 \fB\-\-output\fR \fI\,FILE\/\fR, \fB\-o\fR \fI\,FILE\/\fR
 Append a timestamped session activity log to FILE
+
+.TP
+\fB\-\-verbose\fR, \fB\-v\fR
+Log detailed activity for the Timeline audio\-properties dialog (SFX open/save requests) to stdout and logs/xil_YYYY\-MM\-DD.log
 
 .SH COMMENTS
 Requires the [gui] extra:
