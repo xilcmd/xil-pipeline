@@ -61,11 +61,16 @@ class TimelineData:
         tag: Episode tag (e.g. ``"S02E03"``).
         total_duration_s: Total episode duration in seconds.
         layers: Mapping of layer name to list of :class:`LayerSpan` instances.
+        sections: Script-section bands (cold-open, act1, …) for the structure
+            ruler.  Kept out of ``layers`` so they are not counted as assets.
+        scenes: Script-scene bands (scene-1, scene-2, …) for the structure ruler.
     """
 
     tag: str
     total_duration_s: float
     layers: dict[str, list[LayerSpan]] = field(default_factory=dict)
+    sections: list[LayerSpan] = field(default_factory=list)
+    scenes: list[LayerSpan] = field(default_factory=list)
 
 
 def build_timeline_data(
@@ -76,6 +81,9 @@ def build_timeline_data(
     mus_labels: list,
     sfx_labels: list,
     vf_labels: list | None = None,
+    *,
+    section_bands: list | None = None,
+    scene_bands: list | None = None,
 ) -> TimelineData:
     """Wrap the layer label lists into a :class:`TimelineData` object.
 
@@ -92,6 +100,9 @@ def build_timeline_data(
         mus_labels: Music label tuples (may carry ramp data).
         sfx_labels: SFX label tuples.
         vf_labels: Vintage filter label tuples (may carry ramp data).
+        section_bands: Script-section ``(start_s, end_s, label)`` tuples from
+            :func:`mix_common.derive_structure_bands`, for the structure ruler.
+        scene_bands: Script-scene ``(start_s, end_s, label)`` tuples.
 
     Returns:
         A populated :class:`TimelineData` instance.
@@ -117,7 +128,13 @@ def build_timeline_data(
         "sfx":            to_spans(sfx_labels),
         "vintage_filter": to_spans(vf_labels or []),
     }
-    return TimelineData(tag=tag, total_duration_s=total_s, layers=layers)
+    return TimelineData(
+        tag=tag,
+        total_duration_s=total_s,
+        layers=layers,
+        sections=to_spans(section_bands or []),
+        scenes=to_spans(scene_bands or []),
+    )
 
 
 def _format_time(seconds: float) -> str:
@@ -751,6 +768,13 @@ _HTML_TEMPLATE = """\
   .subtitle {{ color: #888; font-size: 0.9em; margin-bottom: 16px; }}
   .timeline-container {{ position: relative; overflow-x: auto; overflow-y: visible; padding-bottom: 20px; }}
   .timeline-inner {{ position: relative; min-width: 100%; }}
+  .structure-row {{ display: flex; align-items: center; height: 20px; margin-bottom: 2px; }}
+  .structure-track {{ position: relative; height: 18px; }}
+  .structure-block {{ position: absolute; top: 0; height: 100%; box-sizing: border-box;
+    border-right: 1px solid #1a1a2e; border-radius: 2px; font-size: 10px; line-height: 18px;
+    padding: 0 5px; color: #d8d8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  #sections-track .structure-block {{ background: #3a3a5c; }}
+  #scenes-track .structure-block {{ background: #2e2e46; color: #a8a8c8; }}
   .ruler {{ height: 30px; position: relative; border-bottom: 1px solid #444; margin-bottom: 4px; }}
   .ruler-tick {{ position: absolute; top: 0; height: 100%; border-left: 1px solid #555; }}
   .ruler-tick span {{ position: absolute; top: 2px; left: 4px; font-size: 11px; color: #999; white-space: nowrap; }}
@@ -804,6 +828,8 @@ _HTML_TEMPLATE = """\
 <div id="floattip"></div>
 <div class="timeline-container" id="tc">
   <div class="timeline-inner" id="ti">
+    <div class="structure-row"><div class="layer-label">Sections</div><div class="structure-track" id="sections-track"></div></div>
+    <div class="structure-row"><div class="layer-label">Scenes</div><div class="structure-track" id="scenes-track"></div></div>
     <div class="ruler" id="ruler"></div>
     <div id="layers"></div>
     <div id="playhead"></div>
@@ -843,6 +869,20 @@ function render() {{
     rhtml += '<div class="ruler-tick" style="left:calc(90px + ' + (t/TOTAL*W) + 'px)"><span>' + fmtTime(t) + '</span></div>';
   }}
   document.getElementById('ruler').innerHTML = rhtml;
+  // Structure bands (sections / scenes) — same percent geometry as layer spans,
+  // so they stay aligned with the tracks below at every zoom level.
+  for (const band of [['sections-track', DATA.sections], ['scenes-track', DATA.scenes]]) {{
+    const track = document.getElementById(band[0]);
+    track.style.width = W + 'px';
+    let bhtml = '';
+    for (const b of (band[1] || [])) {{
+      const bleft = b.start_s / TOTAL * 100;
+      const bw = Math.max((b.end_s - b.start_s) / TOTAL * 100, 0.1);
+      const blabel = escAttr(b.label);
+      bhtml += '<div class="structure-block" style="left:' + bleft + '%;width:' + bw + '%" title="' + blabel + '">' + blabel + '</div>';
+    }}
+    track.innerHTML = bhtml;
+  }}
   // Layers
   let lhtml = '';
   let ti = 0;
@@ -1152,6 +1192,16 @@ def render_html_timeline(
             ]
             for key, spans in data.layers.items()
         },
+        # Structure bands are deliberately separate from "layers" so they are
+        # not counted as assets and don't need COLORS/LABELS entries.
+        "sections": [
+            {"start_s": sp.start_s, "end_s": sp.end_s, "label": sp.label}
+            for sp in data.sections
+        ],
+        "scenes": [
+            {"start_s": sp.start_s, "end_s": sp.end_s, "label": sp.label}
+            for sp in data.scenes
+        ],
     }
 
     span_count = sum(len(spans) for spans in data.layers.values())
