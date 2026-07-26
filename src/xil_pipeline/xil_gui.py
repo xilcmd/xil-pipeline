@@ -14,6 +14,7 @@ xil-gui                              # opens http://localhost:7860
 xil-gui --port 8080                  # custom port
 xil-gui --share                      # generate public URL for partner access (72h tunnel)
 xil-gui --output session.log         # append timestamped activity log to file
+xil-gui --verbose                    # detailed logs for the Timeline SFX dialog (open/save)
 ```
 
 Install the optional [gui] extra first:
@@ -27,6 +28,7 @@ import glob
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import shlex
@@ -39,9 +41,12 @@ from pathlib import Path
 
 from fastapi import Request as _FastAPIRequest
 
+from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import get_workspace_root
 from xil_pipeline.sfx_common import read_sfx_grade as _read_sfx_grade
 from xil_pipeline.sfx_common import write_sfx_grade as _write_sfx_grade
+
+logger = get_logger(__name__)
 
 # ── Optional activity log (set by --output in main()) ─────────────────────────
 
@@ -1339,7 +1344,7 @@ def _build_app():
         gr.Markdown(f"**Workspace:** `{workspace}`")
 
         with gr.Row():
-            refresh_btn = gr.Button("⟳ Refresh", size="sm", scale=0)
+            refresh_btn = gr.Button("⟳ Refresh", size="sm", scale=0, elem_id="global-refresh-btn")
 
         with gr.Tabs(elem_id="app-root"):
 
@@ -1467,7 +1472,8 @@ def _build_app():
                     "**Dry-run is on by default** — uncheck to write output files."
                 )
                 with gr.Row():
-                    run_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices, scale=3)
+                    run_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices, scale=3,
+                                             elem_id="run-episode")
                     run_ep_refresh_btn = gr.Button("⟳", size="sm", scale=0)
 
                 with gr.Tabs():
@@ -1511,6 +1517,7 @@ def _build_app():
                                 choices=_script_choices(),
                                 allow_custom_value=True,
                                 scale=3,
+                                elem_id="scan-script",
                             )
                             scan_refresh_btn = gr.Button("⟳", size="sm", scale=0)
                             scan_speakers = gr.Textbox(
@@ -1519,7 +1526,7 @@ def _build_app():
                                 scale=2,
                             )
                         scan_json_cb = gr.Checkbox(label="--json  (machine-readable output)")
-                        scan_btn = gr.Button("▶ Run Scan", variant="primary")
+                        scan_btn = gr.Button("▶ Run Scan", variant="primary", elem_id="scan-run-btn")
 
                     # ── Parse ─────────────────────────────────────────
                     with gr.Tab("Parse"):
@@ -1558,11 +1565,13 @@ def _build_app():
                     # ── Produce ───────────────────────────────────────
                     with gr.Tab("Produce"):
                         with gr.Row():
-                            prod_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
+                            prod_dry_run_cb = gr.Checkbox(label="--dry-run", value=True,
+                                                            elem_id="prod-dry-run")
                             prod_backend_dd = gr.Dropdown(
                                 label="--backend  (dialogue voice generator)",
                                 choices=["elevenlabs", "gtts", "chatterbox", "chatterbox-turbo"],
                                 value="chatterbox",
+                                elem_id="prod-backend",
                             )
                         with gr.Row():
                             prod_gen_sfx_cb    = gr.Checkbox(label="--gen-sfx")
@@ -1618,7 +1627,7 @@ def _build_app():
                                 label="--force  ⚠️ overwrite existing stems (API cost!)",
                                 value=False,
                             )
-                        prod_btn = gr.Button("▶ Run Produce", variant="primary")
+                        prod_btn = gr.Button("▶ Run Produce", variant="primary", elem_id="prod-run-btn")
 
                     # ── Assemble ──────────────────────────────────────
                     with gr.Tab("Assemble"):
@@ -1643,7 +1652,8 @@ def _build_app():
                     # ── DAW ───────────────────────────────────────────
                     with gr.Tab("DAW"):
                         with gr.Row():
-                            daw_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
+                            daw_dry_run_cb = gr.Checkbox(label="--dry-run", value=True,
+                                                           elem_id="daw-dry-run")
                             daw_gap_ms = gr.Number(
                                 label="--gap-ms  (ms)",
                                 value=600, minimum=0, precision=0,
@@ -1651,16 +1661,18 @@ def _build_app():
                         with gr.Row():
                             daw_timeline_cb      = gr.Checkbox(label="--timeline  (ASCII)")
                             daw_timeline_html_cb = gr.Checkbox(label="--timeline-html", value=True)
-                            daw_macro_cb         = gr.Checkbox(label="--macro  (Audacity)", value=True)
+                            daw_macro_cb         = gr.Checkbox(label="--macro  (Audacity)", value=True,
+                                                                 elem_id="daw-macro")
                         daw_output_dir = gr.Textbox(
                             label="--output-dir  (blank = auto)",
                             placeholder="daw/S01E01/",
                         )
-                        daw_btn = gr.Button("▶ Run DAW", variant="primary")
+                        daw_btn = gr.Button("▶ Run DAW", variant="primary", elem_id="daw-run-btn")
 
                     # ── Master ────────────────────────────────────────
                     with gr.Tab("Master"):
-                        master_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
+                        master_dry_run_cb = gr.Checkbox(label="--dry-run", value=True,
+                                                          elem_id="master-dry-run")
                         with gr.Row():
                             master_output = gr.Textbox(
                                 label="--output  (blank = auto)",
@@ -1672,7 +1684,7 @@ def _build_app():
                                 placeholder="daw/S01E01/",
                                 scale=2,
                             )
-                        master_btn = gr.Button("▶ Run Master", variant="primary")
+                        master_btn = gr.Button("▶ Run Master", variant="primary", elem_id="master-run-btn")
 
                 log_box = gr.Textbox(
                     label="Output", lines=24, max_lines=24, autoscroll=True, interactive=False,
@@ -2139,8 +2151,8 @@ def _build_app():
 
             # ── Tab 9: Timeline ──────────────────────────────────────
             with gr.Tab("Timeline"):
-                tl_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices)
-                tl_html = gr.HTML("<p>Select an episode above.</p>")
+                tl_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices, elem_id="tl-episode")
+                tl_html = gr.HTML("<p>Select an episode above.</p>", elem_id="tl-html")
                 tl_ep_dd.change(fn=on_timeline_ep_change, inputs=tl_ep_dd, outputs=tl_html)
 
         def _use_show_and_reload(show_name):
@@ -2228,6 +2240,11 @@ def get_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="Append a timestamped session activity log to FILE",
     )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Log detailed activity for the Timeline audio-properties dialog "
+             "(SFX open/save requests) to stdout and logs/xil_YYYY-MM-DD.log",
+    )
     return parser
 
 
@@ -2242,7 +2259,9 @@ def _register_sfx_routes(app) -> None:
 
     @app.get("/xil/get-sfx")
     async def _api_get_sfx(slug: str, tag: str, key: str):
+        logger.debug("get-sfx request: slug=%r tag=%r key=%r", slug, tag, key)
         if not (_is_safe_slug_or_tag(slug) and _is_safe_slug_or_tag(tag)):
+            logger.warning("get-sfx rejected: invalid slug/tag slug=%r tag=%r", slug, tag)
             return _JSONResponse({"error": "invalid slug or tag"}, status_code=400)
         # Already validated above (no separators possible) — basename() is a
         # no-op here, kept only because static analysis specifically
@@ -2252,19 +2271,22 @@ def _register_sfx_routes(app) -> None:
         sfx_path = _dp(slug, tag)["sfx"]
         _check_workspace_path(sfx_path)
         if not os.path.exists(sfx_path):
+            logger.debug("get-sfx: sfx config not found at %s", sfx_path)
             return _JSONResponse({"error": "sfx config not found"}, status_code=404)
         with open(sfx_path, encoding="utf-8") as f:
             data = json.load(f)
-        return _JSONResponse({
-            "effect": data.get("effects", {}).get(key, {}),
-            "defaults": data.get("defaults", {}),
-        })
+        effect = data.get("effects", {}).get(key, {})
+        defaults = data.get("defaults", {})
+        logger.debug("get-sfx: returned effect=%r defaults=%r for key=%r", effect, defaults, key)
+        return _JSONResponse({"effect": effect, "defaults": defaults})
 
     @app.post("/xil/update-sfx")
     async def _api_update_sfx(request: _FastAPIRequest):
         body = await request.json()
+        logger.debug("update-sfx request body: %r", body)
         slug_b, tag_b, key_b = body["slug"], body["tag"], body["key"]
         if not (_is_safe_slug_or_tag(slug_b) and _is_safe_slug_or_tag(tag_b)):
+            logger.warning("update-sfx rejected: invalid slug/tag slug=%r tag=%r", slug_b, tag_b)
             return _JSONResponse({"ok": False, "error": "invalid slug or tag"}, status_code=400)
         # Already validated above (no separators possible) — basename() is a
         # no-op here, kept only because static analysis specifically
@@ -2274,12 +2296,15 @@ def _register_sfx_routes(app) -> None:
         sfx_path = _dp(slug_b, tag_b)["sfx"]
         _check_workspace_path(sfx_path)
         if not os.path.exists(sfx_path):
+            logger.warning("update-sfx: sfx config not found at %s", sfx_path)
             return _JSONResponse({"ok": False, "error": "sfx config not found"}, status_code=404)
         with open(sfx_path, encoding="utf-8") as f:
             data = json.load(f)
         effect = data.setdefault("effects", {}).setdefault(key_b, {})
+        fields = {}
         for field in ("volume_percentage", "ramp_in_seconds", "ramp_out_seconds", "play_duration"):
             val = body.get(field)
+            fields[field] = val
             if val is None:
                 effect.pop(field, None)
             else:
@@ -2287,6 +2312,7 @@ def _register_sfx_routes(app) -> None:
         with open(sfx_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.write("\n")
+        logger.debug("update-sfx: wrote %s (key=%r fields=%r)", sfx_path, key_b, fields)
         # Journal the edit so it survives sfx_{tag}.json being cleared and
         # regenerated (replayed by generate_sfx_config / xil sfx-restore).
         # A journal failure must never fail the save itself.
@@ -2295,7 +2321,9 @@ def _register_sfx_routes(app) -> None:
             append_sfx_edit(sfx_path, key_b, {f: body.get(f) for f in SFX_EDIT_FIELDS})
         except Exception as exc:
             _log_activity(f"[WARN] sfx edit journal write failed: {exc}")
+            logger.warning("sfx edit journal write failed for %s (key=%r): %s", sfx_path, key_b, exc)
         _log_activity(f"SFX edit via timeline: {slug_b}/{tag_b} → {key_b!r}")
+        logger.info("SFX edit via timeline: %s/%s → %r", slug_b, tag_b, key_b)
         return _JSONResponse({"ok": True, "message": f"Saved {key_b!r} — re-run xil daw to apply."})
 
 
@@ -2303,6 +2331,14 @@ def main() -> None:
     """CLI entry point for the Gradio web dashboard."""
     global _activity_log
     args = get_parser().parse_args()
+    # Root stays at INFO regardless of --verbose — raising it to DEBUG would
+    # also unmask every third-party library's own DEBUG chatter (PIL, httpx,
+    # uvicorn, ...) since they inherit the root level. --verbose instead
+    # raises only this module's logger, which still reaches root's stdout +
+    # logs/xil_YYYY-MM-DD.log handlers via normal propagation.
+    configure_logging()
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
     if args.output:
         _activity_log = open(args.output, "a", encoding="utf-8", buffering=1)
     try:

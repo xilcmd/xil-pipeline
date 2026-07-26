@@ -32,17 +32,6 @@ from playwright.sync_api import expect  # noqa: E402
 PODCAST_SAMPLE_TAG = "S01E01"
 
 
-def _create_show_via_ui(page, show_name: str) -> None:
-    page.locator("#init-show-name textarea").fill(show_name)
-    page.locator("#init-create-btn").click()
-    page.wait_for_function(
-        "document.querySelector('#init-log textarea').value.includes('[exit')",
-        timeout=30_000,
-    )
-    log = page.locator("#init-log textarea").input_value()
-    assert "[exit 0]" in log, f"show creation failed:\n{log}"
-
-
 # ---------- UI smoke tests (Playwright) ----------
 
 
@@ -51,7 +40,7 @@ def test_app_loads(app_page):
     expect(app_page.locator("#app-root")).to_be_visible()
 
 
-def test_setup_create_show_and_parse(app_page, workspace_dir, gui_env):
+def test_setup_create_show_and_parse(app_page, workspace_dir, gui_env, create_show_via_ui):
     """
     End-to-end user journey: Setup tab creates a new show workspace, then
     Run Stage > Parse turns its auto-generated sample script into parsed
@@ -61,7 +50,7 @@ def test_setup_create_show_and_parse(app_page, workspace_dir, gui_env):
     the autouse _clear_xil_projectroot fixture (tests/conftest.py) unsets
     XIL_PROJECTROOT for every test unless something re-pins it.
     """
-    _create_show_via_ui(app_page, "UI Journey Show")
+    create_show_via_ui("UI Journey Show")
 
     app_page.get_by_role("tab", name="Run Stage").click()
     app_page.get_by_role("tab", name="Parse").click()

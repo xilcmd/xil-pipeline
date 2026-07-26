@@ -5,6 +5,7 @@
 """Tests for xil_gui helper functions (no Gradio dependency required)."""
 
 import json
+import logging
 import os
 
 import pytest
@@ -1077,3 +1078,83 @@ class TestSfxRouteJournaling:
             "slug": "../../etc", "tag": "S01E01", "key": "X",
             "volume_percentage": 10})
         assert not self._journal(tmp_path).exists()
+
+
+class TestSfxRouteVerboseLogging:
+    """--verbose (DEBUG level) surfaces per-request detail for the Timeline
+    audio-properties dialog; the INFO/WARNING summary lines stay visible at
+    the default level too. See xil_gui.logger / configure_logging in main()."""
+
+    @pytest.fixture
+    def client(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "myshow"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "sfx_S01E01.json").write_text(json.dumps({
+            "defaults": {}, "effects": {"MUSIC: THEME": {}}}))
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from xil_pipeline.xil_gui import _register_sfx_routes
+        app = FastAPI()
+        _register_sfx_routes(app)
+        return TestClient(app)
+
+    def test_get_sfx_logs_debug_on_success(self, client, caplog):
+        with caplog.at_level(logging.DEBUG, logger="xil_pipeline.xil_gui"):
+            r = client.get("/xil/get-sfx", params={
+                "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME"})
+        assert r.status_code == 200
+        assert any(
+            "MUSIC: THEME" in rec.message and rec.levelno == logging.DEBUG
+            for rec in caplog.records
+        )
+
+    def test_get_sfx_logs_warning_on_invalid_slug(self, client, caplog):
+        with caplog.at_level(logging.DEBUG, logger="xil_pipeline.xil_gui"):
+            r = client.get("/xil/get-sfx", params={
+                "slug": "../../etc", "tag": "S01E01", "key": "X"})
+        assert r.status_code == 400
+        assert any(rec.levelno == logging.WARNING for rec in caplog.records)
+
+    def test_update_sfx_logs_debug_body_on_success(self, client, caplog):
+        with caplog.at_level(logging.DEBUG, logger="xil_pipeline.xil_gui"):
+            r = client.post("/xil/update-sfx", json={
+                "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
+                "volume_percentage": 42})
+        assert r.status_code == 200
+        assert any(
+            "volume_percentage" in rec.message and rec.levelno == logging.DEBUG
+            for rec in caplog.records
+        )
+
+    def test_update_sfx_logs_info_on_success(self, client, caplog):
+        # INFO level only — the summary line must be visible without --verbose.
+        with caplog.at_level(logging.INFO, logger="xil_pipeline.xil_gui"):
+            r = client.post("/xil/update-sfx", json={
+                "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
+                "volume_percentage": 42})
+        assert r.status_code == 200
+        assert any(
+            "MUSIC: THEME" in rec.message and rec.levelno == logging.INFO
+            for rec in caplog.records
+        )
+        # No DEBUG-only records leaked through at the INFO threshold.
+        assert not any(rec.levelno == logging.DEBUG for rec in caplog.records)
+
+    def test_update_sfx_logs_warning_on_journal_failure(self, client, monkeypatch, caplog):
+        def _boom(*args, **kwargs):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr("xil_pipeline.sfx_common.append_sfx_edit", _boom)
+        with caplog.at_level(logging.DEBUG, logger="xil_pipeline.xil_gui"):
+            r = client.post("/xil/update-sfx", json={
+                "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
+                "volume_percentage": 42})
+        # The save itself must still succeed even though the journal failed.
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+        assert any(
+            "journal write failed" in rec.message and rec.levelno == logging.WARNING
+            for rec in caplog.records
+        )
