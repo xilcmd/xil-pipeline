@@ -31,24 +31,35 @@ Two sinks, two formats
 - ``ERROR``    → ``[ERROR] <message>``
 - ``CRITICAL`` → ``[CRITICAL] <message>``
 
-**File** (``logs/xil_v2_<date>.log``) — machine-readable, one record per line::
+**File** (``logs/xil_v2_<date>_<host>.log``) — machine-readable, one record per
+line::
 
-    2026-07-26T19:03:00-0400|INFO|produce|  > [006] adam via Chatterbox Turbo (282 chars)...
-    2026-07-26T19:03:04-0400|INFO|produce|   Saved: stems/tww/S01E01/006_act1_adam.mp3
+    2026-07-26T19:03:00-0400|INFO|hibirdy|produce|  > [006] adam via Chatterbox Turbo (282 chars)...
+    2026-07-26T19:03:04-0400|INFO|hibirdy|produce|   Saved: stems/tww/S01E01/006_act1_adam.mp3
 
-Fields are ``<iso-8601 ts>|<LEVEL>|<stage>|<message>``.  The *stage* is derived
-from ``sys.argv[0]`` (``xil-produce`` and ``xil produce`` both yield
+Fields are ``<iso-8601 ts>|<LEVEL>|<host>|<stage>|<message>``.  The *stage* is
+derived from ``sys.argv[0]`` (``xil-produce`` and ``xil produce`` both yield
 ``produce``).  Multi-line messages are expanded so every physical line carries
 the prefix; whitespace-only records are dropped from the file (they are console
 spacing only).  **The message may contain ``|``** — consumers must split off
-only the three leading fields.
+only the four leading fields.
 
 Each invocation is bracketed by ``RUN`` records from
 :func:`xil_pipeline.sfx_common.run_banner`, giving parsers a true per-run
 boundary::
 
-    2026-07-26T19:03:00-0400|RUN|produce|BEGIN argv="xil produce --episode S01E01" pid=1234 ver=0.3.1 cwd=/…
-    2026-07-26T19:05:22-0400|RUN|produce|END elapsed=142.3s
+    2026-07-26T19:03:00-0400|RUN|hibirdy|produce|BEGIN argv="xil produce --episode S01E01" pid=1234 ver=0.3.1 cwd=/…
+    2026-07-26T19:05:22-0400|RUN|hibirdy|produce|END elapsed=142.3s
+
+Why the host appears twice
+--------------------------
+
+The workspace is often a shared network mount, so several machines can run
+pipeline commands against one ``logs/`` directory.  Appends are **not** atomic
+across clients on 9p/SMB/NFS, so a single shared file can interleave or lose
+lines.  Giving each host its own file removes that hazard entirely; the field
+additionally keeps attribution visible when grepping line content or when logs
+from several machines are concatenated.
 
 The ``v2`` in the filename marks this format.  Pre-v2 logs are bare stdout
 transcripts named ``xil_<date>.log``; ``tools/migrate_logs_v1.py`` renames them
@@ -59,6 +70,8 @@ Call ``configure_logging(logging.DEBUG)`` to enable verbose output.
 
 import logging
 import os
+import platform
+import re
 import sys
 from datetime import date, datetime
 
@@ -67,6 +80,22 @@ from datetime import date, datetime
 #: in the structured log so a parser can find invocation boundaries.
 RUN = 25
 logging.addLevelName(RUN, "RUN")
+
+
+def _host() -> str:
+    """Short, filename-safe hostname identifying the machine writing the log.
+
+    The workspace is routinely a shared network mount, so several machines can
+    run pipeline commands against the same ``logs/`` directory.  This is used
+    both to give each host its own file (append is not atomic across clients on
+    9p/SMB/NFS, so a shared file can interleave) and to label each record.
+    """
+    name = (platform.node() or "unknown").split(".")[0]
+    return re.sub(r"[^A-Za-z0-9._-]", "-", name) or "unknown"
+
+
+#: Resolved once — the hostname cannot change mid-process.
+_HOST = _host()
 
 
 def _stage_from_argv() -> str:
@@ -106,10 +135,10 @@ class _CliFormatter(logging.Formatter):
 class _StructuredFormatter(logging.Formatter):
     """Machine-readable formatter for the log *file* (v2 format).
 
-    Emits ``<iso-ts>|<LEVEL>|<stage>|<message>``.  Multi-line messages are
+    Emits ``<iso-ts>|<LEVEL>|<host>|<stage>|<message>``.  Multi-line messages are
     expanded so every physical line carries the prefix and can be parsed
     independently.  The message may itself contain ``|``; consumers must split
-    off only the three leading fields (see
+    off only the four leading fields (see
     ``XILU008_stem_log_report._strip_v2_prefix``).
     """
 
@@ -119,7 +148,7 @@ class _StructuredFormatter(logging.Formatter):
         # rewrites it to "xil <command>" before handing off to the stage.  A
         # cached stage would label every dispatched run "xil".
         ts = datetime.fromtimestamp(record.created).astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
-        prefix = f"{ts}|{record.levelname}|{_stage_from_argv()}|"
+        prefix = f"{ts}|{record.levelname}|{_HOST}|{_stage_from_argv()}|"
         text = record.getMessage()
         if record.exc_info:
             text = f"{text}\n{self.formatException(record.exc_info)}"
@@ -156,8 +185,8 @@ def configure_logging(level: int = logging.INFO) -> None:
     Safe to call multiple times — only the first call installs the
     stdout handler.  Subsequent calls may still update the log level.
 
-    Automatically tees output to ``logs/xil_YYYY-MM-DD.log`` in the
-    current working directory.  The ``logs/`` directory is created if it
+    Automatically tees output to ``logs/xil_v2_<date>_<host>.log`` under the
+    workspace root.  The ``logs/`` directory is created if it
     does not exist.
 
     Args:
@@ -174,11 +203,13 @@ def configure_logging(level: int = logging.INFO) -> None:
         from xil_pipeline.models import get_workspace_root
         log_dir = get_workspace_root() / "logs"
         log_dir.mkdir(exist_ok=True)
-        # v2 = structured, one "ts|level|stage|message" record per line.  The
+        # v2 = structured, one "ts|level|host|stage|message" record per line.
+        # Per-host file: appends are not atomic across clients on a shared
+        # network mount, so machines must not share one file.  The
         # version is in the filename so parsers never have to sniff: pre-v2
         # files are the bare stdout transcripts (xil_<date>.log, renamed to
         # xil_v1_<date>.log by tools/migrate_logs_v1.py).
-        log_path = log_dir / f"xil_v2_{date.today().isoformat()}.log"
+        log_path = log_dir / f"xil_v2_{date.today().isoformat()}_{_HOST}.log"
         fh = logging.FileHandler(log_path, encoding="utf-8")
         fh.setFormatter(_StructuredFormatter())
         fh.addFilter(_SkipBlankFilter())

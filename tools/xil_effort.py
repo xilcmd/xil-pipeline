@@ -53,10 +53,12 @@ for d in merges:  day_merges[d]  += 1
 # --- gather: pipeline logs ---
 # Two on-disk formats are understood:
 #
-#   v2 (structured)   xil_v2_YYYY-MM-DD.log — every line is
-#                     "<iso-ts>|<LEVEL>|<stage>|<message>".  Stage names are
-#                     tallied directly and runs are counted from the
-#                     "|RUN|<stage>|BEGIN ..." banner written by run_banner().
+#   v2 (structured)   xil_v2_YYYY-MM-DD_<host>.log — every line is
+#                     "<iso-ts>|<LEVEL>|<host>|<stage>|<message>".  One file per
+#                     host, since appends are not atomic across clients on a
+#                     shared network mount.  Stage names are tallied directly and
+#                     runs are counted from the "|RUN|<host>|<stage>|BEGIN ..."
+#                     banner written by run_banner().
 #   v1 (stdout dump)  xil_YYYY-MM-DD.log / xil_v1_YYYY-MM-DD.log — captured
 #                     stdout with no per-line metadata.  The date comes from
 #                     the filename, runs are counted by occurrences of the
@@ -65,7 +67,7 @@ for d in merges:  day_merges[d]  += 1
 #                     are tallied as a section-mix breakdown.
 #
 # HTTP trace lines are ignored in both.
-FNAME_DATE = re.compile(r"xil_(?:v\d+_)?(\d{4}-\d{2}-\d{2})\.log$")
+FNAME_DATE = re.compile(r"xil_(?:v\d+_)?(\d{4}-\d{2}-\d{2})(?:_[^/]*)?\.log$")
 HEADER     = re.compile(r"^([A-Z][A-Z0-9_/-]+(?: [A-Z0-9_/-]+)+)")
 LEVEL      = re.compile(r"^[A-Z]+$")
 
@@ -89,11 +91,12 @@ for pattern in args.log:
                     else:
                         # v2 puts the level second and the stage third; the
                         # older anticipated shape was "timestamp|command|args".
-                        if len(parts) >= 3 and LEVEL.match(parts[1]):
-                            # v2: count one unit of activity per invocation, so
-                            # the daily figure stays a RUN count comparable with
-                            # v1 days rather than becoming a line count.
-                            stage = parts[2]
+                        if len(parts) >= 4 and LEVEL.match(parts[1]):
+                            # v2 is ts|LEVEL|host|stage|msg.  Count one unit of
+                            # activity per invocation, so the daily figure stays
+                            # a RUN count comparable with v1 days rather than
+                            # becoming a line count.
+                            stage = parts[3]
                             if parts[1] == "RUN" and parts[-1].startswith("BEGIN"):
                                 day_pipe[day] += 1
                         else:

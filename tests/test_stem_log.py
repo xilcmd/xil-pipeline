@@ -56,18 +56,18 @@ CHATTERBOX_TURBO_LOG = """\
 """
 
 
-# v2 structured log: same events, but every line carries "ts|LEVEL|stage|" and
+# v2 structured log: same events, but every line carries "ts|LEVEL|host|stage|" and
 # the run boundary is run_banner's RUN BEGIN record instead of "--- Phase 1".
 V2_LOG = """\
-2026-04-01T09:00:00-0400|RUN|produce|BEGIN argv="xil produce --episode S03E03" pid=123 ver=0.3.1 cwd=/ws
-2026-04-01T09:00:01-0400|INFO|produce|--- Phase 1: Generating ---
-2026-04-01T09:00:02-0400|INFO|produce|  > [006] adam with eleven_v3 (282 chars)...
-2026-04-01T09:00:05-0400|INFO|produce|  Saved: stems/the413/S03E03/006_cold-open_adam.mp3
-2026-04-01T09:00:05-0400|INFO|produce|  SHA256: abc123def456
-2026-04-01T09:00:06-0400|INFO|produce|  > [007] sarah with eleven_v3 (150 chars)...
-2026-04-01T09:00:09-0400|INFO|produce|  Saved: stems/the413/S03E03/007_cold-open_sarah.mp3
-2026-04-01T09:00:09-0400|INFO|produce|  SHA256: 789abcdef012
-2026-04-01T09:00:10-0400|RUN|produce|END elapsed=10.0s
+2026-04-01T09:00:00-0400|RUN|hibirdy|produce|BEGIN argv="xil produce --episode S03E03" pid=123 ver=0.3.1 cwd=/ws
+2026-04-01T09:00:01-0400|INFO|hibirdy|produce|--- Phase 1: Generating ---
+2026-04-01T09:00:02-0400|INFO|hibirdy|produce|  > [006] adam with eleven_v3 (282 chars)...
+2026-04-01T09:00:05-0400|INFO|hibirdy|produce|  Saved: stems/the413/S03E03/006_cold-open_adam.mp3
+2026-04-01T09:00:05-0400|INFO|hibirdy|produce|  SHA256: abc123def456
+2026-04-01T09:00:06-0400|INFO|hibirdy|produce|  > [007] sarah with eleven_v3 (150 chars)...
+2026-04-01T09:00:09-0400|INFO|hibirdy|produce|  Saved: stems/the413/S03E03/007_cold-open_sarah.mp3
+2026-04-01T09:00:09-0400|INFO|hibirdy|produce|  SHA256: 789abcdef012
+2026-04-01T09:00:10-0400|RUN|hibirdy|produce|END elapsed=10.0s
 """
 
 # A v1 table line legitimately contains pipes — it must NOT be mistaken for a

@@ -89,11 +89,13 @@ _RE_SHA256 = re.compile(r"^\s*SHA256:\s+([0-9a-fA-F]+)")
 # Run boundary
 _RE_PHASE1 = re.compile(r"^---\s*Phase 1:\s*Generating")
 
-# v2 structured log prefix: "<iso-ts>|<LEVEL>|<stage>|<message>".  v1 logs
-# (xil_v1_*.log and the original xil_<date>.log) have no prefix; both formats
-# are parsed by stripping the prefix when present and matching as before.
+# v2 structured log prefix: "<iso-ts>|<LEVEL>|<host>|<stage>|<message>".  v1
+# logs (xil_v1_*.log and the original xil_<date>.log) have no prefix; both
+# formats are parsed by stripping the prefix when present and matching as
+# before.  Only the four leading fields are removed — the message may itself
+# contain "|" (e.g. the speaker tables).
 _RE_V2_PREFIX = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^|]*\|[A-Z]+\|[^|]*\|"
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^|]*\|[A-Z]+\|[^|]*\|[^|]*\|"
 )
 
 # v2 per-invocation boundary, written by run_banner(): "...|RUN|<stage>|BEGIN ..."
@@ -101,11 +103,11 @@ _RE_RUN_BEGIN = re.compile(r"^BEGIN\b")
 
 
 def _strip_v2_prefix(line: str) -> str:
-    """Strip the ``ts|level|stage|`` prefix from a v2 log line.
+    """Strip the ``ts|level|host|stage|`` prefix from a v2 log line.
 
     Returns *line* unchanged when it carries no prefix (v1 logs), so the same
     parser handles both formats.  The message itself may contain ``|``, so only
-    the fixed three-field prefix is removed.
+    the fixed four-field prefix is removed.
     """
     m = _RE_V2_PREFIX.match(line)
     return line[m.end():] if m else line

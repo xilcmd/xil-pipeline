@@ -803,15 +803,16 @@ xil splice --episode S02E03 --insert-after 322 \
 `log_config.py` writes **two formats from one logger** — the console stays human-readable, the file is machine-readable.
 
 - **Console (stdout)** — unchanged: plain `INFO`, `[!]` for warnings, `[ERROR]`/`[CRITICAL]`, `[debug]`. The `run_banner()` bars print here as always.
-- **File** — `logs/xil_v2_YYYY-MM-DD.log`, one record per line:
+- **File** — `logs/xil_v2_YYYY-MM-DD_<host>.log`, one record per line:
 
 ```text
-2026-07-26T19:03:00-0400|RUN|produce|BEGIN argv="xil produce --episode S01E01 --backend chatterbox-turbo" pid=1234 ver=0.3.1 cwd=/mnt/cloudsy/xil-projects
-2026-07-26T19:03:02-0400|INFO|produce|  > [006] adam via Chatterbox Turbo (282 chars)...
-2026-07-26T19:05:22-0400|RUN|produce|END elapsed=142.3s
+2026-07-26T19:03:00-0400|RUN|hibirdy|produce|BEGIN argv="xil produce --episode S01E01 --backend chatterbox-turbo" pid=1234 ver=0.3.1 cwd=/mnt/cloudsy/xil-projects
+2026-07-26T19:03:02-0400|INFO|hibirdy|produce|  > [006] adam via Chatterbox Turbo (282 chars)...
+2026-07-26T19:05:22-0400|RUN|hibirdy|produce|END elapsed=142.3s
 ```
 
-- Fields are `<iso-8601 ts>|<LEVEL>|<stage>|<message>`. **The message may contain `|`** — split off only the three leading fields.
+- Fields are `<iso-8601 ts>|<LEVEL>|<host>|<stage>|<message>`. **The message may contain `|`** — split off only the four leading fields.
+- **One file per host.** The workspace is often a shared network mount, and appends are *not* atomic across clients on 9p/SMB/NFS — two machines sharing one file can interleave or lose lines. Each host owns `xil_v2_<date>_<host>.log`; the `host` field additionally keeps attribution visible when grepping or concatenating.
 - `stage` comes from `sys.argv[0]`: both `xil-produce` and `xil produce` yield `produce`.
 - Each invocation is bracketed by `RUN` records from `run_banner()` — the `BEGIN` line records the full command, so any block of output can be traced to what produced it.
 - Whitespace-only records are dropped from the file (console spacing only); multi-line messages get one prefixed line each.

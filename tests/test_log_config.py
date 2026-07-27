@@ -15,10 +15,10 @@ import sys
 import pytest
 
 from xil_pipeline import log_config
-from xil_pipeline.log_config import RUN, _stage_from_argv, configure_logging
+from xil_pipeline.log_config import _HOST, RUN, _host, _stage_from_argv, configure_logging
 
-# ts|LEVEL|stage|message
-V2_LINE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}\|[A-Z]+\|[^|]*\|")
+# ts|LEVEL|host|stage|message
+V2_LINE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}\|[A-Z]+\|[^|]*\|[^|]*\|")
 
 
 @pytest.fixture
@@ -80,8 +80,9 @@ class TestStructuredFileFormat:
     def test_fields_and_stage(self, logdir, monkeypatch):
         _configure(monkeypatch, "xil produce")
         logging.getLogger("x").info("hello")
-        ts, level, stage, msg = _read_log(logdir)[0].split("|", 3)
+        ts, level, host, stage, msg = _read_log(logdir)[0].split("|", 4)
         assert level == "INFO"
+        assert host == _HOST
         assert stage == "produce"
         assert msg == "hello"
 
@@ -89,7 +90,7 @@ class TestStructuredFileFormat:
         """Only the three leading fields are the prefix; the message keeps its pipes."""
         _configure(monkeypatch, "xil-produce")
         logging.getLogger("x").info("  003 | preamble | tina")
-        _, _, _, msg = _read_log(logdir)[0].split("|", 3)
+        *_, msg = _read_log(logdir)[0].split("|", 4)
         assert msg == "  003 | preamble | tina"
 
     def test_blank_records_dropped_from_file(self, logdir, monkeypatch):
@@ -177,3 +178,24 @@ def test_run_level_registered():
     assert logging.getLevelName(RUN) == "RUN"
     assert logging.INFO < RUN < logging.WARNING
     assert log_config.RUN == 25
+
+
+class TestPerHostFile:
+    """Each machine writes its own file — appends are not atomic across clients
+    on a shared network mount, so hosts must not share one log."""
+
+    def test_filename_carries_host(self, logdir, monkeypatch):
+        _configure(monkeypatch, "xil-produce")
+        logging.getLogger("x").info("hello")
+        names = [p.name for p in logdir.glob("xil_v2_*.log")]
+        assert len(names) == 1
+        assert names[0].endswith(f"_{_HOST}.log"), names
+
+    def test_host_field_present_on_every_record(self, logdir, monkeypatch):
+        _configure(monkeypatch, "xil-produce")
+        logging.getLogger("x").info("hello")
+        assert _read_log(logdir)[0].split("|")[2] == _HOST
+
+    def test_host_is_filename_safe(self):
+        assert "/" not in _host() and " " not in _host()
+        assert _host()
