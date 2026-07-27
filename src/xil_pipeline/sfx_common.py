@@ -63,17 +63,51 @@ def main():
     """
     name = script_name or os.path.basename(sys.argv[0])
     start = datetime.datetime.now()
-    print(f"\n{_BAR}")
-    print(f"  {name}  |  started {start.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"{_BAR}\n")
+
+    # Logged (not printed) so the banner reaches BOTH the console — where the
+    # text is unchanged, RUN renders bare like INFO — and the structured log
+    # file, where it becomes the per-invocation boundary that tools like
+    # xil-stem-log and xil_effort key off.  The BEGIN record carries the full
+    # invocation so a log block can always be traced back to its command.
+    from xil_pipeline.log_config import RUN, get_logger
+
+    _log = get_logger(__name__)
+    try:
+        from xil_pipeline import __version__ as _ver
+    except Exception:  # pragma: no cover - version should always import
+        _ver = "?"
+    argv = " ".join(sys.argv)
+
+    # Decorative bars stay console-only (unchanged terminal appearance); the
+    # BEGIN/END records are file-only (structured boundary, no terminal noise).
+    _console = {"file": False}
+    _file = {"console": False}
+
+    _log.log(RUN, "", extra=_console)
+    _log.log(RUN, _BAR, extra=_console)
+    _log.log(RUN, f"  {name}  |  started {start.strftime('%Y-%m-%d %H:%M:%S')}", extra=_console)
+    _log.log(RUN, _BAR, extra=_console)
+    _log.log(RUN, "", extra=_console)
+    _log.log(
+        RUN,
+        f'BEGIN argv="{argv}" pid={os.getpid()} ver={_ver} cwd={os.getcwd()}',
+        extra=_file,
+    )
     try:
         yield
     finally:
         end = datetime.datetime.now()
         elapsed = end - start
-        print(f"\n{_BAR}")
-        print(f"  {name}  |  finished {end.strftime('%Y-%m-%d %H:%M:%S')}  ({elapsed.total_seconds():.1f}s)")
-        print(f"{_BAR}\n")
+        _log.log(RUN, f"END elapsed={elapsed.total_seconds():.1f}s", extra=_file)
+        _log.log(RUN, "", extra=_console)
+        _log.log(RUN, _BAR, extra=_console)
+        _log.log(
+            RUN,
+            f"  {name}  |  finished {end.strftime('%Y-%m-%d %H:%M:%S')}  ({elapsed.total_seconds():.1f}s)",
+            extra=_console,
+        )
+        _log.log(RUN, _BAR, extra=_console)
+        _log.log(RUN, "", extra=_console)
 
 
 _MAX_SLUG_LEN = 180  # filesystem max is 255 bytes; leave room for .mp3 + collision suffix
