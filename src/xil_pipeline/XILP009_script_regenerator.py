@@ -18,7 +18,13 @@ import sys
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import derive_paths, resolve_slug
 from xil_pipeline.sfx_common import run_banner
-from xil_pipeline.XILP001_script_parser import SECTION_MAP, SPEAKER_KEYS, load_speakers
+from xil_pipeline.XILP001_script_parser import (
+    HINT_ATTRS,
+    SECTION_MAP,
+    SPEAKER_KEYS,
+    format_hint_attr,
+    load_speakers,
+)
 
 logger = get_logger(__name__)
 
@@ -69,24 +75,32 @@ def speaker_display_name(key: str) -> str:
 
 
 def _build_sfx_lookup(sfx_config: dict) -> dict[str, str]:
-    """Build a direction-text → basename(source) lookup from an SFX config.
+    """Build a direction-text → pipe-hint-suffix lookup from an SFX config.
 
-    Only entries with a ``source`` field are included; prompt-only and
-    silence entries produce no pipe-hint and are omitted.
+    The suffix is the source basename, any attribute hints (``play_volume_pct``),
+    or both joined by ``" | "`` — whatever the cue carries. Entries with neither
+    (a bare prompt, or silence) produce no hint and are omitted, so the
+    regenerated direction is emitted as plain ``[TEXT]``.
 
     Args:
         sfx_config: Parsed contents of ``sfx_<TAG>.json``.
 
     Returns:
-        Dict mapping SFX config keys to their source basenames,
-        e.g. ``{"SFX: PAPER LETTER FOLDED, SET DOWN ON TABLE":
-        "PAPRImpt-A_realistic_sound_of-Elevenlabs.mp3"}``.
+        Dict mapping SFX config keys to their hint suffix, e.g.
+        ``{"OUTRO MUSIC": "sundy3M4_v3.mp3 | play_volume_pct=20%"}``.
     """
     lookup: dict[str, str] = {}
     for key, effect in sfx_config.get("effects", {}).items():
+        parts = []
         source = effect.get("source")
         if source:
-            lookup[key] = os.path.basename(source)
+            parts.append(os.path.basename(source))
+        for field in HINT_ATTRS.values():
+            value = effect.get(field)
+            if value is not None:
+                parts.append(format_hint_attr(field, value))
+        if parts:
+            lookup[key] = " | ".join(parts)
     return lookup
 
 
@@ -100,10 +114,11 @@ def regenerate_script(
     Args:
         parsed: The full parsed script dict (with metadata and entries).
         cast: Optional cast config dict for full_name lookups.
-        sfx_config: Optional SFX config dict.  When provided, direction
-            entries whose text matches a ``source``-backed SFX config key
-            are emitted with a pipe-hint filename suffix, e.g.
-            ``[SFX: PAPER LETTER FOLDED, SET DOWN ON TABLE | PAPRImpt-...mp3]``.
+        sfx_config: Optional SFX config dict.  When provided, direction entries
+            whose text matches an SFX config key carrying a ``source`` and/or a
+            hint attribute are emitted with a pipe-hint suffix, e.g.
+            ``[SFX: PAPER LETTER FOLDED, SET DOWN ON TABLE | PAPRImpt-...mp3]``
+            or ``[OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20%]``.
 
     Returns:
         The reconstructed markdown script as a string.
@@ -204,7 +219,8 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sfx", default=None,
                         help="Override SFX config path (sfx_<TAG>.json); "
                              "when supplied, direction entries are emitted with "
-                             "a pipe-hint filename suffix for source-backed assets")
+                             "a pipe-hint suffix carrying the source filename "
+                             "and any play_volume_pct override")
     parser.add_argument("--show", default=None,
                         help="Show name override (default: from project.json)")
     parser.add_argument("--output", default=None,

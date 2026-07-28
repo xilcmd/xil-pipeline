@@ -215,6 +215,42 @@ flowchart TD
     STATS --> JSON["📦 parsed_sample_S01E01.json"]
 ```
 
+### Direction pipe-hints
+
+Scriptwriters can annotate any bracketed direction with pipe-separated hints, which
+`_parse_direction_hint()` strips from the direction text and carries into
+`sfx_<TAG>.json`:
+
+```
+[<DIRECTION TEXT> | <file>.mp3|.wav | <key>=<value> | …]
+```
+
+| Segment | Effect |
+|---------|--------|
+| ends `.mp3` / `.wav` | Becomes the cue's `source` (`SFX/<slug>/<filename>`). First filename wins. |
+| `play_volume_pct=20%` | Becomes the cue's `volume_percentage` (0–200; the `%` is optional). |
+| anything else | Not consumed — re-joined onto the direction text, so a prose note survives verbatim. |
+
+Segments are classified independently, so order does not matter and either half may
+appear alone:
+
+```
+[SFX: RADIO STATIC — BRIEF TUNING | sfx_radio-static-tuning-transition.mp3]
+[OUTRO MUSIC | sundy3M4_v3_(tech)_1.05mn_125bpm_-_TAGEO.mp3 | play_volume_pct=20%]
+[MUSIC: STING | play_volume_pct=40%]
+```
+
+The hints land on the parsed entry as `sfx_source` and `sfx_overrides`, then flow into
+the SFX config through `generate_sfx_config()` (fresh config) or `backfill_sfx_sources()`
+/ `xil sfx-hydrate` (existing config). **Precedence differs between the two:** a `source`
+hint never replaces one already in the config, while attribute hints overwrite it — the
+script is authoritative for playback settings. A malformed or out-of-range value logs a
+warning and is dropped rather than failing the parse, and silence cues (`BEAT`) ignore
+attribute hints entirely.
+
+New attributes are added by extending `HINT_ATTRS` in `XILP001_script_parser.py`; the
+rest of the chain is generic.
+
 ### Speaker normalization
 
 ```mermaid
@@ -1228,7 +1264,7 @@ xil regen --episode S02E03 --sfx configs/sample/sfx_S02E03.json
 | `--tag TAG` | — | Raw non-episodic tag (e.g. `V01C03`). Mutually exclusive with `--episode`. |
 | `--parsed PATH` | `parsed/<slug>/parsed_<slug>_<TAG>.json` | Override parsed JSON input path. |
 | `--cast PATH` | `configs/<slug>/cast_<TAG>.json` | Override cast config path. |
-| `--sfx PATH` | `configs/<slug>/sfx_<TAG>.json` | Override SFX config path. When the file exists, direction entries are emitted with a pipe-hint filename suffix (`[SFX: TEXT \| filename.mp3]`) for any entry whose SFX config key has a `source` field. Prompt-only and silence entries are unaffected. |
+| `--sfx PATH` | `configs/<slug>/sfx_<TAG>.json` | Override SFX config path. When the file exists, direction entries are emitted with a pipe-hint suffix (`[SFX: TEXT \| filename.mp3 \| play_volume_pct=20%]`) for any entry whose SFX config key has a `source` and/or a `volume_percentage`. Bare-prompt and silence entries are unaffected. |
 | `--output PATH` | `scripts/revised_<slug>_<TAG>.md` | Override output markdown path. |
 | `--show NAME` | from `project.json` | Show name override for slug derivation. |
 | `--speakers PATH` | auto-detect → built-in | Path to `speakers.json` for speaker key → display name mapping. |
@@ -1241,6 +1277,14 @@ entries that resolve to a `source`-backed asset are emitted in pipe-hint format:
 ```
 [SFX: PAPER LETTER FOLDED, SET DOWN ON TABLE | PAPRImpt-A_realistic_sound_of-Elevenlabs.mp3]
 [AMBIENCE: RADIO BOOTH - SOFT EQUIPMENT HUM, SLIGHT STATIC, INTIMATE | ambience_radio-booth-soft-equipment-hum-slight-static-intimate.mp3]
+```
+
+Cues carrying a `volume_percentage` also emit a `play_volume_pct` hint, with or
+without a filename, so a regenerated script round-trips losslessly:
+
+```
+[OUTRO MUSIC | sundy3M4_v3_(tech)_1.05mn_125bpm_-_TAGEO.mp3 | play_volume_pct=20%]
+[MUSIC: STING | play_volume_pct=40%]
 ```
 
 Entries with only a `prompt` key (API-generated) or `"type": "silence"` emit without a hint:
@@ -1264,7 +1308,7 @@ flowchart TD
     Speaker key → display name`"]
     SFX["`📋 sfx_sample_S02E03.json
     Direction text → source basename
-    (optional)`"]
+    + volume override (optional)`"]
 
     LOAD["`Load parsed JSON + cast config
     Build reverse mappings from XILP001
@@ -1277,7 +1321,7 @@ flowchart TD
     EMIT["`Emit markdown
     === + plain text per section_header
     scene_header → plain text
-    direction → [TEXT] or [TEXT | file.mp3]
+    direction → [TEXT], [TEXT | file.mp3], + | play_volume_pct=N%
     dialogue → SPEAKER (dir) + text
     postamble section included`"]
 
@@ -2032,6 +2076,7 @@ classDiagram
         +string text
         +string? direction_type
         +string? sfx_source
+        +Dict~string,float~? sfx_overrides
     }
     class ScriptStats {
         <<Pydantic>>
