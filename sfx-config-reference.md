@@ -191,6 +191,18 @@ Per-entry volume override. Overrides the `defaults` category key for this entry 
 - `40` = 40% of full volume (roughly −8 dB).
 - Applies to SFX, MUSIC, and AMBIENCE entries.
 
+It can also come straight from the script. A `play_volume_pct` pipe-hint on the
+direction sets this field, and the script wins over whatever the config holds:
+
+```
+[OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20%]
+```
+
+Reparsing (`xil parse`) or `xil sfx-hydrate` applies it; `xil regen` writes it back
+into the markdown, so the annotation survives a full round-trip. Hand-editing this
+field is still fine — just remember a later re-parse will restore the script's value
+if the direction still carries the hint.
+
 ### `prompt_influence`
 
 Per-entry override for ElevenLabs API creativity control (0.0–1.0).

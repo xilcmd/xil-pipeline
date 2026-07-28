@@ -290,3 +290,57 @@ class TestRegenerateScript:
         result = regenerate_script(parsed)
         assert "Season" not in result
         assert "Episode 5:" in result
+
+
+class TestPipeHintEmission:
+    """Directions round-trip their source filename and attribute hints (issue #48)."""
+
+    @staticmethod
+    def _parsed(text):
+        return {
+            "show": "THE 413", "season": 1, "episode": 1, "title": "Test",
+            "entries": [{
+                "seq": 1, "type": "direction", "section": "cold-open", "scene": None,
+                "speaker": None, "direction": None, "text": text,
+                "direction_type": "MUSIC",
+            }],
+            "stats": {"dialogue_lines": 0, "total_entries": 1},
+        }
+
+    def test_source_only(self):
+        sfx = {"effects": {"OUTRO MUSIC": {"source": "SFX/the413/outro.mp3"}}}
+        result = regenerate_script(self._parsed("OUTRO MUSIC"), sfx_config=sfx)
+        assert "[OUTRO MUSIC | outro.mp3]" in result
+
+    def test_source_and_volume(self):
+        sfx = {"effects": {"OUTRO MUSIC": {"source": "SFX/the413/outro.mp3",
+                                           "volume_percentage": 20}}}
+        result = regenerate_script(self._parsed("OUTRO MUSIC"), sfx_config=sfx)
+        assert "[OUTRO MUSIC | outro.mp3 | play_volume_pct=20%]" in result
+
+    def test_volume_without_source_still_emits(self):
+        sfx = {"effects": {"MUSIC: STING": {"prompt": "MUSIC: STING",
+                                            "volume_percentage": 40}}}
+        result = regenerate_script(self._parsed("MUSIC: STING"), sfx_config=sfx)
+        assert "[MUSIC: STING | play_volume_pct=40%]" in result
+
+    def test_bare_prompt_emits_no_hint(self):
+        sfx = {"effects": {"MUSIC: STING": {"prompt": "MUSIC: STING"}}}
+        result = regenerate_script(self._parsed("MUSIC: STING"), sfx_config=sfx)
+        assert "[MUSIC: STING]" in result
+
+    def test_round_trip_through_the_parser(self, tmp_path):
+        """regenerate → parse reproduces both hint halves."""
+        from xil_pipeline import XILP001_script_parser as parser
+
+        sfx = {"effects": {"OUTRO MUSIC": {"source": "SFX/the413/outro.mp3",
+                                           "volume_percentage": 20}}}
+        script = regenerate_script(self._parsed("OUTRO MUSIC"), sfx_config=sfx)
+        path = tmp_path / "regen.md"
+        path.write_text(script, encoding="utf-8")
+
+        reparsed = parser.parse_script(str(path))
+        direction = next(e for e in reparsed["entries"] if e["type"] == "direction")
+        assert direction["text"] == "OUTRO MUSIC"
+        assert direction["sfx_source"] == "SFX/the413/outro.mp3"
+        assert direction["sfx_overrides"] == {"volume_percentage": 20.0}

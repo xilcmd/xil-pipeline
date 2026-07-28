@@ -220,7 +220,8 @@ def scan_direction_texts(
                 break
         if direction_type is None:
             continue
-        clean, hint = _parse_direction_hint(inner)
+        # Attribute hints (play_volume_pct=…) don't affect matched/hinted/new.
+        clean, hint, _ = _parse_direction_hint(inner)
         if clean not in seen:
             seen[clean] = {"text": clean, "hint": hint, "lines": []}
         seen[clean]["lines"].append(i + 1)

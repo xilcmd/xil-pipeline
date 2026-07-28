@@ -196,6 +196,7 @@ class TestScriptEntry:
             "text": "It's 2:47 AM on a Wednesday...",
             "direction_type": None,
             "sfx_source": None,
+            "sfx_overrides": None,
         }
         assert models.ScriptEntry(**raw).model_dump() == raw
 
@@ -244,6 +245,7 @@ class TestParsedScript:
             "seq": 1, "type": "dialogue", "section": "cold-open",
             "scene": None, "speaker": "adam", "direction": None,
             "text": "Hello.", "direction_type": None, "sfx_source": None,
+            "sfx_overrides": None,
         }
         defaults.update(overrides)
         return defaults

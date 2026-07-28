@@ -407,6 +407,12 @@ class ScriptEntry(_DocModel):
     """Scriptwriter SFX source hint (e.g. ``'SFX/filename.mp3'``), stripped from the
     ``'| filename'`` annotation in the script."""
 
+    sfx_overrides: dict[str, float] | None = Field(default=None)
+    """Per-cue :class:`SfxEntry` overrides from the script's attribute hints, keyed by
+    config field name — ``'| play_volume_pct=20%'`` yields
+    ``{"volume_percentage": 20.0}``. Applied on top of the generated SFX config entry;
+    the script wins over any value already in ``sfx_<TAG>.json``."""
+
 
 class ScriptStats(_DocModel):
     """Aggregate statistics for a parsed production script."""

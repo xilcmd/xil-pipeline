@@ -4,9 +4,9 @@
 
 """XILU013 — SFX Source Hydration.
 
-Reads ``sfx_source`` pipe-hint fields from a parsed script JSON and writes
-the corresponding ``source`` values into the SFX config — without requiring
-a full re-parse.
+Reads ``sfx_source`` and ``sfx_overrides`` pipe-hint fields from a parsed script
+JSON and writes the corresponding ``source`` / ``volume_percentage`` values into
+the SFX config — without requiring a full re-parse.
 
 This is the standalone counterpart to the automatic backfill that runs at the
 end of ``xil parse`` when the SFX config already exists.  Use it after adding
@@ -31,7 +31,7 @@ import sys
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import derive_paths, resolve_slug
 from xil_pipeline.sfx_common import run_banner
-from xil_pipeline.XILP001_script_parser import backfill_sfx_sources
+from xil_pipeline.XILP001_script_parser import backfill_sfx_sources, format_hint_attr
 
 logger = get_logger(__name__)
 
@@ -43,7 +43,11 @@ def hydrate_sfx_config(
     sfx_path: str,
     dry_run: bool = False,
 ) -> int:
-    """Apply pipe-hint source fields from *parsed* to the SFX config at *sfx_path*.
+    """Apply pipe-hint fields from *parsed* to the SFX config at *sfx_path*.
+
+    Covers both halves of the hint grammar: a ``source`` filename is written only
+    when the cue has none, while attribute hints (``play_volume_pct=…``) overwrite
+    whatever the config holds, since the script is authoritative for those.
 
     Args:
         parsed: Parsed script dict (output of XILP001).
@@ -57,32 +61,39 @@ def hydrate_sfx_config(
         sfx_data = json.load(f)
 
     effects = sfx_data.get("effects", {})
-    pending: list[tuple[str, str]] = []   # (clean_key, source_path)
+    # (clean_key, source_path or None, overrides that differ from the config)
+    pending: list[tuple[str, str | None, dict[str, float]]] = []
 
     seen_clean: set[str] = set()
     for entry in parsed.get("entries", []):
         if entry.get("type") != "direction":
             continue
         sfx_source = entry.get("sfx_source")
-        if not sfx_source:
+        overrides = entry.get("sfx_overrides") or {}
+        if not sfx_source and not overrides:
             continue
         text = entry["text"]
         if text in seen_clean:
             continue
         seen_clean.add(text)
 
-        # Only queue if source is actually missing
-        if text in effects and effects[text].get("source"):
-            continue
-        pending.append((text, sfx_source))
+        effect = effects.get(text, {})
+        # Only queue a source when it is actually missing — a hint never replaces
+        # one.  Attribute hints are queued whenever they differ, since the script
+        # is authoritative for those.
+        missing_source = sfx_source if not effect.get("source") else None
+        changed = {k: v for k, v in overrides.items() if effect.get(k) != v}
+        if missing_source or changed:
+            pending.append((text, missing_source, changed))
 
     if not pending:
-        logger.info("  No missing source fields — SFX config is already fully hydrated.")
+        logger.info("  Nothing to apply — SFX config already matches the script hints.")
         return 0
 
-    for clean_key, source in pending:
-        fname = os.path.basename(source)
-        logger.info(f"  {'[dry-run] ' if dry_run else ''}  {clean_key}  →  {fname}")
+    for clean_key, source, changed in pending:
+        parts = [os.path.basename(source)] if source else []
+        parts += [format_hint_attr(k, v) for k, v in changed.items()]
+        logger.info(f"  {'[dry-run] ' if dry_run else ''}  {clean_key}  →  {', '.join(parts)}")
 
     if not dry_run:
         backfill_sfx_sources(parsed, sfx_path)
@@ -95,8 +106,8 @@ def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="xil-sfx-hydrate",
         description=(
-            "Write pipe-hint source fields from parsed JSON into the SFX config "
-            "without re-parsing the script."
+            "Write pipe-hint source and attribute fields (play_volume_pct) from "
+            "parsed JSON into the SFX config without re-parsing the script."
         ),
     )
     tag_group = parser.add_mutually_exclusive_group(required=True)
