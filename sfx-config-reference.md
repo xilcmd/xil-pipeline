@@ -138,6 +138,13 @@ Meaning depends on context:
 }
 ```
 
+> **Watch this one on `source` cues.** `xil parse` writes a default of `5.0` into every
+> skeleton entry, so a long music bed dropped into a hinted cue is clipped to five
+> seconds unless you change it. Set `0` to play the file full-length. To see every cue
+> this is affecting across the workspace, run `xil sfx-impact` — it grades each one by
+> how much audio is being cut and names the edit that would restore it, without
+> modifying anything.
+
 ### `play_duration`
 
 Percentage of the source file to use (0–100). Applied at **stem copy time** (XILP002),
