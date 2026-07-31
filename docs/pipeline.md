@@ -902,7 +902,7 @@ Consumed by XILP005 via `--timeline` and `--timeline-html`.
 
 ### 10a. Data model
 
-`timeline_viz.py` is built on two dataclasses — full field listing in [§27e](#27e-pipeline-utility-models).
+`timeline_viz.py` is built on two dataclasses — full field listing in [§28e](#28e-pipeline-utility-models).
 
 | Class | Role |
 |-------|------|
@@ -2045,11 +2045,94 @@ The stems stage is judged against `*.mp3` files **plus** `*_stem_manifest.json`.
 
 ---
 
-## 27. Data Model Reference
+## 27. XILU021 — SFX Clipping Impact Report
+
+Inventories every `source=` cue in the workspace and reports how much of each source
+file is actually reaching the mix. Read-only: no config is ever modified.
+
+```bash
+xil sfx-impact                                  # every show
+xil sfx-impact --show thewoonsocketwonders      # one show
+xil sfx-impact --episode S01E01 --show the413   # one episode
+xil sfx-impact --tier 3-review --html           # worst cues + review page
+xil sfx-impact --output - --quiet               # CSV to stdout for piping
+```
+
+### Why it exists
+
+`duration_seconds` means two different things. For an API-generated effect it is the
+requested generation length. For a `source=` cue it **clips the file at mix time** —
+and `xil parse` writes a default of `5.0` into every skeleton entry. A 120-second
+outro dropped into a hinted cue therefore plays for five seconds, silently, until
+somebody listens closely.
+
+### Precedence (mirrors the mixer)
+
+The arithmetic follows `mix_common.collect_stem_plans` exactly, so the report cannot
+drift from what the audience hears:
+
+| Cue shape | Plays | Tier |
+|-----------|-------|------|
+| `loop: true` | full file, tiled to fill the span | `EXCLUDED` |
+| explicit `play_duration` | that percentage — a deliberate trim | `EXCLUDED` |
+| `duration_seconds > 0` | clipped to that many seconds | graded by loss |
+| `duration_seconds: 0` or absent | full file | `EXCLUDED` |
+| source unreadable | — | `MISSING` |
+
+### Tiers
+
+| Tier | Audio lost | Meaning |
+|------|-----------|---------|
+| `1-nochange` | < 0.1 s | clipping only in the arithmetic; the budget exceeds the file |
+| `2-minor` | < 3 s | judgement call |
+| `3-review` | ≥ 3 s | the creative should hear this cue |
+
+Each graded row carries a `remediation` column naming the concrete edit that would
+restore full length (e.g. `duration_seconds: 5 → 0`). Applying it is a human decision;
+this tool never writes.
+
+### Outputs
+
+- `reports/sfx_impact_<date>.csv` — one row per source-backed cue (override with `--output`)
+- `--html` — a standalone, self-contained review page (no external assets, so it can be
+  mailed or dropped on a file share as-is), sorted worst-first
+- console — per-show tier tally plus the ten worst offenders, unless `--quiet`
+
+### Flow
+
+```mermaid
+flowchart TD
+    CFG["`📋 configs/*/sfx_*.json
+    every show, every episode`"]
+    DISC["`discover_configs()
+    --show / --episode narrow the sweep`"]
+    SRC{"`entry has source=?`"}
+    PROBE["`_mp3_duration_ms()
+    mutagen header read — same
+    helper the mixer uses`"]
+    PREC["`measure_cue()
+    loop > play_duration > duration_seconds`"]
+    TIER["`grade by seconds lost
+    + remediation`"]
+    OUT["`📄 reports/sfx_impact_<date>.csv
+    📄 optional .html review page
+    console tier tally`"]
+
+    CFG --> DISC --> SRC
+    SRC -->|no| SKIP["skip (generated / silence)"]
+    SRC -->|yes| PROBE --> PREC --> TIER --> OUT
+```
+
+> **Never writes.** The report is a decision sheet. Pair it with `xil sfx-restore` if a
+> config was already changed and you need the timeline editor's journal replayed back.
+
+---
+
+## 28. Data Model Reference
 
 All data classes used across the pipeline, grouped by layer. Pydantic `BaseModel` subclasses (all in `models.py`) carry validation and are serialized to/from JSON. `@dataclass` instances are in-memory runtime state only.
 
-### 27a. Script parsing models — XILP001 output
+### 28a. Script parsing models — XILP001 output
 
 ```mermaid
 classDiagram
@@ -2096,7 +2179,7 @@ classDiagram
 
 ---
 
-### 27b. Cast configuration models
+### 28b. Cast configuration models
 
 ```mermaid
 classDiagram
@@ -2158,7 +2241,7 @@ classDiagram
 
 ---
 
-### 27c. SFX configuration models
+### 28c. SFX configuration models
 
 ```mermaid
 classDiagram
@@ -2195,7 +2278,7 @@ classDiagram
 
 ---
 
-### 27d. Production runtime models
+### 28d. Production runtime models
 
 ```mermaid
 classDiagram
@@ -2241,7 +2324,7 @@ classDiagram
 
 ---
 
-### 27e. Pipeline utility models
+### 28e. Pipeline utility models
 
 ```mermaid
 classDiagram

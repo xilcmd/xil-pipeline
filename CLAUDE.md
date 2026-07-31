@@ -27,7 +27,7 @@ src/xil_pipeline/          # Python package (42 modules)
   audioldm2_worker.py      # Persistent AudioLDM 2 SFX/music/ambience worker (venv-audioldm2 subprocess)
   stableaudio_worker.py    # Persistent Stable Audio Open SFX/music/ambience worker (shares venv-audioldm2)
   XILP000_*.py … XILP012_*.py   # Pipeline stages
-  XILU001_*.py … XILU018_*.py   # Utility scripts
+  XILU001_*.py … XILU021_*.py   # Utility scripts
 tests/                     # Pytest test suite
 docs/                      # MkDocs documentation
 pyproject.toml             # Packaging config (hatchling)
@@ -589,6 +589,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILU016_*` — stem compare (cross-references a `stem_verify` Whisper transcript report against the parsed script; flags garbled/silent/missing dialogue stems using `difflib.SequenceMatcher`; no extra dependencies)
 - `XILU017_*` — remove show (delete all workspace files for a given show slug; `--dry-run` safe; `--yes` skips confirmation prompt; `--include-scripts` also removes `scripts/*_{slug}_*.md` files; `SFX/` and `logs/` are never touched; accepts show name or slug; clears `.active_show` when it points to the removed show)
 - `XILU018_*` — remove episode (delete all workspace artifacts for a single episode tag — cast/sfx configs, parsed JSON/CSV, stems dir, DAW dir, master MP3s, cues, posts, voice_samples; `--dry-run` safe; `--yes` skips confirmation prompt; source script in `scripts/`, shared `SFX/`, and `logs/` are never touched; handles both normalized and legacy layouts)
+- `XILU021_*` — SFX clipping impact report (`xil sfx-impact`; sweeps every show's `sfx_<tag>.json`, measures each `source=` cue against the file on disk, and grades how much audio `duration_seconds` is cutting: `1-nochange` <0.1s lost, `2-minor` <3s, `3-review` ≥3s, `EXCLUDED` for looped beds and explicit `play_duration`, `MISSING` for unreadable sources; mirrors the precedence in `mix_common.collect_stem_plans` so the report cannot drift from the mixer; each impacted row carries the config edit that would restore full length; **read-only — never writes a config**; emits CSV to `reports/sfx_impact_<date>.csv` plus an optional self-contained `--html` review page; `--show` / `--episode` narrow the sweep, `--tier` filters, `--output -` streams CSV to stdout)
 - `xil_gui.py` — Gradio web dashboard (`xil-gui` entry point); requires `[gui]` extra; nine tabs in order: Setup (with content type selector), Project, Episodes, Run Stage, Speakers, Cast Config, SFX Config, Audio Preview, Timeline
 - `xil_use.py` — active show context switcher (`xil-use` entry point / `xil use`); no args lists shows in `configs/` and marks the active one; with a show name or slug (multi-word names may be unquoted) writes `<workspace>/.active_show`
 - `XILP001_*` — script parser

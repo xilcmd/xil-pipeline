@@ -141,6 +141,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(recover timeline sound edits)",
     ),
+    "sfx-impact": CommandSpec(
+        "xil_pipeline.XILU021_sfx_impact",
+        "report which source-backed cues duration_seconds is clipping short",
+        _UTILITY,
+        "(before changing clip durations)",
+    ),
     "episode-summary": CommandSpec(
         "xil_pipeline.XILU014_episode_summary",
         "write one-row-per-episode summary CSV (lines, words, TTS chars)",
