@@ -44,6 +44,7 @@ import html
 import json
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -54,6 +55,10 @@ from xil_pipeline.sfx_common import run_banner
 logger = get_logger(__name__)
 
 SCRIPT_NAME = "XILU021_sfx_impact"
+
+# Path → duration in milliseconds.  Injected so tests can measure without
+# touching the filesystem; production passes mix_common._mp3_duration_ms.
+DurationProbe = Callable[[str], float]
 
 # Tier thresholds in seconds of lost audio.  A cue losing under a tenth of a
 # second is clipping only in the arithmetic sense; under three seconds is a
@@ -173,7 +178,7 @@ def measure_cue(
     episode: str,
     cue: str,
     effect: dict,
-    duration_fn,
+    duration_fn: DurationProbe,
     workspace: Path,
 ) -> CueImpact | None:
     """Measure one SFX config entry against its source file.
@@ -282,7 +287,7 @@ def analyze(
     workspace: Path,
     show: str | None = None,
     episode: str | None = None,
-    duration_fn=None,
+    duration_fn: DurationProbe | None = None,
 ) -> ImpactReport:
     """Sweep the workspace and measure every source-backed cue.
 

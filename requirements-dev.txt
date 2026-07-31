@@ -13,4 +13,4 @@ mkdocs-awesome-pages-plugin==2.10.1
 mkdocstrings==0.30.1
 mkdocstrings-python==1.18.2
 mkdocs-autorefs==1.4.3
-pymdown-extensions==10.21.3
+pymdown-extensions==11.0.1
