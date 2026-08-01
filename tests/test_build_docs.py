@@ -349,6 +349,40 @@ class TestGeneratedDocsSubdir:
 
         assert not generated.exists()
 
+    def test_generated_dirname_is_not_derived_from_checkout_dir(self, tmp_path):
+        """The output directory must NOT follow the checkout directory's name.
+
+        Read the Docs checks out into "latest"/"stable" while GitHub Actions uses
+        ".../xil-pipeline/". Deriving the name from the checkout meant RTD grew a
+        SECOND doc tree beside the committed docs/xil-pipeline/, duplicating every
+        mkdocstrings anchor — ~86 "Multiple primary URLs" warnings that aborted
+        --strict on RTD while CI stayed green.
+        """
+        # A checkout named the way Read the Docs names it.
+        project_root = tmp_path / "latest"
+        project_root.mkdir()
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+        # Literal, not the constant: this asserts real behaviour, so it fails
+        # on the old code-root-derived implementation rather than erroring out.
+        committed = docs_base / "xil-pipeline"
+        committed.mkdir()
+        (committed / "stale.md").write_text("# stale\n")
+
+        build_docs.clean_generated_docs(docs_base, project_root)
+
+        # The committed tree is what gets cleaned — not docs/latest/.
+        assert not committed.exists()
+        assert not (docs_base / "latest").exists(), (
+            "clean_generated_docs created or left a checkout-named tree; "
+            "a second tree beside docs/xil-pipeline/ duplicates every anchor"
+        )
+
+    def test_generated_dirname_constant_matches_committed_tree(self):
+        """The constant must match the tree that is actually committed."""
+        repo_root = Path(build_docs.__file__).resolve().parent.parent
+        assert (repo_root / "docs" / build_docs.GENERATED_DOCS_DIRNAME).is_dir()
+
 
 # ─── Tests: cross-drive symlink fallback ───
 
