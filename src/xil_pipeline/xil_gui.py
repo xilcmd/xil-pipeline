@@ -2257,6 +2257,24 @@ def _register_sfx_routes(app) -> None:
     """
     from fastapi.responses import JSONResponse as _JSONResponse
 
+    def _source_duration_s(source: str | None) -> float | None:
+        """Return a cue's source-file length in seconds, or ``None``.
+
+        ``None`` for generated (prompt-only) cues, or when the file is missing or
+        unreadable — the caller falls back to a duration_seconds-based preview.
+        """
+        if not source:
+            return None
+        path = source if os.path.isabs(source) else os.path.join(os.getcwd(), source)
+        try:
+            _check_workspace_path(path)
+            from xil_pipeline.mix_common import _mp3_duration_ms
+            ms = _mp3_duration_ms(path)
+        except Exception as exc:
+            logger.debug("get-sfx: could not probe %s (%s)", source, type(exc).__name__)
+            return None
+        return ms / 1000.0 if ms > 0 else None
+
     @app.get("/xil/get-sfx")
     async def _api_get_sfx(slug: str, tag: str, key: str):
         logger.debug("get-sfx request: slug=%r tag=%r key=%r", slug, tag, key)
@@ -2277,8 +2295,13 @@ def _register_sfx_routes(app) -> None:
             data = json.load(f)
         effect = data.get("effects", {}).get(key, {})
         defaults = data.get("defaults", {})
-        logger.debug("get-sfx: returned effect=%r defaults=%r for key=%r", effect, defaults, key)
-        return _JSONResponse({"effect": effect, "defaults": defaults})
+        # The modal previews how long the cue will play. play_duration is a
+        # percentage OF THE SOURCE FILE, not of duration_seconds, so the preview
+        # needs the file's true length or it under-reports every clipped cue.
+        natural_s = _source_duration_s(effect.get("source"))
+        logger.debug("get-sfx: returned effect=%r defaults=%r natural_s=%r for key=%r",
+                     effect, defaults, natural_s, key)
+        return _JSONResponse({"effect": effect, "defaults": defaults, "natural_s": natural_s})
 
     @app.post("/xil/update-sfx")
     async def _api_update_sfx(request: _FastAPIRequest):

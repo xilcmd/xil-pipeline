@@ -324,10 +324,11 @@ function _sfxField(id, label, min, max, step, val, pfx, defs, help, disabled) {
     '<div class="sfx-help">' + help + '</div></div>';
 }
 
-let _sfxModalCtx = null;  // {key, layer, effect, defaults} of the open editor
+let _sfxModalCtx = null;  // {key, layer, effect, defaults, naturalS} of the open editor
 
-function _showSfxModal(key, layer, effect, defaults) {
-  _sfxModalCtx = {key: key, layer: layer, effect: effect, defaults: defaults};
+function _showSfxModal(key, layer, effect, defaults, naturalS) {
+  _sfxModalCtx = {key: key, layer: layer, effect: effect, defaults: defaults,
+                  naturalS: (naturalS != null ? naturalS : null)};
   const isAmb = layer === 'ambience';
   const pfx = layer + '_';
   document.getElementById('sfx-modal-title').textContent = key;
@@ -365,7 +366,7 @@ document.addEventListener('dblclick', function(e) {
         '&tag=' + encodeURIComponent(XIL_TAG) +
         '&key=' + encodeURIComponent(key))
     .then(function(r) { return r.json(); })
-    .then(function(d) { _showSfxModal(key, layer, d.effect || {}, d.defaults || {}); })
+    .then(function(d) { _showSfxModal(key, layer, d.effect || {}, d.defaults || {}, d.natural_s); })
     .catch(function(err) { console.error('sfx-modal:', err); });
 });
 
@@ -388,16 +389,31 @@ function _applySfxEditToSpans(payload) {
   }
   const spans = (DATA.layers[layer] || []).filter(function(sp) { return sp.label === payload.key; });
   const durS = _sfxModalCtx.effect && _sfxModalCtx.effect.duration_seconds;
+  const natS = _sfxModalCtx.naturalS;
+  // Mirror mix_common.collect_stem_plans: play_duration wins over
+  // duration_seconds, and BOTH are relative to the source file's own length —
+  // not to duration_seconds.  Basing the preview on duration_seconds made
+  // "Play Duration % = 100" look like it changed nothing on exactly the cues
+  // that duration_seconds was clipping, inviting the user to undo a correct edit.
+  function _previewLength(pd) {
+    if (natS) {
+      if (pd != null) return natS * pd / 100;
+      if (durS) return Math.min(durS, natS);
+      return natS;
+    }
+    // No source file (generated cue) or unreadable — duration_seconds IS the
+    // rendered length, so the old arithmetic is the right fallback.
+    if (durS) return durS * (pd != null ? pd : 100) / 100;
+    return null;
+  }
   spans.forEach(function(sp) {
     sp.volume_pct = eff('volume_percentage');
     sp.ramp_in_s = eff('ramp_in_seconds');
     sp.ramp_out_s = eff('ramp_out_seconds');
     if (layer !== 'ambience') {
       sp.play_duration = payload.play_duration;
-      if (durS) {
-        const pd = payload.play_duration != null ? payload.play_duration : 100;
-        sp.end_s = sp.start_s + durS * pd / 100;
-      }
+      const len = _previewLength(payload.play_duration);
+      if (len != null) sp.end_s = sp.start_s + len;
     }
   });
 }

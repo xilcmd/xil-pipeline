@@ -903,6 +903,48 @@ class TestSfxRoutes:
             "slug": "ghostshow", "tag": "S09E99", "key": "X"})
         assert r.status_code == 404
 
+    def test_get_returns_natural_s_for_source_cue(self, tmp_path, monkeypatch):
+        """The modal previews play_duration as a % of the SOURCE FILE.
+
+        Without the file's true length the preview falls back to duration_seconds
+        and under-reports every cue that duration_seconds is clipping — setting
+        "Play Duration % = 100" appears to do nothing on exactly the cues it fixes.
+        """
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "myshow"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "sfx_S01E01.json").write_text(json.dumps({
+            "defaults": {},
+            "effects": {
+                "OUTRO MUSIC": {"source": "SFX/outro.mp3", "duration_seconds": 5.0},
+                "MUSIC: STING": {"prompt": "a sting", "duration_seconds": 15.0},
+                "SFX: GONE": {"source": "SFX/absent.mp3", "duration_seconds": 5.0},
+            },
+        }))
+        monkeypatch.chdir(tmp_path)
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from xil_pipeline import xil_gui
+        # 65 s file — far longer than the 5 s duration_seconds clipping it.
+        monkeypatch.setattr("xil_pipeline.mix_common._mp3_duration_ms",
+                            lambda path: 65_000 if path.endswith("outro.mp3")
+                            else (_ for _ in ()).throw(FileNotFoundError(path)))
+        app = FastAPI()
+        xil_gui._register_sfx_routes(app)
+        client = TestClient(app)
+
+        def natural(key):
+            r = client.get("/xil/get-sfx", params={
+                "slug": "myshow", "tag": "S01E01", "key": key})
+            assert r.status_code == 200
+            return r.json()["natural_s"]
+
+        assert natural("OUTRO MUSIC") == 65.0        # the value the preview needs
+        assert natural("MUSIC: STING") is None       # generated cue — no source
+        assert natural("SFX: GONE") is None          # unreadable — must not 500
+
     def test_post_updates_and_clears_fields(self, client, tmp_path):
         r = client.post("/xil/update-sfx", json={
             "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
