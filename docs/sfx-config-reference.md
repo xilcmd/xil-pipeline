@@ -1,1 +1,0 @@
-../sfx-config-reference.md

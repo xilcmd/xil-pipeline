@@ -29,6 +29,24 @@ logger = logging.getLogger(__name__)
 # failed while GitHub Actions (which checks out into .../xil-pipeline/) passed.
 GENERATED_DOCS_DIRNAME = "xil-pipeline"
 
+# Repo-root markdown -> the docs/ subfolder its symlink is placed in.
+#
+# Without this, every root-level .md lands flat in docs/ and mkdocs-awesome-pages
+# orders the nav by ASCII filename, which puts CLAUDE.md and DIRECTION_TYPES ahead
+# of "About" for no reason a reader can see.  Only the SYMLINK moves — the source
+# files stay at the repo root, so README/CLAUDE cross-references and anything that
+# refers to them by path keep working.
+#
+# To categorize a new root-level doc, add one entry here.  Files not listed keep
+# mirroring the repo structure exactly as before.  docs/.pages controls the
+# top-level order of the resulting sections.
+DOC_CATEGORIES = {
+    "cast-config-reference.md": "configuration",
+    "sfx-config-reference.md": "configuration",
+    "claude-scriptwriter-reference.md": "guides",
+    "CLAUDE.md": "internals",
+}
+
 
 def convert_path_to_namespace(path: Path, root: Path) -> str:
     """
@@ -150,12 +168,15 @@ def clean_generated_docs(docs_base: Path, code_root: Path) -> None:
     Clean generated documentation files, preserving hand-written docs.
 
     Removes:
-    - Generated xil-pipeline/ subdirectories and .md files
-    - .pages files (auto-generated)
+    - The generated xil-pipeline/ tree
+    - Symlinks inside the DOC_CATEGORIES folders (stale links from a source that
+      was renamed, deleted, or re-filed under a different category)
 
     Preserves:
+    - docs/.pages — the committed top-level navigation order
+    - Real files anywhere, including inside category folders, which hold both
+      generated symlinks and hand-written pages side by side
     - Root-level .md files in docs/ (hand-written guides)
-    - Root-level directories without .py counterparts
     - mkdocs.yml and other config files
 
     Args:
@@ -174,14 +195,37 @@ def clean_generated_docs(docs_base: Path, code_root: Path) -> None:
         except OSError as e:
             logger.error(f"  Failed to remove {generated_dir}: {e}")
 
-    # Remove .pages files from root docs directory
-    pages_file = docs_base / '.pages'
-    if pages_file.exists():
-        try:
-            pages_file.unlink()
-            logger.info(f"  Removed: {pages_file.relative_to(docs_base.parent)}")
-        except OSError as e:
-            logger.error(f"  Failed to remove {pages_file}: {e}")
+    # A file newly added to DOC_CATEGORIES leaves its old symlink sitting in
+    # docs/ root.  MkDocs then resolves the page from there instead of the
+    # category folder, and every relative link inside it points at the wrong
+    # neighbours — which surfaces as "target is not found among documentation
+    # files" under --strict.
+    for name in sorted(DOC_CATEGORIES):
+        stale = docs_base / name
+        if stale.is_symlink():
+            try:
+                stale.unlink()
+                logger.info(f"  Removed stale link: {stale.relative_to(docs_base.parent)}")
+            except OSError as e:
+                logger.error(f"  Failed to remove {stale}: {e}")
+
+    # Category folders mix generated symlinks with committed .md files and a
+    # committed .pages, so remove ONLY the symlinks.  rmtree here would silently
+    # delete hand-written documentation.
+    for category in sorted(set(DOC_CATEGORIES.values())):
+        category_dir = docs_base / category
+        if not category_dir.is_dir():
+            continue
+        for entry in sorted(category_dir.iterdir()):
+            # is_symlink() is true even when the target is gone, which is exactly
+            # the stale-link case worth clearing.
+            if not entry.is_symlink():
+                continue
+            try:
+                entry.unlink()
+                logger.info(f"  Removed link: {entry.relative_to(docs_base.parent)}")
+            except OSError as e:
+                logger.error(f"  Failed to remove {entry}: {e}")
 
     logger.info("✅ Cleanup complete!")
 
@@ -280,6 +324,13 @@ def link_markdown_files(code_root: Path, docs_base: Path, project_root: Path) ->
         try:
             # Calculate relative path from project root
             relative_dir = md_file.parent.relative_to(project_root)
+
+            # Root-level docs may be filed under a category instead of landing
+            # flat in docs/ (see DOC_CATEGORIES).  Anything else keeps mirroring
+            # the repo structure.
+            if relative_dir == Path(".") and md_file.name in DOC_CATEGORIES:
+                relative_dir = Path(DOC_CATEGORIES[md_file.name])
+
             docs_dir = docs_base / relative_dir
 
             # Create destination directory
