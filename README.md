@@ -220,6 +220,31 @@ pip install -e ".[all,dev]"
 pytest tests/ -v
 ```
 
+### Documentation
+
+`pyproject.toml`'s `docs` extra is the single source of truth for the docs
+stack — the same thing Read the Docs installs. Versions are intentionally
+unpinned, so RTD always resolves the latest release satisfying each floor.
+
+Build in a **dedicated venv**, which is what RTD does and the only way to
+reproduce its resolution faithfully:
+
+```bash
+python3 -m venv venv-docs
+venv-docs/bin/pip install ".[docs]"
+venv-docs/bin/python docs/build_docs.py
+venv-docs/bin/python -m mkdocs build --strict
+```
+
+Recreate `venv-docs` (or `pip install --upgrade`) whenever you want to check
+against what RTD will resolve today — a stale environment can build clean
+while RTD fails on a newer release.
+
+Avoid `pip install -e ".[docs]" --upgrade --upgrade-strategy eager` in your
+main dev venv: it drags unrelated transitive dependencies forward and
+conflicts with the pins `gradio` and `gtts` declare. A separate venv keeps
+the two concerns apart.
+
 ## License
 
 AGPL-3.0 — see [LICENSE](LICENSE) for details.
