@@ -17,6 +17,18 @@ import shutil
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
+# Subdirectory of docs/ that holds the generated API pages, and the only
+# directory clean_generated_docs() removes.
+#
+# This is a FIXED NAME, deliberately not derived from the checkout directory.
+# The generated tree is committed at docs/xil-pipeline/, so deriving the name
+# from code_root.name meant any checkout not literally named "xil-pipeline"
+# generated a SECOND tree beside the committed one — every mkdocstrings anchor
+# then existed twice and --strict aborted on ~86 "Multiple primary URLs"
+# warnings.  Read the Docs checks out into "latest"/"stable", so its builds
+# failed while GitHub Actions (which checks out into .../xil-pipeline/) passed.
+GENERATED_DOCS_DIRNAME = "xil-pipeline"
+
 
 def convert_path_to_namespace(path: Path, root: Path) -> str:
     """
@@ -153,8 +165,7 @@ def clean_generated_docs(docs_base: Path, code_root: Path) -> None:
     logger.info("Cleaning generated documentation...")
 
     # Calculate the docs subdirectory that mirrors the code structure
-    code_name = code_root.name  # 'xil-pipeline'
-    generated_dir = docs_base / code_name
+    generated_dir = docs_base / GENERATED_DOCS_DIRNAME
 
     if generated_dir.exists():
         try:
@@ -389,10 +400,11 @@ Examples:
     logger.info(f"Creating documentation structure in {docs_base}...")
 
     # Create docs directory structure
-    # Generated docs go into docs/<code_root.name>/ (e.g. docs/xil-pipeline/)
-    # so clean_generated_docs can remove them cleanly without touching hand-written docs.
+    # Generated docs go into docs/<GENERATED_DOCS_DIRNAME>/ so clean_generated_docs
+    # can remove them cleanly without touching hand-written docs — and so the path
+    # does not depend on what the checkout directory happens to be called.
     for directory in sorted(directories):
-        relative_dir = Path(code_root.name) / directory.relative_to(code_root)
+        relative_dir = Path(GENERATED_DOCS_DIRNAME) / directory.relative_to(code_root)
         docs_dir = docs_base / relative_dir
 
         # Create directory

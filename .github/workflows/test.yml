@@ -47,9 +47,16 @@ jobs:
         run: python docs/build_man.py --check
       - name: Docs strict build
         if: runner.os == 'Linux'
+        # Built from a copy named "latest", matching how Read the Docs checks
+        # out. The runner's own workspace is .../xil-pipeline/xil-pipeline, and
+        # build_docs.py used to derive its output directory from that name — so
+        # this job passed while RTD failed on ~86 duplicate-anchor warnings.
+        # Keep the rename: it is the only thing here that exercises that path.
         run: |
           pip install -e ".[docs]"
-          python docs/build_docs.py --no-clear
+          cp -a "$GITHUB_WORKSPACE" /tmp/latest
+          cd /tmp/latest
+          python docs/build_docs.py
           python -m mkdocs build --strict
       - name: Run tests
         run: pytest tests/ -v --tb=short
