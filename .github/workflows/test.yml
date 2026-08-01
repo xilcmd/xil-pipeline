@@ -45,5 +45,11 @@ jobs:
       - name: Man page drift check
         if: runner.os == 'Linux'
         run: python docs/build_man.py --check
+      - name: Docs strict build
+        if: runner.os == 'Linux'
+        run: |
+          pip install -e ".[docs]"
+          python docs/build_docs.py --no-clear
+          python -m mkdocs build --strict
       - name: Run tests
         run: pytest tests/ -v --tb=short

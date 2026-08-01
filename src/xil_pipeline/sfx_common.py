@@ -23,6 +23,7 @@ import re
 import shutil
 import sys
 
+from elevenlabs.client import ElevenLabs
 from mutagen.id3 import APIC, COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, TXXX, USLT, ID3NoHeaderError, PictureType
 from mutagen.wave import WAVE
 from pydub import AudioSegment
@@ -511,7 +512,7 @@ def ensure_shared_sfx(
     effect: SfxEntry,
     sfx_dir: str,
     defaults: dict,
-    client=None,
+    client: ElevenLabs | None = None,
     show: str = "Sample Show",
     backend: SfxBackend | None = None,
 ) -> str:
@@ -713,7 +714,7 @@ def generate_sfx(
     sfx_config: dict,
     stems_dir: str,
     sfx_dir: str | None = None,
-    client=None,
+    client: ElevenLabs | None = None,
     start_from: int = 1,
     backend: SfxBackend | None = None,
 ) -> None:

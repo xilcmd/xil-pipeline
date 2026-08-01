@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover
     _MutagenMP3 = None
 
 from xil_pipeline.log_config import get_logger
+from xil_pipeline.models import SfxConfiguration
 
 logger = get_logger(__name__)
 
@@ -195,7 +196,7 @@ def _find_effect_entry(sfx_config, text: str):
 
 def _resolve_audio_params(
     plan: "StemPlan",
-    sfx_config,
+    sfx_config: SfxConfiguration | None,
 ) -> tuple[float | None, float | None, float | None, float | None]:
     """Resolve volume/ramp/play_duration values from per-effect override or category defaults.
 
@@ -252,7 +253,7 @@ def _resolve_audio_params(
 
 
 def collect_stem_plans(
-    stems_dir: str, entries_index: dict[int, dict], sfx_config=None
+    stems_dir: str, entries_index: dict[int, dict], sfx_config: SfxConfiguration | None = None
 ) -> list[StemPlan]:
     """Collect and classify all MP3 stems in a stems directory.
 
