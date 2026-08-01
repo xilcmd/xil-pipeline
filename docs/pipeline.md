@@ -2146,6 +2146,10 @@ flowchart TD
 
 > **Never writes.** The report is a decision sheet. Pair it with `xil sfx-restore` if a
 > config was already changed and you need the timeline editor's journal replayed back.
+> The journal (`configs/{slug}/sfx_{tag}_edits.jsonl`) holds both per-cue edits
+> (`POST /xil/update-sfx`) and category-defaults edits (`POST /xil/update-sfx-defaults`,
+> `scope: "defaults"` records) from the Timeline tab's double-click modal — `xil
+> sfx-restore` replays both kinds.
 
 ---
 

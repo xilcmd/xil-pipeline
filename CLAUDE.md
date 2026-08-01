@@ -672,6 +672,7 @@ Intro/outro music lives in the SFX config under `"INTRO MUSIC"` / `"OUTRO MUSIC"
 - Stop markers: `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` entries use `type: "silence", duration_seconds: 0.0`; they inject a boundary marker into the mixing timeline without generating audio
 - `vintage_scenes` — optional top-level list of scene labels (e.g. `["scene-3", "scene-4", "scene-5"]`); all dialogue in those scenes receives the vintage audio filter (HF roll-off + 1 dB reduction) during assembly; applied after per-speaker filters; omit or leave empty for no vintage treatment; the same scene labels used in the parsed JSON `scene` field
 - SFX stems use `_sfx` suffix: `002_cold-open_sfx.mp3`
+- Both per-effect overrides (`effects.<key>.volume_percentage`/`ramp_in_seconds`/`ramp_out_seconds`/`play_duration`) and category defaults (`defaults.<layer>_volume_percentage`/`<layer>_ramp_in_seconds`/`<layer>_ramp_out_seconds` for `music`/`sfx`/`ambience`) are editable from the xil-gui Timeline tab's double-click modal — see the Web Dashboard section's Timeline-tab bullet
 
 ### Shared SFX Library
 
@@ -876,7 +877,7 @@ xil migrate-workspace              # execute moves
 - **Episodes tab**: workspace overview — all detected episodes with parse/stems/DAW/master status; episode dropdowns show `[Arc]  —  Title` next to the tag (read from cast config); Episodes table has a `Title [Arc]` column
 - **Audio Preview tab**: episode + filter selector (all/dialogue/sfx/music/ambience), stem dropdown, in-browser MP3 playback via `gr.Audio`; stem labels enriched from parsed JSON when available
 - **Run Stage tab**: select episode + stage (assemble/daw/master/produce/parse), dry-run checkbox (default on), extra flags field; live stdout streaming via generator + `demo.queue()`
-- **Timeline tab**: embeds the `daw/{TAG}/{TAG}_timeline.html` iframe if generated; prompts `xil daw --timeline-html` when absent
+- **Timeline tab**: embeds the `daw/{TAG}/{TAG}_timeline.html` iframe if generated; prompts `xil daw --timeline-html` when absent; double-clicking a MUSIC/SFX/AMBIENCE span opens a sound-profile editor modal (`GET /xil/get-sfx`, `POST /xil/update-sfx`) with a collapsed "Category defaults (`<layer>`)" section (`POST /xil/update-sfx-defaults`) for editing that layer's `defaults.<layer>_*` fallback values — both save paths journal to `configs/{slug}/sfx_{tag}_edits.jsonl` (`scope: "defaults"` for the latter) so edits survive config regeneration (see `xil sfx-restore`)
 - `--share` uses Gradio's ngrok tunnel — open access, suitable for trusted collaborators during a session only
 - `allowed_paths=[os.getcwd()]` enables Gradio to serve local MP3/WAV/HTML files
 - Subprocess isolation: each stage run is a fresh `subprocess.Popen` so the GUI stays alive if a stage errors

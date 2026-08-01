@@ -1200,3 +1200,107 @@ class TestSfxRouteVerboseLogging:
             "journal write failed" in rec.message and rec.levelno == logging.WARNING
             for rec in caplog.records
         )
+
+
+class TestSfxDefaultsRoute:
+    """POST /xil/update-sfx-defaults — edits the config's category defaults
+    (e.g. music_volume_percentage), the counterpart to the per-cue
+    /xil/update-sfx route. Same validate-before-path-build pattern; same
+    journal mechanism via append_sfx_defaults_edit (scope: "defaults")."""
+
+    @pytest.fixture
+    def client(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "myshow"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "sfx_S01E01.json").write_text(json.dumps({
+            "defaults": {"volume_percentage": 20, "music_volume_percentage": 80},
+            "effects": {"MUSIC: THEME": {}},
+        }))
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from xil_pipeline.xil_gui import _register_sfx_routes
+        app = FastAPI()
+        _register_sfx_routes(app)
+        return TestClient(app)
+
+    def _journal(self, tmp_path):
+        return tmp_path / "configs" / "myshow" / "sfx_S01E01_edits.jsonl"
+
+    def test_sets_prefixed_key(self, client, tmp_path):
+        r = client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "music",
+            "volume_percentage": 42})
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert on_disk["defaults"]["music_volume_percentage"] == 42
+
+    def test_null_pops_prefixed_key(self, client, tmp_path):
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "music",
+            "volume_percentage": None})
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert "music_volume_percentage" not in on_disk["defaults"]
+
+    def test_unprefixed_global_default_untouched(self, client, tmp_path):
+        # A layer save must only ever write its own prefixed key — never the
+        # un-prefixed global fallback, even though one already exists.
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "music",
+            "volume_percentage": 42})
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert on_disk["defaults"]["volume_percentage"] == 20
+
+    def test_other_layers_defaults_untouched(self, client, tmp_path):
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "ambience",
+            "volume_percentage": 15})
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert on_disk["defaults"]["music_volume_percentage"] == 80
+        assert on_disk["defaults"]["ambience_volume_percentage"] == 15
+
+    def test_rejects_unsafe_slug(self, client):
+        r = client.post("/xil/update-sfx-defaults", json={
+            "slug": "../../etc", "tag": "S01E01", "layer": "music",
+            "volume_percentage": 10})
+        assert r.status_code == 400
+
+    def test_rejects_bad_layer(self, client, tmp_path):
+        r = client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "dialogue",
+            "volume_percentage": 10})
+        assert r.status_code == 400
+        # Rejected request must not touch disk.
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert "dialogue_volume_percentage" not in on_disk["defaults"]
+
+    def test_missing_config_404s(self, client):
+        r = client.post("/xil/update-sfx-defaults", json={
+            "slug": "ghostshow", "tag": "S09E99", "layer": "music",
+            "volume_percentage": 10})
+        assert r.status_code == 404
+
+    def test_journals_defaults_scope_record(self, client, tmp_path):
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "music",
+            "volume_percentage": 42, "ramp_in_seconds": 1.5})
+        lines = self._journal(tmp_path).read_text().splitlines()
+        assert len(lines) == 1
+        rec = json.loads(lines[0])
+        assert rec["scope"] == "defaults"
+        assert "key" not in rec
+        assert rec["fields"]["music_volume_percentage"] == 42
+        assert rec["fields"]["music_ramp_in_seconds"] == 1.5
+
+    def test_rejected_request_journals_nothing(self, client, tmp_path):
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "../../etc", "tag": "S01E01", "layer": "music",
+            "volume_percentage": 10})
+        assert not self._journal(tmp_path).exists()

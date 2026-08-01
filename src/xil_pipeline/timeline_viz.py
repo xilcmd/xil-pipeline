@@ -293,6 +293,10 @@ _MODAL_CSS = """\
   .sfx-modal-btns button[disabled] { opacity:0.45; cursor:not-allowed; }
   #sfx-modal-save { background:#1a3a1a; border-color:#4caf50; color:#8fca8f; }
   #sfx-modal-save:hover:not([disabled]) { background:#1e481e; }
+  #sfx-defaults-section { margin-top:10px; border-top:1px solid #444; padding-top:8px; }
+  #sfx-defaults-section summary { cursor:pointer; font-size:11px; color:#b0b0ff;
+    text-transform:uppercase; letter-spacing:0.04em; }
+  #sfx-defaults-warning { margin:6px 0 8px; }
 """
 
 _MODAL_HTML = """\
@@ -300,6 +304,11 @@ _MODAL_HTML = """\
   <div id="sfx-modal">
     <h3 id="sfx-modal-title"></h3>
     <div id="sfx-modal-fields"></div>
+    <details id="sfx-defaults-section">
+      <summary id="sfx-defaults-summary">Category defaults</summary>
+      <div class="sfx-help" id="sfx-defaults-warning"></div>
+      <div id="sfx-defaults-fields"></div>
+    </details>
     <div id="sfx-modal-status"></div>
     <div class="sfx-modal-btns">
       <button id="sfx-modal-save">Save</button>
@@ -324,6 +333,22 @@ function _sfxField(id, label, min, max, step, val, pfx, defs, help, disabled) {
     '<div class="sfx-help">' + help + '</div></div>';
 }
 
+// Category-defaults fields (ids sfxd-*): unlike _sfxField's per-cue fields
+// (where the category default is only a placeholder for inherited values),
+// here the category default IS the value being edited -- pre-filled from
+// defaults[layer_id] when set, falling back to the un-prefixed global
+// default as placeholder text when it isn't.
+function _sfxDefaultsField(id, label, min, max, step, layer, defaults, help) {
+  const val = defaults[layer + '_' + id];
+  const glob = defaults[id];
+  const ph = glob != null ? 'global default: ' + glob : 'no default set';
+  const va = (val != null) ? ' value="' + val + '"' : '';
+  return '<div class="sfx-field-wrap"><label>' + label + '</label>' +
+    '<input type="number" id="sfxd-' + id + '" min="' + min + '" max="' + max +
+    '" step="' + step + '"' + va + ' placeholder="' + ph + '">' +
+    '<div class="sfx-help">' + help + '</div></div>';
+}
+
 let _sfxModalCtx = null;  // {key, layer, effect, defaults, naturalS} of the open editor
 
 function _showSfxModal(key, layer, effect, defaults, naturalS) {
@@ -345,6 +370,13 @@ function _showSfxModal(key, layer, effect, defaults, naturalS) {
     _sfxField('play_duration', 'Play Duration %', 0, 100, 1,
       effect.play_duration ?? null, pfx, defaults,
       'Percentage of clip to play (0–100). Not applicable to AMBIENCE.', isAmb);
+  document.getElementById('sfx-defaults-summary').textContent = 'Category defaults (' + layer + ')';
+  const defHelp = 'Applies to every ' + layer.toUpperCase() + ' cue without its own override.';
+  document.getElementById('sfx-defaults-warning').textContent = defHelp;
+  document.getElementById('sfx-defaults-fields').innerHTML =
+    _sfxDefaultsField('volume_percentage', 'Volume %', 0, 200, 1, layer, defaults, defHelp) +
+    _sfxDefaultsField('ramp_in_seconds', 'Ramp In (s)', 0, 30, 0.1, layer, defaults, defHelp) +
+    _sfxDefaultsField('ramp_out_seconds', 'Ramp Out (s)', 0, 30, 0.1, layer, defaults, defHelp);
   const modal = document.getElementById('sfx-modal');
   modal.dataset.effectKey = key;
   modal.dataset.layer = layer;
@@ -426,6 +458,21 @@ document.getElementById('sfx-modal-save').addEventListener('click', function() {
     const v = el.value.trim();
     return v === '' ? null : parseFloat(v);
   }
+  function getDefaultsVal(id) {
+    const el = document.getElementById('sfxd-' + id);
+    if (!el) return null;
+    const v = el.value.trim();
+    return v === '' ? null : parseFloat(v);
+  }
+  const layer = modal.dataset.layer;
+  const DEFAULTS_FIELDS = ['volume_percentage', 'ramp_in_seconds', 'ramp_out_seconds'];
+  const defaultsPayload = {slug: XIL_SLUG, tag: XIL_TAG, layer: layer};
+  DEFAULTS_FIELDS.forEach(function(f) { defaultsPayload[f] = getDefaultsVal(f); });
+  const loadedDefaults = (_sfxModalCtx && _sfxModalCtx.defaults) || {};
+  const defaultsChanged = DEFAULTS_FIELDS.some(function(f) {
+    const loaded = loadedDefaults[layer + '_' + f];
+    return defaultsPayload[f] !== (loaded == null ? null : loaded);
+  });
   const payload = {
     slug: XIL_SLUG, tag: XIL_TAG, key: modal.dataset.effectKey,
     volume_percentage: getVal('volume_percentage'),
@@ -438,13 +485,37 @@ document.getElementById('sfx-modal-save').addEventListener('click', function() {
   st.style.color = '#aaa';
   st.textContent = 'Saving…';
   btn.disabled = true;
-  fetch('/xil/update-sfx', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload),
+  function savePerCue() {
+    return fetch('/xil/update-sfx', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    }).then(function(r) { return r.json(); });
+  }
+  const defaultsStep = defaultsChanged
+    ? fetch('/xil/update-sfx-defaults', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(defaultsPayload),
+      }).then(function(r) { return r.json(); })
+    : Promise.resolve({ok: true});
+  defaultsStep
+  .then(function(dDef) {
+    if (!dDef.ok) {
+      st.style.color = '#ef5350';
+      st.textContent = 'Error: ' + (dDef.error || 'Defaults save failed.');
+      btn.disabled = false;
+      return null;
+    }
+    if (defaultsChanged) {
+      loadedDefaults[layer + '_volume_percentage'] = defaultsPayload.volume_percentage;
+      loadedDefaults[layer + '_ramp_in_seconds'] = defaultsPayload.ramp_in_seconds;
+      loadedDefaults[layer + '_ramp_out_seconds'] = defaultsPayload.ramp_out_seconds;
+    }
+    return savePerCue();
   })
-  .then(function(r) { return r.json(); })
   .then(function(d) {
+    if (!d) return;
     if (d.ok) {
       _applySfxEditToSpans(payload);
       st.style.color = '#4caf50';
@@ -861,6 +932,8 @@ const TOTAL = DATA.total_duration_s;
 const COLORS = {{dialogue:'c-dialogue', sfx:'c-sfx', music:'c-music', ambience:'c-ambience', vintage_filter:'c-vintage-filter'}};
 const LABELS = {{dialogue:'Dialogue', sfx:'SFX', music:'Music', ambience:'Ambience', vintage_filter:'Vtg Filter'}};
 function escAttr(s) {{ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }}
+// vintage_filter has its own category defaults too (mix_common's prefix_map),
+// but its spans carry no data-effect-key — deliberately excluded, not an oversight.
 const EDITABLE_LAYERS = {{'sfx':true,'music':true,'ambience':true}};
 let zoom = 1;
 const BASE_WIDTH = Math.max(document.getElementById('tc').clientWidth - 100, 400);

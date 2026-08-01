@@ -717,6 +717,20 @@ class TestHtmlEditorIntegrity:
         assert 'const XIL_SLUG = "myshow";' in html
         assert 'const XIL_TAG  = "S01E01";' in html
 
+    def test_category_defaults_section_present(self, tmp_path):
+        """The double-click modal's 'Category defaults' section — ids,
+        POST target, and the deliberate vintage_filter exclusion note."""
+        html = self._render(tmp_path)
+        assert 'id="sfx-defaults-section"' in html
+        assert 'id="sfx-defaults-summary"' in html
+        assert 'id="sfx-defaults-fields"' in html
+        assert 'id="sfxd-' in html
+        assert "_sfxDefaultsField('volume_percentage'" in html
+        assert "_sfxDefaultsField('ramp_in_seconds'" in html
+        assert "_sfxDefaultsField('ramp_out_seconds'" in html
+        assert "/xil/update-sfx-defaults" in html
+        assert "vintage_filter" in html.lower()
+
     def test_script_runs_clean_in_node(self, tmp_path):
         """Execute the generated script in node with a stub DOM: it must run
         without throwing and register the modal-button and play listeners."""
@@ -1132,6 +1146,7 @@ class TestTextTimelineMap:
         assert "myshow" in joined
         assert "3:40" in joined            # 220.0s duration
         assert "music/ambience omitted" in joined
+
 
 class TestPreviewLengthArithmetic:
     """The modal's span preview must agree with what the mixer will render.

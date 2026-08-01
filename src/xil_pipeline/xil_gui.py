@@ -2349,6 +2349,64 @@ def _register_sfx_routes(app) -> None:
         logger.info("SFX edit via timeline: %s/%s → %r", slug_b, tag_b, key_b)
         return _JSONResponse({"ok": True, "message": f"Saved {key_b!r} — re-run xil daw to apply."})
 
+    @app.post("/xil/update-sfx-defaults")
+    async def _api_update_sfx_defaults(request: _FastAPIRequest):
+        """Patch one category's defaults (e.g. music_volume_percentage).
+
+        Like /xil/update-sfx, resends every field on each save rather than a
+        diff, and re-reads the config fresh on every request — sequential
+        saves never clobber each other's write, but a save can still revert
+        a field the user didn't touch if another session changed it on disk
+        in between (same lost-update characteristic /xil/update-sfx already
+        has; higher blast-radius here since a defaults edit affects every
+        cue in the category — accepted for v1).
+        """
+        body = await request.json()
+        logger.debug("update-sfx-defaults request body: %r", body)
+        slug_b, tag_b, layer = body["slug"], body["tag"], body["layer"]
+        if not (_is_safe_slug_or_tag(slug_b) and _is_safe_slug_or_tag(tag_b)):
+            logger.warning("update-sfx-defaults rejected: invalid slug/tag slug=%r tag=%r", slug_b, tag_b)
+            return _JSONResponse({"ok": False, "error": "invalid slug or tag"}, status_code=400)
+        if layer not in ("music", "sfx", "ambience"):
+            logger.warning("update-sfx-defaults rejected: invalid layer %r", layer)
+            return _JSONResponse({"ok": False, "error": "invalid layer"}, status_code=400)
+        # Already validated above (no separators possible) — basename() is a
+        # no-op here, kept only because static analysis specifically
+        # recognizes it as neutralizing path-injection taint.
+        slug_b, tag_b = os.path.basename(slug_b), os.path.basename(tag_b)
+        from xil_pipeline.models import derive_paths as _dp
+        sfx_path = _dp(slug_b, tag_b)["sfx"]
+        _check_workspace_path(sfx_path)
+        if not os.path.exists(sfx_path):
+            logger.warning("update-sfx-defaults: sfx config not found at %s", sfx_path)
+            return _JSONResponse({"ok": False, "error": "sfx config not found"}, status_code=404)
+        with open(sfx_path, encoding="utf-8") as f:
+            data = json.load(f)
+        defaults = data.setdefault("defaults", {})
+        fields = {}
+        for field in ("volume_percentage", "ramp_in_seconds", "ramp_out_seconds"):
+            val = body.get(field)
+            prefixed = f"{layer}_{field}"
+            fields[prefixed] = val
+            if val is None:
+                defaults.pop(prefixed, None)
+            else:
+                defaults[prefixed] = val
+        with open(sfx_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        logger.debug("update-sfx-defaults: wrote %s (layer=%r fields=%r)", sfx_path, layer, fields)
+        # A journal failure must never fail the save itself.
+        try:
+            from xil_pipeline.sfx_common import append_sfx_defaults_edit
+            append_sfx_defaults_edit(sfx_path, fields)
+        except Exception as exc:
+            _log_activity(f"[WARN] sfx defaults edit journal write failed: {exc}")
+            logger.warning("sfx defaults edit journal write failed for %s (layer=%r): %s", sfx_path, layer, exc)
+        _log_activity(f"SFX defaults edit via timeline: {slug_b}/{tag_b} → {layer!r}")
+        logger.info("SFX defaults edit via timeline: %s/%s → %r", slug_b, tag_b, layer)
+        return _JSONResponse({"ok": True, "message": f"Saved {layer!r} defaults — re-run xil daw to apply."})
+
 
 def main() -> None:
     """CLI entry point for the Gradio web dashboard."""

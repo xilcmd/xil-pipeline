@@ -383,6 +383,29 @@ def append_sfx_edit(sfx_path: str, key: str, fields: dict) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def append_sfx_defaults_edit(sfx_path: str, fields: dict) -> None:
+    """Append one category-defaults edit record to the journal beside *sfx_path*.
+
+    Same append mechanics as :func:`append_sfx_edit`, but the record carries
+    ``"scope": "defaults"`` and no ``"key"`` — :func:`replay_sfx_edits`
+    applies it to ``data["defaults"]`` instead of a single effect entry.
+
+    Args:
+        sfx_path: Path of the SFX config the edit was applied to.
+        fields: Prefixed defaults keys (e.g. ``music_volume_percentage``) to
+            set; ``None`` means "clear this default".
+    """
+    record = {
+        "ts": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+        "scope": "defaults",
+        "fields": dict(fields),
+    }
+    journal = sfx_edits_path(sfx_path)
+    os.makedirs(os.path.dirname(journal) or ".", exist_ok=True)
+    with open(journal, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def replay_sfx_edits(sfx_path: str, dry_run: bool = False) -> tuple[int, list[str]]:
     """Reapply journaled edits to the SFX config at *sfx_path*.
 
@@ -390,7 +413,11 @@ def replay_sfx_edits(sfx_path: str, dry_run: bool = False) -> tuple[int, list[st
     semantics as the timeline-editor save route: ``None`` removes the
     override, any other value sets it.  Keys absent from the current
     ``effects`` dict are still created (a renamed direction leaves a
-    harmless orphan) but reported so the caller can warn.
+    harmless orphan) but reported so the caller can warn. Records with
+    ``"scope": "defaults"`` (from :func:`append_sfx_defaults_edit`) are
+    applied to ``data["defaults"]`` instead and never produce orphans;
+    records without a ``"scope"`` field (all pre-existing journals) are
+    treated as per-cue edits, unchanged.
 
     Args:
         sfx_path: SFX config to update in place.
@@ -416,6 +443,16 @@ def replay_sfx_edits(sfx_path: str, dry_run: bool = False) -> tuple[int, list[st
                 continue
             try:
                 record = json.loads(line)
+                if record.get("scope") == "defaults":
+                    defaults_fields = record.get("fields", {})
+                    defaults_dict = data.setdefault("defaults", {})
+                    for dfield, dval in defaults_fields.items():
+                        if dval is None:
+                            defaults_dict.pop(dfield, None)
+                        else:
+                            defaults_dict[dfield] = dval
+                    applied += 1
+                    continue
                 key = record["key"]
                 fields = record["fields"]
             except (json.JSONDecodeError, KeyError, TypeError):
