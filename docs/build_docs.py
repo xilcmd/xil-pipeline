@@ -125,12 +125,15 @@ def should_document_file(file: Path, code_root: Path) -> bool:
     return True
 
 
-def should_copy_markdown_file(file: Path) -> bool:
+def should_copy_markdown_file(file: Path, code_root: Path | None = None) -> bool:
     """
     Check if a markdown file should be copied to docs.
 
     Args:
         file: Path to markdown file
+        code_root: Source code root.  Filtering is done on the path RELATIVE to
+            this, so directory names above the checkout are never matched.
+            Optional only for backwards compatibility; always pass it.
 
     Returns:
         True if file should be copied, False otherwise
@@ -141,9 +144,22 @@ def should_copy_markdown_file(file: Path) -> bool:
     if name.startswith('test_') or name.endswith('_test.md'):
         return False
 
+    # Filter on the path relative to code_root — matching absolute path parts
+    # rejected everything on Read the Docs, whose checkout lives under
+    # /home/docs/checkouts/... where the literal "docs" component hits skip_dirs.
+    # "Markdown files: 0" in every RTD build; the site only worked because the
+    # symlinks happened to be committed.  should_document_file() carries the same
+    # fix for .py files, which is why RTD documented 59 modules but 0 pages.
+    if code_root is not None:
+        try:
+            relative_parts = file.relative_to(code_root).parts
+        except ValueError:                      # not under code_root
+            relative_parts = file.parts
+    else:
+        relative_parts = file.parts
+
     # Skip archived/legacy directories (matches archive_*, legacy_*, etc.)
-    path_parts = file.parts
-    if any(part.startswith('archive') or part.startswith('legacy') for part in path_parts):
+    if any(part.startswith('archive') or part.startswith('legacy') for part in relative_parts):
         return False
 
     # Skip specific problematic directories
@@ -151,7 +167,7 @@ def should_copy_markdown_file(file: Path) -> bool:
     # '.pytest_cache' excluded to prevent copying pytest internals
     skip_dirs = {'data', 'output', '.ruff_cache', '.venv', 'venv', '.git', 'site',
                  'docs', '.pytest_cache', 'scripts'}
-    parent_parts = file.parent.parts
+    parent_parts = relative_parts[:-1]          # directories only, not the filename
     if any(part in skip_dirs or part.endswith('_files') or part.startswith('venv')
            for part in parent_parts):
         return False
@@ -317,7 +333,7 @@ def link_markdown_files(code_root: Path, docs_base: Path, project_root: Path) ->
     logger.info(f"Linking markdown files from {code_root.name}...")
 
     # Find all markdown files in source code
-    md_files = [f for f in code_root.rglob("*.md") if should_copy_markdown_file(f)]
+    md_files = [f for f in code_root.rglob("*.md") if should_copy_markdown_file(f, code_root)]
 
     linked_count = 0
     for md_file in md_files:

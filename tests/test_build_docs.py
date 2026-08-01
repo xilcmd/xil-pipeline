@@ -8,6 +8,8 @@ import importlib.util
 import os
 from pathlib import Path
 
+import pytest
+
 # Load the module
 spec = importlib.util.spec_from_file_location(
     "build_docs",
@@ -562,3 +564,61 @@ class TestCrossDriveSymlinkFallback:
             assert dest.resolve() == src.resolve()
         else:
             assert dest.read_bytes() == src.read_bytes()
+
+
+class TestMarkdownFilterIsRootRelative:
+    """should_copy_markdown_file must filter relative to code_root.
+
+    Read the Docs checks out into /home/docs/checkouts/... — that literal "docs"
+    component is in skip_dirs, so matching absolute path parts rejected EVERY
+    markdown file. RTD logged "Markdown files: 0" on every build; the site only
+    worked because the symlinks happened to be committed. should_document_file()
+    already carries this fix for .py files, which is why the same builds
+    documented 59 modules but 0 pages.
+    """
+
+    def _rtd_layout(self, tmp_path):
+        # Mirror RTD's real checkout path, "docs" component and all.
+        root = tmp_path / "home" / "docs" / "checkouts" / "user_builds" / "latest"
+        root.mkdir(parents=True)
+        return root
+
+    def test_accepts_root_doc_under_a_docs_ancestor(self, tmp_path):
+        code_root = self._rtd_layout(tmp_path)
+        md = code_root / "cast-config-reference.md"
+        md.write_text("# doc\n")
+
+        assert build_docs.should_copy_markdown_file(md, code_root) is True
+
+    def test_still_skips_the_projects_own_docs_dir(self, tmp_path):
+        """The real intent — never re-copy generated output into docs/docs/."""
+        code_root = self._rtd_layout(tmp_path)
+        inner = code_root / "docs"
+        inner.mkdir()
+        md = inner / "generated.md"
+        md.write_text("# doc\n")
+
+        assert build_docs.should_copy_markdown_file(md, code_root) is False
+
+    @pytest.mark.parametrize("subdir", ["site", "venv", ".git", "scripts"])
+    def test_still_skips_other_excluded_dirs(self, tmp_path, subdir):
+        code_root = self._rtd_layout(tmp_path)
+        d = code_root / subdir
+        d.mkdir()
+        md = d / "x.md"
+        md.write_text("# doc\n")
+
+        assert build_docs.should_copy_markdown_file(md, code_root) is False
+
+    def test_link_markdown_files_finds_docs_under_a_docs_ancestor(self, tmp_path):
+        """End to end: the count that read 0 on every RTD build."""
+        code_root = self._rtd_layout(tmp_path)
+        (code_root / "README.md").write_text("# readme\n")
+        (code_root / "guide.md").write_text("# guide\n")
+        docs_base = code_root / "docs"
+        docs_base.mkdir()
+
+        linked = build_docs.link_markdown_files(code_root, docs_base, code_root)
+
+        assert linked == 2, "markdown files were filtered out by an ancestor name"
+
