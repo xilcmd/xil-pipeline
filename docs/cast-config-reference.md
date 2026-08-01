@@ -1,1 +1,0 @@
-../cast-config-reference.md

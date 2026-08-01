@@ -676,7 +676,7 @@ Intro/outro music lives in the SFX config under `"INTRO MUSIC"` / `"OUTRO MUSIC"
 
 ### Shared SFX Library
 
-Each unique sound effect is generated **once** into the `SFX/` directory as a shared asset (e.g. `SFX/beat.mp3`, `SFX/sfx_phone-buzzing.mp3`). Episode stems in `stems/<slug>/<TAG>/` are copies of these shared assets with sequence-numbered filenames. This avoids regenerating the same effect for repeated uses (e.g. BEAT appears 26 times in S01E01). See `docs/sfx-reuse-guide.md` for a workflow guide on maximizing SFX reuse and minimizing API credit spend.
+Each unique sound effect is generated **once** into the `SFX/` directory as a shared asset (e.g. `SFX/beat.mp3`, `SFX/sfx_phone-buzzing.mp3`). Episode stems in `stems/<slug>/<TAG>/` are copies of these shared assets with sequence-numbered filenames. This avoids regenerating the same effect for repeated uses (e.g. BEAT appears 26 times in S01E01). See `docs/guides/sfx-reuse-guide.md` for a workflow guide on maximizing SFX reuse and minimizing API credit spend.
 
 - Shared asset naming: `slugify_effect_key()` in `sfx_common.py` converts direction text to filesystem-safe slugs; `shared_sfx_path(sfx_dir, effect_key, backend)` appends a `.<backend>` infix for non-ElevenLabs backends (e.g. `SFX/sfx_door-opens.audioldm2.mp3`), keeping the plain name for `elevenlabs` so existing caches still hit. Only model-generated `type: sfx` assets are backend-tagged; `silence`/`source` assets stay plain
 - `--dry-run` shows three statuses: `EXISTS` (episode stem on disk), `CACHED` (shared asset exists, will be copied), `NEW` (needs generation). For `--sfx-backend audioldm2`, NEW generation is reported as **local (free)** instead of an API credit estimate
@@ -894,7 +894,7 @@ Use tests for everything it implements:
 
 ### Documentation Currency Rule
 
-After executing any plan that changes pipeline behaviour, CLI flags, file formats, or module interfaces, **both** `CLAUDE.md` (root) and `docs/pipeline.md` must be updated to reflect those changes **before committing**. This applies equally to Claude and human contributors. Specifically:
+After executing any plan that changes pipeline behaviour, CLI flags, file formats, or module interfaces, **both** `CLAUDE.md` (root) and `docs/internals/pipeline.md` must be updated to reflect those changes **before committing**. This applies equally to Claude and human contributors. Specifically:
 
 - New CLI flags or flag removals → update the relevant stage description in CLAUDE.md and the corresponding section/sequence diagram in pipeline.md
 - New module fields or dataclass additions → update `mix_common.py` / `sfx_common.py` bullet points in CLAUDE.md
@@ -903,6 +903,17 @@ After executing any plan that changes pipeline behaviour, CLI flags, file format
 - Any behavioural change visible to operators → update the relevant stage bullets in CLAUDE.md
 
 If a plan is large enough to have its own plan file, tick this as the final step before closing the plan.
+
+### Docs Site Navigation
+
+`mkdocs.yml` has no `nav:` — `awesome-pages` builds it from `.pages` files and otherwise sorts by ASCII filename. Two knobs, both in the repo:
+
+- `docs/.pages` — top-level order. The trailing `...` catches unlisted pages, so a new doc never vanishes from the nav.
+- `DOC_CATEGORIES` in `docs/build_docs.py` — maps a **repo-root** `.md` to `configuration` / `guides` / `internals`. Adding a categorized doc is one dict entry; only the symlink is placed in the section, the source file stays at the repo root so existing path references keep working. Unlisted files land flat in `docs/`.
+
+Pages authored directly under `docs/` just live in the right folder — `should_copy_markdown_file` skips `docs`, so the build never touches them. `clean_generated_docs` removes only *symlinks* from category folders (an `rmtree` would delete committed pages) and sweeps stale root symlinks for any newly categorized file.
+
+Cross-page links must resolve in the **docs** layout, not the repo layout. `strict: true` fails the build on a broken internal link — that is the safety net when moving a page between sections.
 
 ### Docstring Standard
 

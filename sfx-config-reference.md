@@ -362,7 +362,7 @@ effect entry
 
 ## See Also
 
-- [SFX Reuse Guide](sfx-reuse-guide.md) — how to minimise ElevenLabs credit spend
+- [SFX Reuse Guide](../guides/sfx-reuse-guide.md) — how to minimise ElevenLabs credit spend
 - [DIRECTION_TYPES](DIRECTION_TYPES_info.md) — how the parser classifies direction text
 - `xil sfx --dry-run` — preview EXISTS / CACHED / NEW status before generating
 - `xil produce --dry-run` — full voice + SFX cost estimate

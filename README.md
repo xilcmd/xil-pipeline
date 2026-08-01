@@ -144,7 +144,7 @@ xil-daw --episode V01C03
 
 Stems are stored under `stems/<slug>/<TAG>/`, so multiple shows and tag formats coexist safely in one workspace.
 
-See the [SFX Reuse Guide](sfx-reuse-guide.md) for workflows that minimize ElevenLabs API credit usage by referencing existing assets in the `SFX/` library.
+See the [SFX Reuse Guide](guides/sfx-reuse-guide.md) for workflows that minimize ElevenLabs API credit usage by referencing existing assets in the `SFX/` library.
 
 ## Environment
 
@@ -239,6 +239,25 @@ venv-docs/bin/python -m mkdocs build --strict
 Recreate `venv-docs` (or `pip install --upgrade`) whenever you want to check
 against what RTD will resolve today — a stale environment can build clean
 while RTD fails on a newer release.
+
+#### Navigation
+
+`mkdocs.yml` has no `nav:` — the `awesome-pages` plugin builds it from `.pages`
+files, falling back to ASCII filename order.
+
+- **`docs/.pages`** sets the top-level order. Its trailing `...` catches every
+  page not named explicitly, so a new doc never disappears from the nav.
+- **Repo-root docs are filed into sections** by `DOC_CATEGORIES` in
+  `docs/build_docs.py`. To categorize a new one, add a single entry mapping its
+  filename to `configuration`, `guides`, or `internals`. Only the symlink moves;
+  the source file stays at the repo root, so paths that reference it keep
+  working. Files not listed land flat in `docs/`.
+- **Pages written directly under `docs/`** just live in the right folder; the
+  build never touches them.
+
+Links between pages must resolve in the *docs* layout, not the repo layout —
+`strict: true` fails the build on a broken internal link, which is the safety
+net when moving a page between sections.
 
 Avoid `pip install -e ".[docs]" --upgrade --upgrade-strategy eager` in your
 main dev venv: it drags unrelated transitive dependencies forward and
