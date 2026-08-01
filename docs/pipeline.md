@@ -2088,8 +2088,29 @@ drift from what the audience hears:
 | `3-review` | ≥ 3 s | the creative should hear this cue |
 
 Each graded row carries a `remediation` column naming the concrete edit that would
-restore full length (e.g. `duration_seconds: 5 → 0`). Applying it is a human decision;
-this tool never writes.
+restore full length: **`play_duration: 100`**. Applying it is a human decision; this
+tool never writes.
+
+### Why `play_duration: 100` and not `duration_seconds: 0`
+
+Both play the whole file — either satisfies the precedence table above. But only
+`play_duration` appears in `sfx_common.SFX_EDIT_FIELDS`, the set of fields the
+timeline edit journal replays:
+
+```python
+SFX_EDIT_FIELDS = ("volume_percentage", "ramp_in_seconds",
+                   "ramp_out_seconds", "play_duration")
+```
+
+A `duration_seconds` edit is **not journaled**, so the next time that config is
+rebuilt from a fresh skeleton (`xil parse` with the config absent) it reverts to the
+parser's `5.0` default and the cue silently re-clips — undoing a decision the creative
+already signed off. Setting `play_duration: 100` leaves `duration_seconds` in place but
+inert, and survives regeneration.
+
+`tests/test_sfx_impact.py::TestRemediation::test_remediation_field_is_journaled` asserts
+the recommended field stays inside `SFX_EDIT_FIELDS`, so this cannot silently regress if
+the journal's field list changes.
 
 ### Outputs
 

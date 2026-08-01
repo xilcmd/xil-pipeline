@@ -136,7 +136,34 @@ class TestTierThresholds:
 class TestRemediation:
     def test_impacted_cue_gets_a_concrete_edit(self):
         i = _measure(source="SFX/a_30s.mp3", duration_seconds=5.0)
-        assert i.remediation == "duration_seconds: 5 → 0"
+        assert i.remediation == "play_duration: 100"
+
+    def test_remediation_field_is_journaled(self):
+        """The whole point: the recommended fix must survive a skeleton rebuild.
+
+        ``duration_seconds`` is NOT in SFX_EDIT_FIELDS, so an edit to it reverts
+        to the parser's 5.0 default on the next regeneration.  Recommending it
+        would hand the creative a decision that silently undoes itself.
+        """
+        from xil_pipeline.sfx_common import SFX_EDIT_FIELDS
+
+        i = _measure(source="SFX/a_30s.mp3", duration_seconds=5.0)
+        field = i.remediation.split(":")[0].strip()
+        assert field in SFX_EDIT_FIELDS, (
+            f"remediation targets {field!r}, which the edit journal does not "
+            f"replay (journaled fields: {SFX_EDIT_FIELDS})"
+        )
+
+    def test_recommended_fix_actually_un_clips(self):
+        """Applying the remediation must move the cue out of an impacted tier."""
+        effect = {"source": "SFX/a_30s.mp3", "duration_seconds": 5.0}
+        assert _measure(**effect).tier == "3-review"
+
+        effect["play_duration"] = 100          # apply the recommendation
+        fixed = _measure(**effect)
+        assert fixed.tier == "EXCLUDED"
+        assert fixed.plays_now_s == pytest.approx(30.0)
+        assert fixed.delta_s == 0.0
 
     @pytest.mark.parametrize("kwargs", [
         {"source": "SFX/a_10s.mp3", "duration_seconds": 30.0},   # 1-nochange
@@ -228,7 +255,7 @@ class TestOutputs:
             CueImpact(show="s", episode="S01E01", cue='OUTRO, "MUSIC"',
                       source_file="a.mp3", duration_seconds=5.0, natural_s=30.0,
                       plays_now_s=5.0, delta_s=25.0, lost_pct=83.3, tier="3-review",
-                      remediation="duration_seconds: 5 → 0"),
+                      remediation="play_duration: 100"),
         ], configs_scanned=1)
 
     def test_csv_columns_and_quoting(self, report):

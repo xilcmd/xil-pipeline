@@ -28,6 +28,12 @@ Each impacted cue is graded into a tier and paired with the concrete config
 change that would un-clip it. **Nothing is ever written to a config** — this is
 a decision sheet, not a migration.
 
+The recommended fix is ``play_duration: 100``, not ``duration_seconds: 0``.
+Both play the whole file, but only ``play_duration`` is journaled in
+``SFX_EDIT_FIELDS``, so only it survives a skeleton rebuild — a
+``duration_seconds`` edit reverts to the parser's ``5.0`` default and silently
+re-clips a cue the creative had already approved.
+
 Usage::
 
     xil sfx-impact                                  # every show in the workspace
@@ -167,10 +173,18 @@ def _remediation_for(impact: CueImpact) -> str:
     """Return the config change that would let the cue play in full.
 
     Expressed as the edit a human would make, not applied by this tool.
+
+    Deliberately recommends ``play_duration: 100`` rather than the more obvious
+    ``duration_seconds: 0``.  Both play the whole file — ``play_duration`` wins
+    over ``duration_seconds`` in the mixer — but only ``play_duration`` is in
+    :data:`~xil_pipeline.sfx_common.SFX_EDIT_FIELDS`, so only it is replayed by
+    the edit journal when a config is rebuilt from a fresh skeleton.  A
+    ``duration_seconds`` edit silently reverts to the parser's ``5.0`` default
+    on the next regeneration, re-clipping audio someone had already signed off.
     """
     if impact.tier in ("1-nochange", "EXCLUDED", "MISSING"):
         return ""
-    return f'duration_seconds: {impact.duration_seconds:g} → 0'
+    return "play_duration: 100"
 
 
 def measure_cue(
@@ -484,6 +498,10 @@ def render_html(report: ImpactReport, scope: str) -> str:
 <code>5.0</code> into every skeleton entry. <em>Excluded</em> cues are looped beds or cues with a
 deliberate <code>play_duration</code>, which are never clipped by <code>duration_seconds</code>.
 Nothing here has been changed; the remediation column is the edit that would restore full length.</p>
+<p class="sub"><strong>Why <code>play_duration: 100</code> and not <code>duration_seconds: 0</code>?</strong>
+Both play the whole file, but only <code>play_duration</code> is replayed by the timeline edit
+journal. A <code>duration_seconds</code> edit is silently reset to <code>5.0</code> the next time the
+config is rebuilt from a skeleton — re-clipping a cue that was already approved.</p>
 <div class="wrap"><table><thead><tr>{head_html}</tr></thead>
 <tbody>{"".join(body_rows)}</tbody></table></div>
 </body></html>

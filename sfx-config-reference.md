@@ -140,10 +140,15 @@ Meaning depends on context:
 
 > **Watch this one on `source` cues.** `xil parse` writes a default of `5.0` into every
 > skeleton entry, so a long music bed dropped into a hinted cue is clipped to five
-> seconds unless you change it. Set `0` to play the file full-length. To see every cue
-> this is affecting across the workspace, run `xil sfx-impact` — it grades each one by
-> how much audio is being cut and names the edit that would restore it, without
-> modifying anything.
+> seconds unless you change it. To see every cue this is affecting across the workspace,
+> run `xil sfx-impact` — it grades each one by how much audio is being cut and names the
+> edit that would restore it, without modifying anything.
+>
+> **To un-clip a cue, set `play_duration: 100` rather than `duration_seconds: 0`.** Both
+> play the whole file, but `duration_seconds` is not in `SFX_EDIT_FIELDS`, so it is not
+> replayed by the timeline edit journal — a `duration_seconds` edit reverts to `5.0` the
+> next time the config is rebuilt from a skeleton, silently re-clipping the cue.
+> `play_duration` survives regeneration.
 
 ### `play_duration`
 
