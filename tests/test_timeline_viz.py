@@ -1132,3 +1132,65 @@ class TestTextTimelineMap:
         assert "myshow" in joined
         assert "3:40" in joined            # 220.0s duration
         assert "music/ambience omitted" in joined
+
+class TestPreviewLengthArithmetic:
+    """The modal's span preview must agree with what the mixer will render.
+
+    play_duration is a percentage of the SOURCE FILE, not of duration_seconds
+    (see mix_common.collect_stem_plans). Basing the preview on duration_seconds
+    made "Play Duration % = 100" look like a no-op on exactly the cues that
+    duration_seconds was clipping — inviting the user to undo a correct edit.
+    """
+
+    def _preview_length(self, tmp_path, dur_s, nat_s, pd):
+        """Run the real emitted _previewLength() in node and return its result."""
+        import json as _json
+        import shutil
+        import subprocess
+
+        if shutil.which("node") is None:
+            pytest.skip("node not available")
+
+        data = build_timeline_data(total_s=10.0, tag="TEST", dlg_labels=[],
+                                   amb_labels=[], mus_labels=[], sfx_labels=[])
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(data, out)
+        html = open(out, encoding="utf-8").read()
+        script = html[html.index("<script>") + len("<script>"):html.index("</script>")]
+
+        # Lift just the preview helper out of _applySfxEditToSpans.
+        start = script.index("function _previewLength(pd) {")
+        end = script.index("\n  }", start) + len("\n  }")
+        body = script[start:end]
+
+        harness = tmp_path / "h.js"
+        harness.write_text(
+            f"const durS = {_json.dumps(dur_s)}, natS = {_json.dumps(nat_s)};\n"
+            f"{body}\n"
+            f"console.log(JSON.stringify(_previewLength({_json.dumps(pd)})));\n",
+            encoding="utf-8",
+        )
+        r = subprocess.run(["node", str(harness)], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return _json.loads(r.stdout.strip())
+
+    def test_full_play_uses_source_length_not_duration_seconds(self, tmp_path):
+        """The regression: a 65s file clipped to 5s, user sets 100%."""
+        assert self._preview_length(tmp_path, 5.0, 65.0, 100) == 65.0
+
+    def test_partial_play_is_a_percentage_of_the_source(self, tmp_path):
+        assert self._preview_length(tmp_path, 5.0, 65.0, 50) == 32.5
+
+    def test_cleared_play_duration_falls_back_to_clipping(self, tmp_path):
+        """No play_duration → duration_seconds clips, capped at the file length."""
+        assert self._preview_length(tmp_path, 5.0, 65.0, None) == 5.0
+        assert self._preview_length(tmp_path, 30.0, 10.0, None) == 10.0
+
+    def test_no_clipping_configured_plays_whole_file(self, tmp_path):
+        assert self._preview_length(tmp_path, 0, 65.0, None) == 65.0
+
+    def test_generated_cue_falls_back_to_duration_seconds(self, tmp_path):
+        """No source file to probe — duration_seconds IS the rendered length."""
+        assert self._preview_length(tmp_path, 15.0, None, 100) == 15.0
+        assert self._preview_length(tmp_path, 15.0, None, 50) == 7.5
+
