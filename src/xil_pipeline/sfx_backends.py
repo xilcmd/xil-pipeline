@@ -41,6 +41,7 @@ import time
 from typing import Protocol, runtime_checkable
 
 import httpx
+from elevenlabs.client import ElevenLabs
 from elevenlabs.core.api_error import ApiError
 
 from xil_pipeline.log_config import get_logger
@@ -394,7 +395,7 @@ def _find_audioldm2_python(explicit: str | None, flag: str = "--audioldm2-python
 
 def make_sfx_backend(
     name: str,
-    client=None,
+    client: ElevenLabs | None = None,
     *,
     audioldm2_python: str | None = None,
     stableaudio_python: str | None = None,

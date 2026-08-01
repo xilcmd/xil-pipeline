@@ -44,6 +44,7 @@ import textwrap
 
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.mix_common import (
+    StemPlan,
     build_ambience_layer,
     build_dialogue_layer,
     build_foreground,
@@ -359,11 +360,11 @@ def _make_audacity_script(
 
 def dry_run_daw(
     tag: str,
-    stem_plans,
+    stem_plans: list[StemPlan],
     entries_index: dict,
     output_dir: str,
     stems_dir: str = "",
-    sfx_config=None,
+    sfx_config: SfxConfiguration | None = None,
     cast_config: dict | None = None,
     vintage_scenes: list[str] | None = None,
 ) -> None:
