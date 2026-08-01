@@ -1,6 +1,7 @@
 # Python
 venv/
 venv-chatterbox/
+venv-docs/
 logs/
 __pycache__/
 *.pyc
