@@ -220,6 +220,15 @@ pip install -e ".[all,dev]"
 pytest tests/ -v
 ```
 
+The `pre-push` hook runs `ruff` only, so pushing is instant — CI is the real
+gate and `main` requires a green check to merge. Run the full local gate when a
+branch is ready to ship, rather than on every push:
+
+```bash
+tools/check-all.sh          # ruff + pytest + strict docs build
+tools/check-all.sh --fast   # skip the docs build
+```
+
 ### Documentation
 
 `pyproject.toml`'s `docs` extra is the single source of truth for the docs

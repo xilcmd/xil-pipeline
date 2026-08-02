@@ -13,6 +13,13 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      # Only "test (ubuntu-latest, 3.13)" blocks a merge; the rest are
+      # informational.  With the default fail-fast, one of those informational
+      # jobs failing CANCELS the required one — which then reports "fail"
+      # without ever having run ("The strategy configuration was canceled
+      # because test.macos-latest_3_13 failed").  A flaky network-dependent
+      # test on macOS must not be able to block a merge that way.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.12", "3.13"]
