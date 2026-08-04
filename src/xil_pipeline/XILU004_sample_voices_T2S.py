@@ -132,38 +132,32 @@ def _gtts_generate(text: str, out_path: str) -> None:
 
 
 class _ChatterboxClient:
-    """Persistent subprocess bridge to the Chatterbox (or Turbo) TTS worker.
+    """Persistent subprocess bridge to the Chatterbox Turbo TTS worker.
 
-    With ``turbo=True`` drives ``chatterbox_turbo_worker.py`` (``ChatterboxTurboTTS``,
-    native paralinguistic tags); both ship in the same ``venv-chatterbox``.
+    Classic Chatterbox was removed in #62; only ``chatterbox_turbo_worker.py``
+    (``ChatterboxTurboTTS``, native paralinguistic tags) remains, in
+    ``venv-chatterbox``.
     """
 
-    _WORKER = os.path.join(os.path.dirname(__file__), "chatterbox_worker.py")
-    _WORKER_TURBO = os.path.join(os.path.dirname(__file__), "chatterbox_turbo_worker.py")
+    _WORKER = os.path.join(os.path.dirname(__file__), "chatterbox_turbo_worker.py")
 
     def __init__(
         self,
         python_path: str,
         voice_refs_dir: str = "voice_refs",
         device: str = "cuda",
-        exaggeration: float = 0.5,
-        cfg_weight: float = 0.5,
-        turbo: bool = False,
     ) -> None:
         self._python = python_path
         self._voice_refs_dir = voice_refs_dir
         self._device = device
-        self._exaggeration = exaggeration
-        self._cfg_weight = cfg_weight
-        self._turbo = turbo
         self._proc: subprocess.Popen | None = None
 
     @property
     def _label(self) -> str:
-        return "Chatterbox Turbo" if self._turbo else "Chatterbox"
+        return "Chatterbox Turbo"
 
     def _start(self) -> None:
-        worker = self._WORKER_TURBO if self._turbo else self._WORKER
+        worker = self._WORKER
         logger.info("Starting %s worker (%s, %s)…", self._label, self._python, self._device)
         self._proc = subprocess.Popen(
             [self._python, worker, self._device],
@@ -198,7 +192,9 @@ class _ChatterboxClient:
         return None
 
     def _cond_for(self, speaker_key: str) -> str:
-        suffix = ".turbo.conds.pt" if self._turbo else ".conds.pt"
+        # Turbo conds are NOT interchangeable with the classic .conds.pt files
+        # still on disk, so the suffix stays distinct.
+        suffix = ".turbo.conds.pt"
         return os.path.join(self._voice_refs_dir, f"{speaker_key}{suffix}")
 
     def generate(self, text: str, out_path: str, speaker_key: str) -> None:
@@ -213,10 +209,6 @@ class _ChatterboxClient:
             "ref_audio": ref,
             "cond_path": self._cond_for(speaker_key),
         }
-        if not self._turbo:
-            # Turbo ignores these — omit them to avoid per-line warnings.
-            req["exaggeration"] = self._exaggeration
-            req["cfg_weight"] = self._cfg_weight
         assert self._proc is not None
         self._proc.stdin.write(json.dumps(req) + "\n")
         self._proc.stdin.flush()
@@ -259,12 +251,13 @@ def get_parser() -> argparse.ArgumentParser:
             "TTS backend for sample generation. 'elevenlabs' (default) calls the ElevenLabs API "
             "and uses the voice_id from the cast config. 'gtts' generates a flat-voice draft via "
             "Google Translate TTS at no cost (ignores voice_id). 'chatterbox' uses local GPU TTS "
-            "with zero-shot voice cloning from voice_refs/<key>.wav clips. 'chatterbox-turbo' uses "
+            "with zero-shot voice cloning from voice_refs/<key>.wav clips ('chatterbox' is a "
+            "deprecated alias that warns and uses Turbo). 'chatterbox-turbo' uses "
             "the Chatterbox Turbo model in the same venv-chatterbox — it renders 19 native "
             "paralinguistic tags ([angry] [fear] [surprised] [happy] [crying] [sarcastic] "
             "[whispering] [dramatic] [narration] [advertisement] [laugh] [chuckle] [sigh] [gasp] "
             "[groan] [cough] [sniff] [shush] [clear throat]; exact spelling, no plurals), strips "
-            "all other tags, needs reference clips >5s, and ignores --exaggeration. Put a tag in "
+            "all other tags and needs reference clips >5s. Put a tag in "
             "--sample-text to audition a cue. "
             "Output lands in voice_samples/<TAG>/<backend>/ for side-by-side comparison."
         ),
@@ -279,11 +272,6 @@ def get_parser() -> argparse.ArgumentParser:
         help="Directory containing <speaker_key>.wav reference clips for Chatterbox "
              "zero-shot voice cloning (default: voice_refs/). "
              "Used with --backend chatterbox or chatterbox-turbo.",
-    )
-    parser.add_argument(
-        "--exaggeration", type=float, default=0.5, metavar="FLOAT",
-        help="Chatterbox emotion exaggeration level: 0.0 = flat, 1.0 = dramatic (default: 0.5). "
-             "Used only with --backend chatterbox (ignored by chatterbox-turbo).",
     )
     parser.add_argument(
         "--sample-text", default=None, metavar="TEXT",
@@ -311,6 +299,12 @@ def main() -> None:
         args = get_parser().parse_args()
 
         backend = args.backend
+        # Classic Chatterbox was removed in #62; resolve the alias before use.
+        if backend == "chatterbox":
+            logger.warning(
+                "--backend chatterbox was removed; using chatterbox-turbo instead."
+            )
+            backend = "chatterbox-turbo"
 
         if not args.dry_run and backend == "elevenlabs" and not os.environ.get("ELEVENLABS_API_KEY"):
             sys.exit("Error: ELEVENLABS_API_KEY environment variable is not set.")
@@ -356,8 +350,7 @@ def main() -> None:
             chatterbox_client = _ChatterboxClient(
                 python_path=python_path,
                 voice_refs_dir=args.voice_refs,
-                exaggeration=args.exaggeration,
-                turbo=(backend == "chatterbox-turbo"),
+
             )
 
         generated = 0

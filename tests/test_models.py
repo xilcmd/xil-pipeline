@@ -1195,12 +1195,12 @@ class TestResolveVenvPython:
     def test_explicit_wins(self, monkeypatch, tmp_path):
         # Explicit path is returned verbatim, even when XIL_CODEROOT is set.
         monkeypatch.setenv("XIL_CODEROOT", str(tmp_path))
-        assert models.resolve_venv_python("venv-audioldm2", "/custom/python3") == "/custom/python3"
+        assert models.resolve_venv_python("venv-chatterbox", "/custom/python3") == "/custom/python3"
 
     def test_code_root_exclusive_hit(self, monkeypatch, tmp_path):
-        py = _make_venv_python(tmp_path, "venv-audioldm2")
+        py = _make_venv_python(tmp_path, "venv-chatterbox")
         monkeypatch.setenv("XIL_CODEROOT", str(tmp_path))
-        assert models.resolve_venv_python("venv-audioldm2") == py
+        assert models.resolve_venv_python("venv-chatterbox") == py
 
     def test_code_root_exclusive_no_fallback(self, monkeypatch, tmp_path):
         # XIL_CODEROOT set but venv absent there → None, even though the workspace HAS it.
