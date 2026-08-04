@@ -199,19 +199,6 @@ def _default_chatterbox_python() -> str:
     return ""
 
 
-def _default_audioldm2_python() -> str:
-    """Return the venv-audioldm2 python path if it exists, or an empty string."""
-    from pathlib import Path
-    candidates = [
-        get_workspace_root() / "venv-audioldm2" / "bin" / "python",
-        Path(sys.executable).parent.parent.parent / "venv-audioldm2" / "bin" / "python",
-    ]
-    for c in candidates:
-        if c.exists():
-            return str(c)
-    return ""
-
-
 def _find_speakers_configs() -> list[str]:
     """Return relative paths to all speakers.json files, sorted by slug."""
     paths: list[str] = []
@@ -997,11 +984,8 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
                  gen_sfx: bool, gen_music: bool, gen_ambience: bool,
                  local_only: bool, terse: bool,
                  start_from: int | None, stop_at: int | None,
-                 exaggeration: float, cb_python: str = "",
-                 force: bool = False, cfg_weight: float = 0.5,
-                 sfx_backend: str = "elevenlabs", adl2_python: str = "",
-                 adl2_guidance: float = 3.5, adl2_steps: int = 200,
-                 adl2_neg_prompt: str = "low quality, noise") -> list[str]:
+                 cb_python: str = "", force: bool = False,
+                 sfx_backend: str = "elevenlabs") -> list[str]:
     """Build the xil-produce command list."""
     module = _STAGE_MODULES["produce"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
@@ -1023,26 +1007,11 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
         cmd += ["--start-from", str(int(start_from))]
     if stop_at is not None and stop_at > 0:
         cmd += ["--stop-at", str(int(stop_at))]
-    if backend in ("chatterbox", "chatterbox-turbo"):
-        # exaggeration/cfg-weight apply only to classic Chatterbox; Turbo ignores them.
-        if backend == "chatterbox":
-            if exaggeration != 0.5:
-                cmd += ["--exaggeration", f"{exaggeration:.2f}"]
-            if cfg_weight != 0.5:
-                cmd += ["--cfg-weight", f"{cfg_weight:.2f}"]
+    if backend == "chatterbox-turbo":
         if cb_python and cb_python.strip():
             cmd += ["--chatterbox-python", cb_python.strip()]
     if sfx_backend and sfx_backend != "elevenlabs":
         cmd += ["--sfx-backend", sfx_backend]
-    if sfx_backend == "audioldm2":
-        if adl2_python and adl2_python.strip():
-            cmd += ["--audioldm2-python", adl2_python.strip()]
-        if adl2_guidance != 3.5:
-            cmd += ["--audioldm2-guidance", f"{adl2_guidance:.1f}"]
-        if adl2_steps != 200:
-            cmd += ["--audioldm2-steps", str(int(adl2_steps))]
-        if adl2_neg_prompt and adl2_neg_prompt.strip() != "low quality, noise":
-            cmd += ["--audioldm2-negative-prompt", adl2_neg_prompt.strip()]
     if force:
         cmd.append("--force")
     return cmd
@@ -1569,7 +1538,7 @@ def _build_app():
                                                             elem_id="prod-dry-run")
                             prod_backend_dd = gr.Dropdown(
                                 label="--backend  (dialogue voice generator)",
-                                choices=["elevenlabs", "gtts", "chatterbox", "chatterbox-turbo"],
+                                choices=["elevenlabs", "gtts", "chatterbox-turbo"],
                                 value="chatterbox-turbo",
                                 elem_id="prod-backend",
                             )
@@ -1581,7 +1550,7 @@ def _build_app():
                             prod_terse_cb      = gr.Checkbox(label="--terse")
                         prod_sfx_backend_dd = gr.Dropdown(
                             label="--sfx-backend  (SFX / music / ambience generator)",
-                            choices=["elevenlabs", "audioldm2"],
+                            choices=["elevenlabs"],
                             value="elevenlabs",
                         )
                         with gr.Row():
@@ -1593,34 +1562,9 @@ def _build_app():
                                 label="--stop-at  (seq, 0 = all)",
                                 value=0, minimum=0, precision=0,
                             )
-                        prod_exaggeration = gr.Slider(
-                            label="--exaggeration  (classic Chatterbox only, ignored by Turbo, 0.0–1.0)",
-                            minimum=0.0, maximum=1.0, step=0.05, value=0.5,
-                        )
-                        prod_cfg_weight = gr.Slider(
-                            label="--cfg-weight  (classic Chatterbox only, ignored by Turbo, 0.1–1.0)",
-                            minimum=0.1, maximum=1.0, step=0.05, value=0.5,
-                        )
                         prod_cb_python = gr.Textbox(
                             label="--chatterbox-python  (blank = auto-detect venv-chatterbox/)",
                             placeholder=_default_chatterbox_python(),
-                        )
-                        prod_adl2_python = gr.Textbox(
-                            label="--audioldm2-python  (blank = auto-detect venv-audioldm2/)",
-                            placeholder=_default_audioldm2_python(),
-                        )
-                        with gr.Row():
-                            prod_adl2_guidance = gr.Number(
-                                label="--audioldm2-guidance  (default: 3.5)",
-                                value=3.5, minimum=1.0, maximum=10.0, step=0.5,
-                            )
-                            prod_adl2_steps = gr.Number(
-                                label="--audioldm2-steps  (default: 200)",
-                                value=200, minimum=10, maximum=1000, step=10, precision=0,
-                            )
-                        prod_adl2_neg_prompt = gr.Textbox(
-                            label="--audioldm2-negative-prompt",
-                            value="low quality, noise",
                         )
                         with gr.Row():
                             prod_force_cb = gr.Checkbox(
@@ -1735,9 +1679,8 @@ def _build_app():
                     yield from _execute_cmd(cmd)
 
                 def run_produce(ep, dry_run, backend, gen_sfx, gen_music, gen_amb,
-                                local_only, terse, start_from, stop_at, exaggeration,
-                                cfg_weight, cb_python, force, sfx_backend,
-                                adl2_python, adl2_guidance, adl2_steps, adl2_neg_prompt):
+                                local_only, terse, start_from, stop_at,
+                                cb_python, force, sfx_backend):
                     if not ep:
                         yield "Select an episode first."
                         return
@@ -1749,13 +1692,8 @@ def _build_app():
                                        local_only, terse,
                                        int(start_from) if start_from else None,
                                        int(stop_at) if stop_at else None,
-                                       exaggeration, cb_python or "", force=force,
-                                       cfg_weight=cfg_weight,
-                                       sfx_backend=sfx_backend or "elevenlabs",
-                                       adl2_python=adl2_python or "",
-                                       adl2_guidance=adl2_guidance or 3.5,
-                                       adl2_steps=int(adl2_steps) if adl2_steps else 200,
-                                       adl2_neg_prompt=adl2_neg_prompt or "low quality, noise")
+                                       cb_python or "", force=force,
+                                       sfx_backend=sfx_backend or "elevenlabs")
                     yield from _execute_cmd(cmd)
 
                 def run_assemble(ep, gap_ms, parsed_path, output):
@@ -1842,10 +1780,8 @@ def _build_app():
                     inputs=[run_ep_dd, prod_dry_run_cb, prod_backend_dd,
                              prod_gen_sfx_cb, prod_gen_music_cb, prod_gen_amb_cb,
                              prod_local_only_cb, prod_terse_cb,
-                             prod_start_from, prod_stop_at, prod_exaggeration,
-                             prod_cfg_weight, prod_cb_python, prod_force_cb,
-                             prod_sfx_backend_dd, prod_adl2_python,
-                             prod_adl2_guidance, prod_adl2_steps, prod_adl2_neg_prompt],
+                             prod_start_from, prod_stop_at,
+                             prod_cb_python, prod_force_cb, prod_sfx_backend_dd],
                     outputs=log_box,
                 )
                 asm_btn.click(

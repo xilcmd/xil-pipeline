@@ -38,7 +38,7 @@ def get_workspace_root() -> Path:
 
 def get_code_root() -> Path | None:
     """Return the **code root** — the directory that holds the optional local-model
-    virtualenvs (``venv-chatterbox``, ``venv-whisper``, ``venv-audioldm2``).
+    virtualenvs (``venv-chatterbox``, ``venv-whisper``).
 
     Resolves the ``XIL_CODEROOT`` environment variable (absolute path, tilde-expanded),
     or ``None`` when it is unset.  This is distinct from :func:`get_workspace_root`
@@ -53,13 +53,13 @@ def get_code_root() -> Path | None:
 def resolve_venv_python(venv_name: str, explicit: str | None = None) -> str | None:
     """Resolve the ``python3`` interpreter for an optional local-model venv.
 
-    Used to locate ``venv-chatterbox`` / ``venv-whisper`` / ``venv-audioldm2``, which
+    Used to locate ``venv-chatterbox`` / ``venv-whisper``, which
     carry heavy ML dependencies and are never installed into the main package.
 
     Resolution order:
 
     1. *explicit* — a caller-supplied interpreter path (e.g. the per-command
-       ``--chatterbox-python`` / ``--whisper-python`` / ``--audioldm2-python`` flag).
+       ``--chatterbox-python`` / ``--whisper-python`` flag).
        Wins when provided.
     2. ``XIL_CODEROOT`` — when set, ``$XIL_CODEROOT/<venv_name>/bin/python3`` is used
        **exclusively**: it overrides auto-detection entirely and there is **no
@@ -68,7 +68,7 @@ def resolve_venv_python(venv_name: str, explicit: str | None = None) -> str | No
        to the running install.
 
     Args:
-        venv_name: Directory name of the venv (e.g. ``"venv-audioldm2"``).
+        venv_name: Directory name of the venv (e.g. ``"venv-chatterbox"``).
         explicit: An interpreter path that takes precedence over all detection.
 
     Returns:

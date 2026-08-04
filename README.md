@@ -18,9 +18,8 @@ pip install xil-pipeline[dev]       # development and testing
 
 The default dialogue backend is the ElevenLabs API. For a free, local, GPU-accelerated
 alternative with per-character voice cloning, set up a dedicated `venv-chatterbox/` at your
-code root (`XIL_CODEROOT`). It hosts **both** the classic Chatterbox model and **Chatterbox
-Turbo** — Turbo natively renders 19 paralinguistic tags (emotion, delivery style, and vocal
-gestures — see [the pipeline guide](https://xil-pipeline.readthedocs.io/en/latest/pipeline/#chatterbox-turbo-paralinguistic-tags)).
+code root (`XIL_CODEROOT`). It hosts **Chatterbox Turbo**, which natively renders 19
+paralinguistic tags (emotion, delivery style, and vocal gestures — see [the pipeline guide](https://xil-pipeline.readthedocs.io/en/latest/pipeline/#chatterbox-turbo-paralinguistic-tags)).
 This venv carries heavy ML dependencies (PyTorch) and is intentionally kept out of the main
 package; each `xil` command auto-detects it at run time.
 
@@ -30,7 +29,7 @@ python -m venv venv-chatterbox
 venv-chatterbox/bin/pip install --upgrade pip
 venv-chatterbox/bin/pip install 'torch==2.6.0' 'torchaudio==2.6.0' \
     --index-url https://download.pytorch.org/whl/cu124
-venv-chatterbox/bin/pip install chatterbox-tts      # ships both classic and Turbo
+venv-chatterbox/bin/pip install chatterbox-tts      # provides Chatterbox Turbo
 
 # Model weights auto-download from Hugging Face on first run. If the Turbo repo
 # (ResembleAI/chatterbox-turbo) is gated for your account, authenticate first:
@@ -42,11 +41,12 @@ requires clips **longer than 5 seconds**) and select the backend:
 
 ```bash
 xil-produce --episode S01E01 --backend chatterbox-turbo   # native paralinguistic tags
-xil-produce --episode S01E01 --backend chatterbox         # classic (strips all [tags])
 ```
 
-`--chatterbox-python PATH` overrides the auto-detected venv Python. `--exaggeration` /
-`--cfg-weight` apply to classic Chatterbox only — Turbo ignores them.
+`--chatterbox-python PATH` overrides the auto-detected venv Python.
+
+Classic Chatterbox was removed in v0.3.3 — `--backend chatterbox` is a deprecated alias
+that warns and generates with Turbo.
 
 Under `chatterbox-turbo` you can write cues straight into dialogue —
 `[angry]` `[fear]` `[surprised]` `[happy]` `[crying]` `[sarcastic]` `[whispering]` `[dramatic]`

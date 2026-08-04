@@ -236,11 +236,12 @@ def shared_sfx_path(sfx_dir: str, effect_key: str, backend: str = "elevenlabs") 
     Args:
         sfx_dir: Base directory for shared SFX assets.
         effect_key: Direction text key (e.g. ``'BEAT'``).
-        backend: Generating backend name (``'elevenlabs'`` or ``'audioldm2'``).
+        backend: Generating backend name.  Only ``'elevenlabs'`` is generatable
+            now; other names still resolve so trial-era assets stay reachable.
 
     Returns:
         Full path like ``SFX/beat.mp3`` (elevenlabs) or
-        ``SFX/sfx_door-opens.audioldm2.mp3`` (audioldm2).
+        ``SFX/sfx_door-opens.audioldm2.mp3`` (a removed trial backend).
     """
     slug = slugify_effect_key(effect_key)
     suffix = "" if backend == "elevenlabs" else f".{backend}"
@@ -846,7 +847,7 @@ def dry_run_sfx(
         sfx_config: Raw SFX config dict.
         stems_dir: Episode stems directory.
         sfx_dir: Shared SFX library directory.
-        backend_name: SFX backend (``'elevenlabs'`` or ``'audioldm2'``).  Model
+        backend_name: SFX backend (``'elevenlabs'``).  Model
             assets are matched against the backend-tagged filename, and local
             backends report generation as free instead of an API credit estimate.
     """

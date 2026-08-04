@@ -326,12 +326,16 @@ sequenceDiagram
 > spending ElevenLabs credits. No API key required. eleven_v3 inline tags are stripped automatically.
 > SFX/music/ambience generation is unaffected. Requires: `pip install xil-pipeline[tts-alt]`
 
-> **Local voice clones:** `--backend chatterbox` and `--backend chatterbox-turbo` run local
-> GPU TTS in `venv-chatterbox/` (driven by `chatterbox_worker.py` / `chatterbox_turbo_worker.py`),
-> cloning each character from `voice_refs/<key>.wav`. Classic `chatterbox` strips all `[tags]`;
-> **`chatterbox-turbo`** natively renders 19 paralinguistic cues (see below) and strips the rest.
-> Turbo reuses the same venv, requires reference clips **>5 s**, ignores
-> `--exaggeration`/`--cfg-weight`, and caches conditionals as `voice_refs/<key>.turbo.conds.pt`.
+> **Local voice clones:** `--backend chatterbox-turbo` runs local GPU TTS in `venv-chatterbox/`
+> (driven by `chatterbox_turbo_worker.py`), cloning each character from `voice_refs/<key>.wav`.
+> It natively renders 19 paralinguistic cues (see below) and strips every other bracketed tag.
+> Requires reference clips **>5 s**, and caches conditionals as `voice_refs/<key>.turbo.conds.pt`.
+>
+> Classic `chatterbox` was **removed in #62**; `--backend chatterbox` is a deprecated alias that
+> warns and generates with Turbo. The `.turbo.` cache suffix is deliberately kept distinct: Turbo
+> conditionals are **not** interchangeable with the classic `.conds.pt` files still on disk.
+> Historical stems and logs recording `backend: chatterbox` remain valid and are still parsed by
+> `xil-stem-log`.
 
 #### Chatterbox Turbo paralinguistic tags
 
@@ -368,23 +372,19 @@ xil sample --episode S01E01 --backend chatterbox-turbo \
     --sample-text "[sarcastic] I am {name}, and this is fine."
 ```
 
-> **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs|audioldm2|stableaudio`
-> (default `elevenlabs`) selects the generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue
-> `--backend`. `audioldm2` runs a local **AudioLDM 2 Large** diffusion model in its own
-> `venv-audioldm2/` (driven by `audioldm2_worker.py`, same persistent JSON-over-stdio subprocess
-> pattern as Chatterbox) — free, GPU-accelerated, no API credits. `stableaudio` runs a local
-> **Stable Audio Open 1.0** model (driven by `stableaudio_worker.py`, **sharing the same
-> `venv-audioldm2/`** — `StableAudioPipeline` ships in the installed diffusers) — 44.1 kHz stereo,
-> up to 47.55 s per clip; the weights are license-gated on HuggingFace (one-time: accept the
-> license at the model page, then `HF_TOKEN` or `huggingface-cli login`). Model-generated assets
-> are stored backend-tagged (`SFX/<slug>.audioldm2.mp3`, `SFX/<slug>.stableaudio.mp3`) so audio
-> from different backends coexists and a backend switch never silently reuses the wrong file.
-> Tunables: `--audioldm2-guidance` (prompt adherence, default 3.5), `--audioldm2-steps` (default
-> 200), `--audioldm2-negative-prompt`, `--audioldm2-python` (auto-detected); for Stable Audio,
-> `--stableaudio-guidance` (default 7.0), `--stableaudio-steps` (default 100),
-> `--stableaudio-negative-prompt`, `--stableaudio-seed` (reproducibility), `--stableaudio-python`
-> (defaults to the shared venv-audioldm2 Python). Generation is delegated through the `SfxBackend`
-> adapter in `sfx_backends.py`, which both `xil-produce` and `xil-sfx` share.
+> **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs` (default) selects the
+> generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue `--backend`. Generation is
+> delegated through the `SfxBackend` adapter in `sfx_backends.py`, which both `xil-produce` and
+> `xil-sfx` share.
+>
+> Two local diffusion backends — **AudioLDM 2 Large** and **Stable Audio Open 1.0**, each driven
+> by a persistent worker subprocess in a `venv-audioldm2/` — were **removed in #62** after both
+> trials produced unusable audio. `elevenlabs` is the only remaining choice; the adapter and
+> factory are kept as the seam a future backend plugs into.
+>
+> `shared_sfx_path()` still appends a `.<backend>` infix for non-ElevenLabs backends, because
+> assets generated during those trials (e.g. `SFX/<slug>.audioldm2.mp3`) may still exist on disk
+> and remain playable when referenced as a cue `source`.
 
 ---
 
@@ -854,12 +854,6 @@ xil sfx --episode S02E03 --gen-sfx --dry-run
 xil sfx --episode S02E03 --gen-music --dry-run
 xil sfx --episode S02E03 --gen-ambience --dry-run
 xil sfx --episode S02E03
-# Or generate SFX/music/ambience locally for free with AudioLDM 2 (needs venv-audioldm2/):
-xil sfx --episode S02E03 --sfx-backend audioldm2 --gen-sfx --dry-run
-xil sfx --episode S02E03 --sfx-backend audioldm2
-# Or with Stable Audio Open (same venv; HF license-gated weights, seed = reproducible):
-xil sfx --episode S02E03 --sfx-backend stableaudio --gen-sfx --dry-run
-xil sfx --episode S02E03 --sfx-backend stableaudio --stableaudio-seed 42
 
 # 6. Assemble master MP3 or export DAW layers
 xil assemble --episode S02E03
