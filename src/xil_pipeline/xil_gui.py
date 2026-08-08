@@ -186,6 +186,17 @@ def _script_choices() -> list[str]:
     return sorted(glob.glob(os.path.join(str(root), "scripts", "*.md")))
 
 
+def _default_mmaudio_python() -> str:
+    """Return the venv-mmaudio python path if it exists, or an empty string."""
+    for cand in (
+        get_workspace_root() / "venv-mmaudio" / "bin" / "python3",
+        Path(sys.executable).parent.parent.parent / "venv-mmaudio" / "bin" / "python3",
+    ):
+        if cand.exists():
+            return str(cand)
+    return ""
+
+
 def _default_chatterbox_python() -> str:
     """Return the first existing venv-chatterbox python3, or an empty string."""
     from pathlib import Path
@@ -985,7 +996,8 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
                  local_only: bool, terse: bool,
                  start_from: int | None, stop_at: int | None,
                  cb_python: str = "", force: bool = False,
-                 sfx_backend: str = "elevenlabs") -> list[str]:
+                 sfx_backend: str = "elevenlabs", mm_python: str = "",
+                 mm_accept_nc: bool = False) -> list[str]:
     """Build the xil-produce command list."""
     module = _STAGE_MODULES["produce"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
@@ -1012,6 +1024,13 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
             cmd += ["--chatterbox-python", cb_python.strip()]
     if sfx_backend and sfx_backend != "elevenlabs":
         cmd += ["--sfx-backend", sfx_backend]
+    if sfx_backend == "mmaudio":
+        # MMAudio refuses to start without the non-commercial acknowledgement,
+        # so pass it through rather than letting the run fail downstream.
+        if mm_accept_nc:
+            cmd.append("--mmaudio-accept-noncommercial")
+        if mm_python and mm_python.strip():
+            cmd += ["--mmaudio-python", mm_python.strip()]
     if force:
         cmd.append("--force")
     return cmd
@@ -1550,8 +1569,17 @@ def _build_app():
                             prod_terse_cb      = gr.Checkbox(label="--terse")
                         prod_sfx_backend_dd = gr.Dropdown(
                             label="--sfx-backend  (SFX / music / ambience generator)",
-                            choices=["elevenlabs"],
+                            choices=["elevenlabs", "mmaudio"],
                             value="elevenlabs",
+                        )
+                        prod_mm_python = gr.Textbox(
+                            label="--mmaudio-python  (blank = auto-detect venv-mmaudio/)",
+                            placeholder=_default_mmaudio_python(),
+                        )
+                        prod_mm_accept_nc = gr.Checkbox(
+                            label=("--mmaudio-accept-noncommercial  \u26a0\ufe0f MMAudio weights are "
+                                   "CC BY-NC 4.0 — generated audio must NOT be used commercially"),
+                            value=False,
                         )
                         with gr.Row():
                             prod_start_from = gr.Number(
@@ -1680,7 +1708,7 @@ def _build_app():
 
                 def run_produce(ep, dry_run, backend, gen_sfx, gen_music, gen_amb,
                                 local_only, terse, start_from, stop_at,
-                                cb_python, force, sfx_backend):
+                                cb_python, force, sfx_backend, mm_python, mm_accept_nc):
                     if not ep:
                         yield "Select an episode first."
                         return
@@ -1693,7 +1721,9 @@ def _build_app():
                                        int(start_from) if start_from else None,
                                        int(stop_at) if stop_at else None,
                                        cb_python or "", force=force,
-                                       sfx_backend=sfx_backend or "elevenlabs")
+                                       sfx_backend=sfx_backend or "elevenlabs",
+                                       mm_python=mm_python or "",
+                                       mm_accept_nc=bool(mm_accept_nc))
                     yield from _execute_cmd(cmd)
 
                 def run_assemble(ep, gap_ms, parsed_path, output):
@@ -1781,7 +1811,8 @@ def _build_app():
                              prod_gen_sfx_cb, prod_gen_music_cb, prod_gen_amb_cb,
                              prod_local_only_cb, prod_terse_cb,
                              prod_start_from, prod_stop_at,
-                             prod_cb_python, prod_force_cb, prod_sfx_backend_dd],
+                             prod_cb_python, prod_force_cb, prod_sfx_backend_dd,
+                             prod_mm_python, prod_mm_accept_nc],
                     outputs=log_box,
                 )
                 asm_btn.click(

@@ -124,13 +124,44 @@ def get_parser() -> argparse.ArgumentParser:
                         help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
     parser.add_argument("--local-only", action="store_true",
                         help="Only place stems for effects already present in SFX/; skip API generation")
-    parser.add_argument("--sfx-backend", choices=["elevenlabs"],
+    parser.add_argument("--sfx-backend", choices=["elevenlabs", "mmaudio"],
                         default="elevenlabs", metavar="BACKEND",
                         help=(
-                            "Backend for SFX/music/ambience generation. Only 'elevenlabs' "
-                            "(default) remains: it calls the ElevenLabs Sound Effects API. "
-                            "The local diffusion backends (audioldm2, stableaudio) were "
-                            "removed in #62."
+                            "Backend for SFX/music/ambience generation, independent of the "
+                            "dialogue --backend. 'elevenlabs' (default) calls the ElevenLabs "
+                            "Sound Effects API. 'mmaudio' runs MMAudio locally in "
+                            "venv-mmaudio — free and GPU-accelerated, writes backend-tagged "
+                            "assets to SFX/<slug>.mmaudio.mp3. MMAudio's weights are "
+                            "CC BY-NC 4.0 (non-commercial only) and require "
+                            "--mmaudio-accept-noncommercial."
+                        ))
+    parser.add_argument("--mmaudio-python", default=None, metavar="PATH",
+                        help=(
+                            "Path to the Python executable in the MMAudio venv "
+                            "(default: auto-detect ./venv-mmaudio/bin/python3). "
+                            "Used only with --sfx-backend mmaudio."
+                        ))
+    parser.add_argument("--mmaudio-duration", type=float, default=8.0, metavar="FLOAT",
+                        help=(
+                            "Generation length in seconds before trimming (default: 8.0, "
+                            "MMAudio's training duration). The result is trimmed to each "
+                            "cue's duration_seconds; generating at the native length and "
+                            "trimming gives better audio than asking for a short clip."
+                        ))
+    parser.add_argument("--mmaudio-cfg", type=float, default=4.5, metavar="FLOAT",
+                        help="MMAudio classifier-free guidance strength (default: 4.5).")
+    parser.add_argument("--mmaudio-steps", type=int, default=25, metavar="INT",
+                        help="MMAudio flow-matching sampling steps (default: 25).")
+    parser.add_argument("--mmaudio-negative-prompt", default="", metavar="STR",
+                        help="Optional MMAudio negative prompt (default: none).")
+    parser.add_argument("--mmaudio-seed", type=int, default=None, metavar="INT",
+                        help="MMAudio reproducibility seed (default: nondeterministic).")
+    parser.add_argument("--mmaudio-accept-noncommercial", action="store_true",
+                        help=(
+                            "Acknowledge that MMAudio's weights are CC BY-NC 4.0 "
+                            "(NON-COMMERCIAL USE ONLY) and that generated audio must not "
+                            "appear in a monetised production. Required for "
+                            "--sfx-backend mmaudio."
                         ))
 
     return parser
@@ -186,7 +217,17 @@ def main() -> None:
         if args.dry_run:
             dry_run_sfx(entries, sfx_config_data, stems_dir, backend_name=args.sfx_backend)
         else:
-            sfx_backend = make_sfx_backend(args.sfx_backend, client=client)
+            sfx_backend = make_sfx_backend(
+                args.sfx_backend,
+                client=client,
+                mmaudio_python=args.mmaudio_python,
+                mmaudio_cfg=args.mmaudio_cfg,
+                mmaudio_steps=args.mmaudio_steps,
+                mmaudio_negative_prompt=args.mmaudio_negative_prompt,
+                mmaudio_seed=args.mmaudio_seed,
+                mmaudio_duration=args.mmaudio_duration,
+                accept_noncommercial=args.mmaudio_accept_noncommercial,
+            )
             try:
                 generate_sfx(
                     entries, sfx_config_data, stems_dir, client=client,
