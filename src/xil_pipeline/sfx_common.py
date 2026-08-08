@@ -595,7 +595,8 @@ def ensure_shared_sfx(
             if prompt_influence is None:
                 prompt_influence = defaults.get("prompt_influence", 0.3)
             backend.generate_to(path, effect.prompt, effect.duration_seconds, prompt_influence)
-            tag_mp3(path, show=show, title=effect_key)
+            tag_mp3(path, show=show, title=effect_key,
+                    comments=getattr(backend, "asset_comment", None))
             return path
     elif effect.type == "silence":
         duration_ms = int(effect.duration_seconds * 1000)
@@ -607,7 +608,11 @@ def ensure_shared_sfx(
             prompt_influence = defaults.get("prompt_influence", 0.3)
         backend.generate_to(path, effect.prompt, effect.duration_seconds, prompt_influence)
 
-    tag_mp3(path, show=show, title=effect_key)
+    # A backend may attach a provenance/licence note (MMAudio's weights are
+    # CC BY-NC 4.0), so the constraint travels with the file rather than living
+    # only in the filename infix.
+    tag_mp3(path, show=show, title=effect_key,
+            comments=getattr(backend, "asset_comment", None) if backend else None)
 
     return path
 

@@ -54,6 +54,42 @@ Under `chatterbox-turbo` you can write cues straight into dialogue —
 `[sniff]` `[shush]` `[clear throat]`. Spelling is exact (no plurals: `[laugh]`, not `[laughs]`);
 any other bracketed tag is stripped, so ElevenLabs-only tags can safely stay in a shared script.
 
+### Optional: local SFX generation (MMAudio) — non-commercial only
+
+`--sfx-backend mmaudio` generates sound effects locally instead of calling the
+ElevenLabs API. It runs in a dedicated `venv-mmaudio/`, needs ~6 GB of VRAM, and
+installs from a git clone rather than PyPI:
+
+```bash
+python -m venv venv-mmaudio
+git clone https://github.com/hkchengrex/MMAudio
+venv-mmaudio/bin/pip install -e MMAudio
+
+# MMAudio declares `torch >= 2.5.1` with no upper bound, so the line above pulls
+# the newest torch — currently a CUDA 13 build. On a CUDA 12.x driver that
+# silently falls back to CPU ("NVIDIA driver on your system is too old") and
+# breaks torchaudio. Re-pin a driver-matched stack AFTERWARDS, not before:
+venv-mmaudio/bin/pip install 'torch==2.6.0' 'torchaudio==2.6.0' 'torchvision==0.21.0' \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# Confirm the GPU is actually visible before generating anything:
+venv-mmaudio/bin/python -c "import torch; print(torch.cuda.is_available())"   # must print True
+```
+
+> **⚠️ MMAudio's model weights are CC BY-NC 4.0 — non-commercial use only.** The code is
+> MIT licensed; the checkpoints are not. Audio generated here must not appear in a
+> monetised production. `--mmaudio-accept-noncommercial` is required or the backend
+> refuses to start, and every generated asset is tagged `.mmaudio` in its filename and
+> carries the licence notice in its ID3 comment so it stays identifiable later.
+
+```bash
+xil-sfx --episode S01E01 --gen-sfx --sfx-backend mmaudio --mmaudio-accept-noncommercial
+```
+
+MMAudio is trained at 8 seconds, so cues are generated at that length and trimmed to
+each cue's `duration_seconds` — this produces better audio than asking the model for a
+short clip directly.
+
 ## Quick Start
 
 See [`samples/Tech_Deep_Dive_S01E04.md`](samples/Tech_Deep_Dive_S01E04.md) for an example of the markdown script format the pipeline expects. It demonstrates dialogue, acting directions, SFX/ambience/music cues, beats, sections, and scenes. [`samples/S01E04_techdeepdive_2026-04-02.mp3`](samples/S01E04_techdeepdive_2026-04-02.mp3) is the rendered output — a two-host tech podcast segment generated entirely from that script.

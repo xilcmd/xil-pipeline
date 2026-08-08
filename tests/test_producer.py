@@ -1056,10 +1056,17 @@ class TestChatterboxAliasRemoval:
                      "--stableaudio-python", "--stableaudio-seed"):
             assert dead not in opts, f"{dead} should have been removed"
 
-    def test_sfx_backend_only_offers_elevenlabs(self):
+    def test_sfx_backend_never_offers_the_removed_backends(self):
+        """The removed trials must not reappear as choices.
+
+        Pinning an exact list was wrong — mmaudio was added in #64. The durable
+        invariant is that audioldm2/stableaudio stay gone while elevenlabs stays.
+        """
         parser = producer.get_parser()
         action = next(a for a in parser._actions if "--sfx-backend" in a.option_strings)
-        assert action.choices == ["elevenlabs"]
+        assert "elevenlabs" in action.choices
+        assert "audioldm2" not in action.choices
+        assert "stableaudio" not in action.choices
 
     def test_backend_choices_drop_classic_chatterbox_but_keep_the_alias(self):
         parser = producer.get_parser()

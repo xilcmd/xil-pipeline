@@ -9,14 +9,20 @@ The local-model path is exercised with a fake backend and a stub worker script,
 mirroring how test_pipeline_lifecycle.py uses gtts to avoid heavy dependencies.
 """
 
+import json
 import os
+import sys
+import textwrap
+import unittest.mock
 
 import pytest
 from pydub import AudioSegment
 
 from xil_pipeline.sfx_backends import (
     ElevenLabsSfxBackend,
+    MMAudioSfxBackend,
     SfxBackend,
+    _MMAudioClient,
     make_sfx_backend,
 )
 from xil_pipeline.sfx_common import generate_sfx, shared_sfx_path
@@ -196,3 +202,180 @@ class TestGenerateSfxWithBackend:
 
         assert (tmp_path / "SFX" / "sfx_test-tone.mp3").exists()
         assert not (tmp_path / "SFX" / "sfx_test-tone.audioldm2.mp3").exists()
+
+
+# ── MMAudio ──────────────────────────────────────────────────────────────────
+
+_STUB_WORKER_OK = textwrap.dedent(
+    """
+    import json, os, sys
+    print(json.dumps({"ready": True, "sr": 44100, "device": "cpu"}), flush=True)
+    for raw in sys.stdin:
+        raw = raw.strip()
+        if not raw:
+            continue
+        req = json.loads(raw)
+        out = req["out_path"]
+        os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(req, f)
+        print(json.dumps({"done": True}), flush=True)
+    """
+)
+
+_STUB_WORKER_ERR = textwrap.dedent(
+    """
+    import json, sys
+    print(json.dumps({"ready": True, "sr": 44100}), flush=True)
+    for raw in sys.stdin:
+        if raw.strip():
+            print(json.dumps({"error": "boom"}), flush=True)
+    """
+)
+
+
+def _write_stub(tmp_path, body):
+    stub = tmp_path / "stub_worker.py"
+    stub.write_text(body, encoding="utf-8")
+    return str(stub)
+
+
+class TestMMAudioLicenceGate:
+    """MMAudio's weights are CC BY-NC 4.0 — construction must be deliberate.
+
+    Audio that cannot legally appear in a monetised episode must not be
+    generatable by accident.
+    """
+
+    def test_refuses_without_acknowledgement(self):
+        with pytest.raises(ValueError, match="CC BY-NC 4.0"):
+            MMAudioSfxBackend(object())
+
+    def test_builds_with_acknowledgement(self):
+        backend = MMAudioSfxBackend(object(), accept_noncommercial=True)
+        assert backend.name == "mmaudio"
+
+    def test_factory_refuses_without_acknowledgement(self):
+        with unittest.mock.patch(
+            "xil_pipeline.sfx_backends._find_mmaudio_python", return_value=sys.executable
+        ), pytest.raises(ValueError, match="CC BY-NC 4.0"):
+            make_sfx_backend("mmaudio")
+
+    def test_asset_comment_carries_the_licence(self):
+        backend = MMAudioSfxBackend(object(), accept_noncommercial=True)
+        assert "NON-COMMERCIAL" in backend.asset_comment.upper()
+        assert "CC BY-NC" in backend.asset_comment
+
+    def test_satisfies_the_backend_protocol(self):
+        assert isinstance(MMAudioSfxBackend(object(), accept_noncommercial=True), SfxBackend)
+
+
+class TestMMAudioDuration:
+    """Generate at the training duration, then trim.
+
+    MMAudio is trained at 8 s and warns that deviation degrades quality, but
+    the trim cannot be left to the mixer: for a prompt-generated cue
+    duration_seconds is the *generation length* and there is no mix-time clip
+    (that only applies to source= cues). An untrimmed asset would play long.
+    """
+
+    class _RecordingClient:
+        def __init__(self):
+            self.requested = None
+
+        def generate(self, prompt, out_path, duration_seconds):
+            self.requested = duration_seconds
+            AudioSegment.silent(duration=int(duration_seconds * 1000)).export(
+                out_path, format="mp3"
+            )
+
+        def close(self):
+            pass
+
+    def test_requests_native_duration_not_the_cue_length(self, tmp_path):
+        client = self._RecordingClient()
+        backend = MMAudioSfxBackend(client, accept_noncommercial=True)
+        out = str(tmp_path / "cue.mp3")
+
+        backend.generate_to(out, "a door slam", 5.0, 0.3)
+
+        assert client.requested == 8.0, "should generate at the training duration"
+
+    def test_result_is_trimmed_to_the_cue_length(self, tmp_path):
+        backend = MMAudioSfxBackend(self._RecordingClient(), accept_noncommercial=True)
+        out = str(tmp_path / "cue.mp3")
+
+        backend.generate_to(out, "a door slam", 5.0, 0.3)
+
+        length_s = len(AudioSegment.from_file(out)) / 1000.0
+        assert 4.5 < length_s < 5.5, f"expected ~5s after trim, got {length_s:.2f}s"
+
+    def test_longer_cue_than_native_is_not_truncated(self, tmp_path):
+        """A 12s cue must generate 12s, not be clipped back to 8s."""
+        client = self._RecordingClient()
+        backend = MMAudioSfxBackend(client, accept_noncommercial=True)
+        out = str(tmp_path / "cue.mp3")
+
+        backend.generate_to(out, "long rain", 12.0, 0.3)
+
+        assert client.requested == 12.0
+        assert len(AudioSegment.from_file(out)) / 1000.0 > 11.0
+
+
+class TestMMAudioClientFraming:
+    """Worker subprocess protocol, against a stub script."""
+
+    def _client(self, tmp_path, body):
+        client = _MMAudioClient(python_path=sys.executable, device="cpu", seed=7)
+        client._WORKER = _write_stub(tmp_path, body)
+        return client
+
+    def test_request_reaches_the_worker(self, tmp_path):
+        client = self._client(tmp_path, _STUB_WORKER_OK)
+        out = tmp_path / "out.bin"
+        try:
+            client.generate("a bell", str(out), 8.0)
+        finally:
+            client.close()
+        sent = json.loads(out.read_text(encoding="utf-8"))
+        assert sent["prompt"] == "a bell"
+        assert sent["duration_seconds"] == 8.0
+        assert sent["seed"] == 7, "seed must ride along via _request_extras"
+
+    def test_worker_error_is_raised(self, tmp_path):
+        client = self._client(tmp_path, _STUB_WORKER_ERR)
+        try:
+            with pytest.raises(RuntimeError, match="boom"):
+                client.generate("a bell", str(tmp_path / "x.bin"), 8.0)
+        finally:
+            client.close()
+
+    def test_close_is_idempotent(self, tmp_path):
+        client = self._client(tmp_path, _STUB_WORKER_OK)
+        client.generate("a bell", str(tmp_path / "y.bin"), 8.0)
+        client.close()
+        client.close()
+
+    def test_worker_script_ships_with_the_package(self):
+        assert _MMAudioClient._WORKER.endswith("mmaudio_worker.py")
+        assert os.path.exists(_MMAudioClient._WORKER)
+
+
+class TestMMAudioAssetTagging:
+    def test_shared_path_gets_the_backend_infix(self, tmp_path):
+        """The filename infix is how an MMAudio asset stays identifiable."""
+        path = shared_sfx_path(str(tmp_path), "SFX: DOOR SLAM", backend="mmaudio")
+        assert path.endswith(".mmaudio.mp3")
+
+    def test_licence_is_checked_before_venv_resolution(self):
+        """Ordering matters for the error the user actually sees.
+
+        Resolving venv-mmaudio first meant someone without the acknowledgement
+        got "cannot find venv-mmaudio" and was sent off to install a multi-GB
+        environment they might then be barred from using.
+        """
+        with unittest.mock.patch(
+            "xil_pipeline.sfx_backends._find_mmaudio_python",
+            side_effect=AssertionError("venv must not be resolved before the licence check"),
+        ), pytest.raises(ValueError, match="CC BY-NC 4.0"):
+            make_sfx_backend("mmaudio")

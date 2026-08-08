@@ -372,10 +372,40 @@ xil sample --episode S01E01 --backend chatterbox-turbo \
     --sample-text "[sarcastic] I am {name}, and this is fine."
 ```
 
-> **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs` (default) selects the
-> generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue `--backend`. Generation is
-> delegated through the `SfxBackend` adapter in `sfx_backends.py`, which both `xil-produce` and
-> `xil-sfx` share.
+> **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs|mmaudio`
+> (default `elevenlabs`) selects the generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue
+> `--backend`. Generation is delegated through the `SfxBackend` adapter in `sfx_backends.py`,
+> which both `xil-produce` and `xil-sfx` share.
+>
+> `mmaudio` runs **MMAudio** locally in `venv-mmaudio` via a persistent JSON-over-stdio worker
+> (`mmaudio_worker.py`, the same pattern as Chatterbox) — free, GPU-accelerated, ~6 GB VRAM,
+> 44.1 kHz. It uses MMAudio's text-to-audio path; the model is primarily *video*-to-audio, so
+> this is a pilot rather than a proven SFX generator.
+>
+> ⚠️ **MMAudio's weights are CC BY-NC 4.0 — non-commercial use only** (its code is MIT; the
+> checkpoints are not). `--mmaudio-accept-noncommercial` is required or the backend refuses to
+> start, the constraint is logged every session, and each generated asset carries it in its ID3
+> comment alongside the `.mmaudio` filename infix — so a clip stays identifiable if a show is
+> later monetised.
+>
+> **Duration:** MMAudio is trained at 8 s and warns that large deviation degrades quality.
+> Generation therefore runs at `--mmaudio-duration` (default 8.0) and the backend **trims the
+> result** to the cue's `duration_seconds`. The trim cannot be deferred to the mixer: for a
+> prompt-generated cue `duration_seconds` is the *generation length* and there is no mix-time
+> clip — that applies only to `source=` cues.
+>
+> Install (not on PyPI):
+>
+> ```bash
+> python -m venv venv-mmaudio
+> git clone https://github.com/hkchengrex/MMAudio
+> venv-mmaudio/bin/pip install -e MMAudio
+> # Re-pin torch AFTER: MMAudio's `torch >= 2.5.1` has no upper bound and pulls a
+> # CUDA 13 build, which falls back to CPU on a CUDA 12.x driver and breaks torchaudio.
+> venv-mmaudio/bin/pip install 'torch==2.6.0' 'torchaudio==2.6.0' 'torchvision==0.21.0' \
+>     --index-url https://download.pytorch.org/whl/cu124
+> venv-mmaudio/bin/python -c "import torch; print(torch.cuda.is_available())"   # must be True
+> ```
 >
 > Two local diffusion backends — **AudioLDM 2 Large** and **Stable Audio Open 1.0**, each driven
 > by a persistent worker subprocess in a `venv-audioldm2/` — were **removed in #62** after both
