@@ -1516,7 +1516,25 @@ def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = 
                     f"{sfx_edits_path(sfx_path)}{orphan_note}")
 
 
-def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
+def _hint_target_exists(source: str) -> bool:
+    """Return True when a hint's ``SFX/...`` path resolves on disk.
+
+    Guards forced replacement.  A hint resolves to ``SFX/<slug>/<file>`` while
+    plenty of existing sources are bare ``SFX/<file>`` that resolve fine — 37 of
+    them in this workspace, only 13 with a slug-form twin.  Replacing those
+    unconditionally would repoint ~24 working cues at files that do not exist.
+    """
+    from pathlib import Path
+
+    from xil_pipeline.models import get_workspace_root
+
+    path = Path(source)
+    if not path.is_absolute():
+        path = get_workspace_root() / source
+    return path.exists()
+
+
+def backfill_sfx_sources(parsed: dict, sfx_path: str, force: bool = False) -> None:
     """Add missing ``source`` fields to an existing SFX config from parsed hints.
 
     When a script is re-parsed and the SFX config already exists, any direction
@@ -1530,16 +1548,26 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
     3. **Key absent entirely** — adds a new entry with ``source`` and sensible
        defaults (``loop: True`` for AMBIENCE, appropriate ``duration_seconds``).
 
-    Entries that already have a ``source`` field keep it — a source hint never
-    replaces one.  Attribute hints (``sfx_overrides``, e.g. ``play_volume_pct``)
-    behave the other way round: the **script is the source of truth**, so they
-    overwrite whatever the config currently holds, and a cue carrying only an
-    attribute hint (no filename) is still updated.
+    Entries that already have a ``source`` keep it unless *force* is set — a hint
+    never replaces one by default.  Attribute hints (``sfx_overrides``, e.g.
+    ``play_volume_pct``) behave the other way round: the **script is the source of
+    truth**, so they overwrite whatever the config holds, and a cue carrying only
+    an attribute hint (no filename) is still updated.
+
+    With *force*, a differing ``source`` is replaced — but only when the hint's
+    file actually resolves on disk (see :func:`_hint_target_exists`).  This is what
+    reaches cues whose source is a ``"NEW STEM NEEDED: …"`` placeholder or a stale
+    path, which the default pass can never correct.
+
+    Every source that is set or replaced is written to the edit journal, so the
+    assignment survives a later rebuild from a fresh script ``.md``.
 
     Args:
         parsed: Parsed script dict (after hint stripping).
         sfx_path: Path to the existing SFX config JSON to update in-place.
+        force: Replace a differing ``source`` instead of only filling missing ones.
     """
+    from xil_pipeline.sfx_common import append_sfx_edit
     with open(sfx_path, encoding="utf-8") as f:
         sfx_data = json.load(f)
 
@@ -1553,6 +1581,7 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
             stale_key_map[existing_key] = clean
 
     updated = 0
+    journaled: list[tuple[str, str]] = []
     seen_clean: set[str] = set()
     for entry in parsed["entries"]:
         if entry["type"] != "direction":
@@ -1567,12 +1596,26 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
         seen_clean.add(text)
 
         if text in effects:
-            # Case 1: clean key present — add source if missing
-            if sfx_source and "source" not in effects[text]:
+            # Case 1: clean key present — add source if missing, or replace a
+            # differing one under --force when the hint's file actually exists.
+            current = effects[text].get("source")
+            if sfx_source and current is None:
                 effects[text]["source"] = sfx_source
                 if effects[text].get("prompt") == text:
                     del effects[text]["prompt"]
+                journaled.append((text, sfx_source))
                 updated += 1
+            elif force and sfx_source and current != sfx_source:
+                if _hint_target_exists(sfx_source):
+                    effects[text]["source"] = sfx_source
+                    effects[text].pop("prompt", None)
+                    journaled.append((text, sfx_source))
+                    updated += 1
+                else:
+                    logger.warning(
+                        "  Keeping %r source %s — hint target %s not found on disk",
+                        text, current, sfx_source,
+                    )
         else:
             # Case 2: stale piped key exists — rename + add source
             stale_key = next((k for k, v in stale_key_map.items() if v == text), None)
@@ -1581,6 +1624,7 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
                 if sfx_source:
                     old_entry["source"] = sfx_source
                     old_entry.pop("prompt", None)
+                    journaled.append((text, sfx_source))
                 effects[text] = old_entry
                 updated += 1
             else:
@@ -1593,6 +1637,8 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
                 if text.startswith("AMBIENCE:"):
                     new_entry["loop"] = True
                 effects[text] = new_entry
+                if sfx_source:
+                    journaled.append((text, sfx_source))
                 updated += 1
 
         # The script wins for attribute hints: overwrite whatever is there.
@@ -1606,6 +1652,10 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
     if updated:
         with open(sfx_path, "w", encoding="utf-8") as f:
             json.dump(sfx_data, f, indent=2, ensure_ascii=False)
+        # Journal after the config write: a record that survives a failed write
+        # would reinstate a source the config never had.
+        for key, src in journaled:
+            append_sfx_edit(sfx_path, key, {"source": src})
         logger.info("Backfilled %d script hint(s) in %s", updated, sfx_path)
 
 

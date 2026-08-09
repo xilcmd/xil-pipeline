@@ -354,8 +354,14 @@ def write_sfx_grade(path: str, status: str) -> None:
 # sidecar journal that survives the config (and `xil remove-episode`), and
 # can be replayed onto a regenerated skeleton.
 
+# Fields the timeline edit journal records and replays.  ``source`` is here so an
+# asset assignment survives a rebuild from a fresh script .md: create_sfx_config
+# writes the skeleton from the script's pipe-hints, then replays this journal on
+# top, so a journaled source is reinstated even when the hint is gone from the
+# script.  That ordering means the journal BEATS the script hint — replay warns on
+# every disagreement rather than swapping an asset silently.
 SFX_EDIT_FIELDS = ("volume_percentage", "ramp_in_seconds",
-                   "ramp_out_seconds", "play_duration")
+                   "ramp_out_seconds", "play_duration", "source")
 
 
 def sfx_edits_path(sfx_path: str) -> str:
@@ -469,6 +475,16 @@ def replay_sfx_edits(sfx_path: str, dry_run: bool = False) -> tuple[int, list[st
                 if fields[field] is None:
                     effect.pop(field, None)
                 else:
+                    # A journaled source overriding a different one is the case
+                    # where the journal beats a freshly-edited script hint. Never
+                    # silent: the operator has to be able to see which asset won.
+                    if (field == "source" and effect.get(field) is not None
+                            and effect[field] != fields[field]):
+                        logger.warning(
+                            "  Journal overrides script hint for %r: %s -> %s "
+                            "(re-run xil sfx-hydrate --force to make the script win)",
+                            key, effect[field], fields[field],
+                        )
                     effect[field] = fields[field]
             applied += 1
 

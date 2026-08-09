@@ -380,7 +380,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILU010_*` — MP3 loudness profiler (peak, average, and minimum dBFS per stem or directory)
 - `XILU011_*` — SFX config CSV flattener (sfx_<tag>.json → one-row-per-effect CSV for audit/debug)
 - `XILU012_*` — parsed JSON CSV exporter (parsed_<tag>.json → one-row-per-entry CSV for audit/debug)
-- `XILU013_*` — SFX config hydrator (writes pipe-hint `source` fields from parsed JSON into the SFX config)
+- `XILU013_*` — SFX config hydrator (writes pipe-hint `source` fields from parsed JSON into the SFX config). By default fills only *missing* sources. `--force` also **replaces** a differing one — guarded by an existence check: a replacement is skipped (with a warning) when the hinted file is not on disk, which protects bare `SFX/<file>` sources that work today from being repointed at a slug-form path with nothing behind it. `--dry-run --force` prints `old.mp3 → new.mp3` per cue; **always preview**, because a stale hint will happily replace a well-matched asset with a worse one. Every source set or replaced is written to the edit journal
 - `XILU014_*` — episode summary CSV generator (scans all parsed JSONs → one-row-per-episode CSV with dialogue_lines, words, tts_chars)
 - `XILU015_*` — stem verifier (scans a stems folder → JSON report with filename, seq/scene/speaker parse, size, duration, bitrate, SHA-256, and optional Faster-Whisper transcription; requires `venv-whisper/`)
 - `XILU016_*` — stem compare (cross-references a `stem_verify` Whisper transcript report against the parsed script; flags garbled/silent/missing dialogue stems using `difflib.SequenceMatcher`; no extra dependencies)
@@ -700,6 +700,14 @@ After executing any plan that changes pipeline behaviour, CLI flags, file format
 - Any behavioural change visible to operators → update the relevant stage bullets in CLAUDE.md
 
 If a plan is large enough to have its own plan file, tick this as the final step before closing the plan.
+
+### SFX source precedence
+
+`source` is a **journaled** field (`SFX_EDIT_FIELDS`), so an asset assignment survives a rebuild from a fresh script `.md`. That has a precedence consequence worth knowing:
+
+`create_sfx_config` writes the skeleton from the script's pipe-hints **first**, then replays `sfx_<tag>_edits.jsonl` **on top** — so **the journal beats the script hint**. Replay logs a WARNING naming both values whenever it overrides one; re-run `xil sfx-hydrate --force` to make the script win again.
+
+This is deliberately the opposite of the rule for `play_volume_pct` (#49, script wins). Durability across a script rebuild was the goal for `source`; immediate script authority was the goal for attributes. The warning is what stops the difference being silent.
 
 ### Docs Site Navigation
 
