@@ -66,6 +66,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("xil-status", "xil_pipeline.XILU019_episode_status"),
     ("xil-sfx-restore", "xil_pipeline.XILU020_sfx_restore"),
     ("xil-sfx-impact", "xil_pipeline.XILU021_sfx_impact"),
+    ("xil-sfx-match", "xil_pipeline.XILU022_sfx_match"),
     ("xil-db-profile",       "xil_pipeline.XILU010_db_profile"),
     ("xil-sfx-csv",          "xil_pipeline.XILU011_sfx_csv"),
     ("xil-parsed-csv",       "xil_pipeline.XILU012_parsed_csv"),
