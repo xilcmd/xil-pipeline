@@ -34,6 +34,7 @@ try:
 except ImportError:  # pragma: no cover
     _MutagenMP3 = None
 
+from xil_pipeline import audio_fx
 from xil_pipeline.log_config import get_logger
 from xil_pipeline.models import SfxConfiguration
 
@@ -41,12 +42,51 @@ logger = get_logger(__name__)
 
 # Background direction types — excluded from the foreground timeline,
 # overlaid at their cue positions in a separate background pass.
-BACKGROUND_DIRECTION_TYPES: frozenset[str] = frozenset({"AMBIENCE", "MUSIC", "VINTAGE FILTER"})
+BACKGROUND_DIRECTION_TYPES: frozenset[str] = frozenset(
+    {"AMBIENCE", "MUSIC", "VINTAGE FILTER", "FILM AUDIO"}
+)
+
+# Span-marker direction types and the dialogue treatment each one engages.
+# Declaration order determines the order treatments stack when spans overlap.
+SPAN_DIRECTION_TREATMENTS: dict[str, str] = {
+    "VINTAGE FILTER": "vintage",
+    "FILM AUDIO": "film",
+}
+
+# Which markers of each span type need a synthetic boundary plan injected.
+#
+# The asymmetry is deliberate.  VINTAGE FILTER ENGAGES binds to a real crackle
+# stem on disk, so it already appears in the timeline; injecting a sentinel for
+# it would make episodes whose crackle stem has not been generated start
+# applying the vintage EQ where they previously did not.  FILM AUDIO has no
+# audio at all, so both of its markers need sentinels to exist as boundaries.
+_SPAN_SENTINEL_MARKERS: dict[str, tuple[str, ...]] = {
+    "VINTAGE FILTER": ("DISENGAGES",),
+    "FILM AUDIO": ("ENGAGES", "DISENGAGES"),
+}
 
 # Default level adjustments for the automated mixed master (Option A).
 # Use 0 for DAW export layers so the producer controls levels in-DAW.
 AMBIENCE_LEVEL_DB: float = -10.0
 MUSIC_LEVEL_DB: float = -6.0
+
+
+def _span_marker(text: str | None) -> str | None:
+    """Classify a span direction's text as an ENGAGES or DISENGAGES marker.
+
+    Args:
+        text: Direction entry text, e.g. ``"VINTAGE FILTER DISENGAGES"``.
+
+    Returns:
+        ``"DISENGAGES"``, ``"ENGAGES"``, or None if the text is neither.
+    """
+    # DISENGAGES must be tested first: it contains ENGAGES as a substring.
+    body = text or ""
+    if "DISENGAGES" in body:
+        return "DISENGAGES"
+    if "ENGAGES" in body:
+        return "ENGAGES"
+    return None
 
 
 @dataclass
@@ -398,11 +438,13 @@ def collect_stem_plans(
                 entry_type=entry.get("type"),
                 text=text,
             ))
-        if entry.get("direction_type") == "VINTAGE FILTER" and "DISENGAGES" in text:
+        span_dt = entry.get("direction_type")
+        markers = _SPAN_SENTINEL_MARKERS.get(span_dt)
+        if markers and _span_marker(text) in markers:
             plans.append(StemPlan(
                 seq=seq,
                 filepath="",  # sentinel: no audio — boundary only
-                direction_type="VINTAGE FILTER",
+                direction_type=span_dt,
                 entry_type=entry.get("type"),
                 text=text,
             ))
@@ -442,6 +484,86 @@ def apply_vintage_filter(segment: AudioSegment) -> AudioSegment:
     return mono.low_pass_filter(5000).high_pass_filter(150) - 3
 
 
+def apply_film_filter(segment: AudioSegment) -> AudioSegment:
+    """Apply the Film Audio treatment to an audio segment.
+
+    Warm and reflective, in the register of a 1990s indie film print: full-bodied
+    low end, soft top, gentle levelling, tape-style saturation and a faint pink
+    noise grain.  Deliberately distinct from :func:`apply_vintage_filter`, which
+    is darker, mono and un-saturated.
+
+    Implemented as an ffmpeg filter graph (see :mod:`xil_pipeline.audio_fx`);
+    returns the segment unchanged if ffmpeg is unavailable.
+
+    Args:
+        segment: Input audio segment to filter.
+
+    Returns:
+        Filtered audio segment, the same length as the input.
+    """
+    return audio_fx.apply_treatment(segment, "film")
+
+
+def apply_speakerphone_filter(segment: AudioSegment) -> AudioSegment:
+    """Apply the speakerphone treatment to an audio segment.
+
+    Narrow-band (steep 350 Hz / 3.4 kHz skirts) with hard AGC, odd-harmonic
+    saturation and a short tabletop slap.  Much more pronounced than
+    :func:`apply_phone_filter`, which is a gentle single-pole band-limit.
+
+    Implemented as an ffmpeg filter graph (see :mod:`xil_pipeline.audio_fx`);
+    returns the segment unchanged if ffmpeg is unavailable.
+
+    Args:
+        segment: Input audio segment to filter.
+
+    Returns:
+        Filtered audio segment, the same length as the input.
+    """
+    return audio_fx.apply_treatment(segment, "speakerphone")
+
+
+# Named dialogue treatments, as written in a cast config ``filter`` field,
+# mapped to the module-level function implementing each one.
+#
+# Function *names* rather than function objects: dispatch resolves through the
+# module namespace at call time, so patching e.g. ``apply_phone_filter`` still
+# affects which code runs.  Binding the objects here would silently freeze
+# dispatch at import time.
+FILTER_REGISTRY: dict[str, str] = {
+    "phone": "apply_phone_filter",
+    "vintage": "apply_vintage_filter",
+    "film": "apply_film_filter",
+    "speakerphone": "apply_speakerphone_filter",
+}
+
+_warned_unknown_filters: set[str] = set()
+
+
+def _apply_named_filter(segment: AudioSegment, name: str) -> AudioSegment:
+    """Apply one registered filter by name, warning once if it is unknown.
+
+    Args:
+        segment: Input audio segment.
+        name: Filter name, already normalised to lowercase.
+
+    Returns:
+        Filtered segment, or the input unchanged when *name* is unregistered.
+    """
+    func_name = FILTER_REGISTRY.get(name)
+    if func_name is None:
+        # Warn once per name: layer builders iterate hundreds of stems, and an
+        # undeduplicated warning would bury the rest of the log.
+        if name not in _warned_unknown_filters:
+            _warned_unknown_filters.add(name)
+            logger.warning(
+                "Unknown speaker filter %r — ignored. Known filters: %s",
+                name, ", ".join(sorted(FILTER_REGISTRY)),
+            )
+        return segment
+    return globals()[func_name](segment)
+
+
 def _apply_speaker_filters(segment: AudioSegment, filter_val: "str | bool | None") -> AudioSegment:
     """Apply audio filter(s) to a segment based on the cast config filter value.
 
@@ -451,7 +573,9 @@ def _apply_speaker_filters(segment: AudioSegment, filter_val: "str | bool | None
     - ``False`` / ``None`` / ``""`` — no filter
     - ``True`` / ``"phone"`` — phone filter
     - ``"vintage"`` — vintage filter
-    - ``"vintage,phone"`` or ``"phone,vintage"`` — both filters in listed order
+    - ``"film"`` — Film Audio treatment
+    - ``"speakerphone"`` — speakerphone treatment
+    - ``"vintage,phone"`` or any comma-separated list — applied in listed order
 
     Args:
         segment: Input audio segment.
@@ -468,32 +592,63 @@ def _apply_speaker_filters(segment: AudioSegment, filter_val: "str | bool | None
     else:
         names = [n.strip().lower() for n in str(filter_val).split(",") if n.strip()]
     for name in names:
-        if name == "phone":
-            segment = apply_phone_filter(segment)
-        elif name == "vintage":
-            segment = apply_vintage_filter(segment)
+        segment = _apply_named_filter(segment, name)
     return segment
+
+
+def _span_treatments(stem_plans: list[StemPlan]) -> dict[int, tuple[str, ...]]:
+    """Map dialogue seq numbers to the treatments engaged by open script spans.
+
+    Scans stem plans in seq order.  For each direction type in
+    :data:`SPAN_DIRECTION_TREATMENTS`, an ``ENGAGES`` direction entry starts a
+    span and the next ``DISENGAGES`` (or end of episode) closes it.  Spans of
+    different types may overlap; the treatments of every span open at a given
+    dialogue stem are returned together, ordered by
+    :data:`SPAN_DIRECTION_TREATMENTS` declaration order so the result is
+    deterministic.
+
+    Args:
+        stem_plans: All stem plans for the episode.
+
+    Returns:
+        Mapping of dialogue ``seq`` to an ordered tuple of treatment names.
+        Dialogue stems inside no span are absent from the mapping.
+    """
+    active: dict[str, bool] = {}
+    engaged: dict[int, tuple[str, ...]] = {}
+    for plan in sorted(stem_plans, key=lambda p: p.seq):
+        if plan.direction_type in SPAN_DIRECTION_TREATMENTS:
+            marker = _span_marker(plan.text)
+            if marker == "DISENGAGES":
+                active[plan.direction_type] = False
+            elif marker == "ENGAGES":
+                active[plan.direction_type] = True
+        elif plan.entry_type == "dialogue":
+            names = tuple(
+                treatment
+                for direction, treatment in SPAN_DIRECTION_TREATMENTS.items()
+                if active.get(direction)
+            )
+            if names:
+                engaged[plan.seq] = names
+    return engaged
 
 
 def _vf_engaged_seqs(stem_plans: list[StemPlan]) -> frozenset[int]:
     """Return seq numbers of dialogue stems that fall within a VINTAGE FILTER span.
 
-    Scans stem plans in seq order.  A ``VINTAGE FILTER: ENGAGES`` direction
-    entry starts a span; the next ``VINTAGE FILTER: DISENGAGES`` (or end of
-    episode) closes it.  Any dialogue stem whose seq falls inside an open span
-    is included in the returned set.
+    Thin wrapper over :func:`_span_treatments`, retained because it is part of
+    the existing test surface.
+
+    Args:
+        stem_plans: All stem plans for the episode.
+
+    Returns:
+        Frozen set of dialogue ``seq`` values inside an open VINTAGE FILTER span.
     """
-    active = False
-    engaged: set[int] = set()
-    for plan in sorted(stem_plans, key=lambda p: p.seq):
-        if plan.direction_type == "VINTAGE FILTER":
-            if "DISENGAGES" in (plan.text or ""):
-                active = False
-            elif "ENGAGES" in (plan.text or ""):
-                active = True
-        elif active and plan.entry_type == "dialogue":
-            engaged.add(plan.seq)
-    return frozenset(engaged)
+    return frozenset(
+        seq for seq, names in _span_treatments(stem_plans).items() if "vintage" in names
+    )
 
 
 def build_foreground(
@@ -530,7 +685,7 @@ def build_foreground(
     foreground = AudioSegment.empty()
     timeline: dict[int, int] = {}
     current_ms = 0
-    vf_engaged = _vf_engaged_seqs(stem_plans)
+    span_map = _span_treatments(stem_plans)
 
     for plan in sorted(stem_plans, key=lambda p: p.seq):
         # Record cue position for ALL stems (both fg and bg).
@@ -558,11 +713,13 @@ def build_foreground(
             segment = _apply_speaker_filters(segment, cast_config[speaker].get("filter"))
             segment = segment.pan(cast_config[speaker].get("pan", 0.0))
 
-        # Vintage filter for dialogue: script-direction spans take precedence;
-        # fall back to scene-scoped vintage_scenes list.
+        # Span treatments for dialogue: script-direction spans take precedence;
+        # fall back to the scene-scoped vintage_scenes list.
         if plan.entry_type == "dialogue":
-            if plan.seq in vf_engaged:
-                segment = apply_vintage_filter(segment)
+            span_names = span_map.get(plan.seq)
+            if span_names:
+                for name in span_names:
+                    segment = _apply_named_filter(segment, name)
             elif vintage_scenes and plan.scene in vintage_scenes:
                 segment = apply_vintage_filter(segment)
 
@@ -849,7 +1006,7 @@ def build_dialogue_layer(
     """
     layer = AudioSegment.silent(duration=total_ms)
     labels: list[tuple[float, float, str]] = []
-    vf_engaged = _vf_engaged_seqs(stem_plans)
+    span_map = _span_treatments(stem_plans)
     for plan in sorted(stem_plans, key=lambda p: p.seq):
         if plan.entry_type != "dialogue":
             continue
@@ -860,8 +1017,10 @@ def build_dialogue_layer(
         if speaker in cast_config:
             segment = _apply_speaker_filters(segment, cast_config[speaker].get("filter"))
             segment = segment.pan(cast_config[speaker].get("pan", 0.0))
-        if plan.seq in vf_engaged:
-            segment = apply_vintage_filter(segment)
+        span_names = span_map.get(plan.seq)
+        if span_names:
+            for name in span_names:
+                segment = _apply_named_filter(segment, name)
         elif vintage_scenes and plan.scene in vintage_scenes:
             segment = apply_vintage_filter(segment)
         end_ms = start_ms + len(segment)

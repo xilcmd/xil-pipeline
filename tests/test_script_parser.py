@@ -2486,3 +2486,58 @@ class TestGenerateSfxConfigReplaysJournal:
         assert config["effects"]["BEAT"]["volume_percentage"] == 42
         # skeleton fields still intact
         assert config["effects"]["BEAT"]["type"] == "silence"
+
+
+# ─── Tests: FILM AUDIO direction type ───
+
+FILM_AUDIO_SCRIPT = """\
+# THE 413 — S01E01 — Test
+
+## COLD OPEN
+
+[FILM AUDIO ENGAGES]
+
+MARGARET
+It was a good year.
+
+[FILM AUDIO DISENGAGES]
+
+ADAM
+That's the tape.
+
+[END OF EPISODE]
+"""
+
+
+class TestFilmAudioDirectionType:
+    def test_classify_engages(self):
+        assert parser.classify_direction("FILM AUDIO ENGAGES") == "FILM AUDIO"
+
+    def test_classify_disengages(self):
+        assert parser.classify_direction("FILM AUDIO DISENGAGES") == "FILM AUDIO"
+
+    def test_classify_colon_form(self):
+        assert parser.classify_direction("FILM AUDIO: ENGAGES") == "FILM AUDIO"
+
+    def test_parse_script_accepts_markers(self, tmp_path):
+        """Guards the ScriptEntry Literal — a missing entry raises ValidationError."""
+        script = tmp_path / "film.md"
+        script.write_text(FILM_AUDIO_SCRIPT, encoding="utf-8")
+        parsed = parser.parse_script(str(script))
+        types = [e["direction_type"] for e in parsed["entries"]
+                 if e["type"] == "direction"]
+        assert types.count("FILM AUDIO") == 2
+
+    def test_sfx_config_marks_film_audio_as_zero_length_silence(self, tmp_path):
+        """No prompt, no source — the marker must never reach SFX generation."""
+        script = tmp_path / "film.md"
+        script.write_text(FILM_AUDIO_SCRIPT, encoding="utf-8")
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        entry = config["effects"]["FILM AUDIO ENGAGES"]
+        assert entry == {"type": "silence", "duration_seconds": 0.0}
+        assert "prompt" not in entry
+        assert "source" not in entry

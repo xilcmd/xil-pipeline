@@ -400,7 +400,9 @@ class ScriptEntry(_DocModel):
     text: str = Field(...)
     """The spoken text, header text, or stage direction content."""
 
-    direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER"] | None = Field(default=None)
+    direction_type: Literal[
+        "SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO"
+    ] | None = Field(default=None)
     """Subtype for direction entries indicating sound category."""
 
     sfx_source: str | None = Field(default=None)
@@ -496,9 +498,15 @@ class CastMember(_DocModel):
     """Stereo pan position from -1.0 (full left) to 1.0 (full right)."""
 
     filter: str | bool | None = Field(...)
-    """Audio filter chain. ``False``/``None`` = none; ``True``/``"phone"`` = phone
-    filter; ``"vintage"`` = vintage filter; ``"vintage,phone"`` = both filters applied
-    in listed order."""
+    """Audio filter chain. ``False``/``None`` = no treatment. Accepted names:
+
+    - ``"phone"`` (or legacy ``True``) — band-limited 300 Hz-3 kHz landline.
+    - ``"vintage"`` — mono, dark and mid-forward; aged tape/record player.
+    - ``"film"`` — warm, reflective 1990s indie film print with faint grain.
+    - ``"speakerphone"`` — narrow-band with hard AGC, crunch and a room slap.
+
+    Comma-separated values chain left to right (e.g. ``"vintage,phone"``).
+    Unknown names are ignored with a warning."""
 
     role: str = Field(...)
     """Character role description (e.g., ``"Host/Narrator"``)."""
