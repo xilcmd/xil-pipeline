@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import (
@@ -894,6 +895,10 @@ def parse_script(
     with open(filepath, encoding="utf-8") as f:
         raw = f.read()
 
+    # NFC first: accented characters can arrive decomposed (I + combining acute)
+    # depending on the editor, which would make an otherwise identical cue a
+    # different string from its sfx config key and its asset filename.
+    raw = unicodedata.normalize("NFC", raw)
     raw = strip_markdown_escapes(raw)
     raw = strip_markdown_formatting(raw)
     lines = raw.split("\n")

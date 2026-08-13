@@ -26,6 +26,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 from xil_pipeline.chatterbox_turbo_worker import ALLOWED_TAGS
 from xil_pipeline.log_config import configure_logging, get_logger
@@ -87,6 +88,9 @@ def load_and_normalize(path: str) -> list[str]:
     """
     with open(path, encoding="utf-8") as f:
         text = f.read()
+    # Match the parser: NFC before anything else, so a decomposed accent does
+    # not read as a different cue here than it does downstream.
+    text = unicodedata.normalize("NFC", text)
     text = strip_markdown_escapes(text)
     text = strip_markdown_formatting(text)
     return text.split("\n")

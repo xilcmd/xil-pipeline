@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Literal
 
@@ -778,6 +779,31 @@ class SfxConfiguration(_DocModel):
 
     effects: dict[str, SfxEntry] = Field(...)
     """Mapping of direction text to SFX entry configurations."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_unicode(cls, data: object) -> object:
+        """NFC-normalize effect keys and source paths on load.
+
+        An accented character can be encoded two ways that render identically —
+        ``Í`` as one codepoint (NFC) or ``I`` plus a combining acute (NFD) — and
+        editors differ on which they emit.  Left alone, the two forms are
+        different dict keys and different file paths, so a cue silently fails to
+        match its config or its asset on disk.  Normalizing here means every
+        lookup site downstream compares like with like.
+        """
+        if not isinstance(data, dict):
+            return data
+        effects = data.get("effects")
+        if not isinstance(effects, dict):
+            return data
+        normalized: dict = {}
+        for key, entry in effects.items():
+            nkey = unicodedata.normalize("NFC", key) if isinstance(key, str) else key
+            if isinstance(entry, dict) and isinstance(entry.get("source"), str):
+                entry = {**entry, "source": unicodedata.normalize("NFC", entry["source"])}
+            normalized[nkey] = entry
+        return {**data, "effects": normalized}
 
     vintage_scenes: list[str] = Field(default_factory=list)
     """Scene labels whose dialogue receives the vintage audio filter

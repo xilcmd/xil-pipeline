@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import sys
+import unicodedata
 
 from elevenlabs.client import ElevenLabs
 from mutagen.id3 import APIC, COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, TXXX, USLT, ID3NoHeaderError, PictureType
@@ -220,6 +221,44 @@ def file_nonempty(path: str) -> bool:
         return os.stat(path).st_size > 0
     except OSError:
         return False
+
+
+def resolve_source_path(source: str) -> str | None:
+    """Resolve a declared ``source`` to a real file, or ``None`` if absent.
+
+    Relative paths resolve against the workspace root rather than the current
+    directory, so ``source: "SFX/<slug>/file.mp3"`` works regardless of where
+    the command was run from.
+
+    Accented filenames are also tried in both Unicode normalizations.  ``Í``
+    can be a single codepoint (NFC) or ``I`` plus a combining acute (NFD);
+    the two are different byte strings and therefore different paths, but they
+    look identical, so a config written in one form silently fails to find an
+    asset stored in the other.  Configs are normalized to NFC on load, but the
+    filesystem may hold either — filenames created on macOS are typically NFD.
+
+    Args:
+        source: The ``source`` field from an :class:`SfxEntry`.
+
+    Returns:
+        The real path of the matched file, or ``None`` when nothing matches.
+    """
+    from pathlib import Path as _Path
+
+    candidates = [source]
+    for form in ("NFC", "NFD"):
+        variant = unicodedata.normalize(form, source)
+        if variant not in candidates:
+            candidates.append(variant)
+
+    for candidate in candidates:
+        path = _Path(candidate)
+        if not path.is_absolute():
+            path = get_workspace_root() / path
+        real = os.path.realpath(str(path))
+        if os.path.isfile(real):
+            return real
+    return None
 
 
 def shared_sfx_path(sfx_dir: str, effect_key: str, backend: str = "elevenlabs") -> str:
@@ -582,14 +621,8 @@ def ensure_shared_sfx(
     os.makedirs(sfx_dir, exist_ok=True)
 
     if effect.source is not None:
-        # Resolve relative paths against workspace root (not CWD) to ensure
-        # source: "SFX/{slug}/file.mp3" in sfx configs works regardless of CWD.
-        from pathlib import Path as _Path
-        _src = _Path(effect.source)
-        if not _src.is_absolute():
-            _src = get_workspace_root() / _src
-        src_real = os.path.realpath(str(_src))
-        if os.path.isfile(src_real):
+        src_real = resolve_source_path(effect.source)
+        if src_real is not None:
             # Skip copy when source already IS the pool file (source path lives
             # in SFX/ and the slugified key maps to the same filename).
             if not (os.path.exists(path) and os.path.samefile(src_real, path)):
@@ -908,15 +941,20 @@ def dry_run_sfx(
         is_model_sfx = effect.type == "sfx" and not is_source
         shared_backend = backend_name if is_model_sfx else "elevenlabs"
         shared_file = effect.source if is_source else shared_sfx_path(sfx_dir, entry["text"], shared_backend)
+        # Test existence against a properly resolved path — declared sources are
+        # workspace-root-relative, not CWD-relative, and an accented filename may
+        # be stored in a different Unicode normalisation than the config uses.
+        # ``shared_file`` stays as declared, for readable log output.
+        resolved_file = resolve_source_path(effect.source) if is_source else shared_file
 
         if os.path.exists(stem_file):
             status = "EXISTS"
             exists_count += 1
-        elif is_source and not os.path.exists(shared_file):
+        elif is_source and resolved_file is None:
             status = "MISSING"
             missing_count += 1
             missing_sources.append(f"  '{entry['text']}' → {shared_file}")
-        elif os.path.exists(shared_file):
+        elif resolved_file is not None and os.path.exists(resolved_file):
             status = "CACHED"
             cached_count += 1
         else:
