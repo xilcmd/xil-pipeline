@@ -1,6 +1,6 @@
-# Audioldm2 Worker
+# Xil Effort
 
-::: src.xil_pipeline.audioldm2_worker
+::: tools.xil_effort
     options:
       show_root_heading: true
       show_source: true

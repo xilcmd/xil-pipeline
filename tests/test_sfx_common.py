@@ -1075,3 +1075,83 @@ class TestSfxEditJournal:
         data = json.loads(open(cfg, encoding="utf-8").read())
         assert data["effects"]["MUSIC: THEME"]["volume_percentage"] == 33
         assert data["effects"]["MUSIC: THEME"]["play_duration"] == 66
+
+    # ── category-defaults journal records (scope: "defaults") ──
+
+    def _write_raw_journal_line(self, cfg, record: dict) -> None:
+        """Append a hand-built record straight to the journal file — used to
+        test replay against record shapes append_sfx_defaults_edit itself
+        would never produce (missing fields, hybrid key+scope)."""
+        with open(sfx_common.sfx_edits_path(cfg), "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+
+    def test_append_defaults_creates_and_appends(self, cfg):
+        sfx_common.append_sfx_defaults_edit(cfg, {"music_volume_percentage": 25})
+        lines = open(sfx_common.sfx_edits_path(cfg), encoding="utf-8").read().splitlines()
+        assert len(lines) == 1
+        rec = json.loads(lines[0])
+        assert rec["scope"] == "defaults"
+        assert "key" not in rec
+        assert rec["fields"] == {"music_volume_percentage": 25}
+        assert "ts" in rec
+
+    def test_replay_defaults_record_applied(self, cfg):
+        sfx_common.append_sfx_defaults_edit(cfg, {"music_volume_percentage": 25})
+        applied, orphans = sfx_common.replay_sfx_edits(cfg)
+        assert applied == 1
+        assert orphans == []
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        assert data["defaults"]["music_volume_percentage"] == 25
+
+    def test_replay_defaults_null_clears_default(self, cfg):
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        data["defaults"]["music_volume_percentage"] = 99
+        open(cfg, "w", encoding="utf-8").write(json.dumps(data))
+        sfx_common.append_sfx_defaults_edit(
+            cfg, {"music_volume_percentage": None, "music_ramp_in_seconds": 1.5})
+        sfx_common.replay_sfx_edits(cfg)
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        assert "music_volume_percentage" not in data["defaults"]
+        assert data["defaults"]["music_ramp_in_seconds"] == 1.5
+
+    def test_replay_defaults_with_hybrid_key_treated_as_defaults(self, cfg):
+        # A record with both "scope": "defaults" and a stray "key" must be
+        # treated as a defaults record — the key is ignored, not applied
+        # to effects.
+        self._write_raw_journal_line(cfg, {
+            "ts": "2026-01-01T00:00:00", "scope": "defaults", "key": "MUSIC: THEME",
+            "fields": {"music_volume_percentage": 40},
+        })
+        applied, orphans = sfx_common.replay_sfx_edits(cfg)
+        assert applied == 1
+        assert orphans == []
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        assert data["defaults"]["music_volume_percentage"] == 40
+        assert "volume_percentage" not in data["effects"]["MUSIC: THEME"]
+
+    def test_replay_defaults_missing_fields_does_not_raise(self, cfg):
+        self._write_raw_journal_line(cfg, {"ts": "2026-01-01T00:00:00", "scope": "defaults"})
+        applied, orphans = sfx_common.replay_sfx_edits(cfg)
+        assert applied == 1
+        assert orphans == []
+
+    def test_replay_defaults_and_percue_interleaved_last_write_wins(self, cfg):
+        sfx_common.append_sfx_defaults_edit(cfg, {"music_volume_percentage": 10})
+        sfx_common.append_sfx_edit(cfg, "MUSIC: THEME", {"volume_percentage": 33})
+        sfx_common.append_sfx_defaults_edit(cfg, {"music_volume_percentage": 20})
+        applied, orphans = sfx_common.replay_sfx_edits(cfg)
+        assert applied == 3
+        assert orphans == []
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        assert data["defaults"]["music_volume_percentage"] == 20
+        assert data["effects"]["MUSIC: THEME"]["volume_percentage"] == 33
+
+    def test_replay_all_defaults_journal(self, cfg):
+        sfx_common.append_sfx_defaults_edit(cfg, {"music_volume_percentage": 10})
+        sfx_common.append_sfx_defaults_edit(cfg, {"ambience_ramp_in_seconds": 2.0})
+        applied, orphans = sfx_common.replay_sfx_edits(cfg)
+        assert applied == 2
+        assert orphans == []
+        data = json.loads(open(cfg, encoding="utf-8").read())
+        assert data["defaults"]["music_volume_percentage"] == 10
+        assert data["defaults"]["ambience_ramp_in_seconds"] == 2.0

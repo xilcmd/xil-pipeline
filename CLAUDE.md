@@ -14,17 +14,19 @@ The project is packaged as `xil-pipeline` (import name `xil_pipeline`) using hat
 src/xil_pipeline/          # Python package (42 modules)
   __init__.py              # version + key re-exports
   xil.py                   # Unified `xil` command dispatcher
+  log_config.py            # Logging setup — pretty console + structured v2 log file
   models.py                # Pydantic data models, slug/path resolution
   mix_common.py            # Shared mixing utilities
   sfx_common.py            # SFX library management, ID3 tagging
-  sfx_backends.py          # Pluggable SFX backends (ElevenLabs API / local AudioLDM 2)
+  sfx_backends.py          # Pluggable SFX backends (ElevenLabs API / local AudioLDM 2 / local Stable Audio Open)
   timeline_viz.py          # Timeline visualization
   xil_init.py              # Project scaffolding (xil-init command, --type aware)
-  chatterbox_worker.py     # Persistent Chatterbox TTS worker (venv-chatterbox subprocess)
+  REMOVED_MARKER # Persistent Chatterbox TTS worker (venv-chatterbox subprocess)
+  chatterbox_turbo_worker.py  # Persistent Chatterbox Turbo TTS worker — native paralinguistic tags (venv-chatterbox)
   whisper_worker.py        # Persistent Faster-Whisper STT worker (venv-whisper subprocess)
-  audioldm2_worker.py      # Persistent AudioLDM 2 SFX/music/ambience worker (venv-audioldm2 subprocess)
   XILP000_*.py … XILP012_*.py   # Pipeline stages
-  XILU001_*.py … XILU018_*.py   # Utility scripts
+  mmaudio_worker.py        # Persistent MMAudio text-to-audio SFX worker (venv-mmaudio subprocess)
+  XILU001_*.py … XILU021_*.py   # Utility scripts
 tests/                     # Pytest test suite
 docs/                      # MkDocs documentation
 pyproject.toml             # Packaging config (hatchling)
@@ -47,206 +49,7 @@ All internal imports use the package namespace: `from xil_pipeline.models import
 - Optional: `google-genai`, `gTTS`, `pyttsx3`, `ollama`
 - ElevenLabs API key via `ELEVENLABS_API_KEY` env var
 - Audio playback via `mpg123` in WSL
-- **Optional local SFX venv** (`venv-audioldm2/`): a separate virtualenv for the AudioLDM 2 Large
-  sound-effect/music/ambience backend (`--sfx-backend audioldm2`). Like `venv-chatterbox/`, it is
-  auto-detected at the workspace or repo root (or located via `XIL_CODEROOT` — see Code Root) and
-  never installed into the main package. Setup
-  (validated on Python 3.13 + NVIDIA driver CUDA 12.6):
-
-  ```bash
-  python -m venv venv-audioldm2
-  venv-audioldm2/bin/pip install --upgrade pip
-  # GPU torch built for CUDA 12.4 (the default PyPI wheel targets CUDA 13 and is too new for a 12.6 driver → CPU-only):
-  venv-audioldm2/bin/pip install 'torch==2.6.0' --index-url https://download.pytorch.org/whl/cu124
-  venv-audioldm2/bin/pip install diffusers 'transformers==4.49.0' accelerate scipy soundfile pydub audioop-lts
-  ```
-
-  Version pins that matter:
-  - **`transformers==4.49.0`** — newer 5.x breaks the diffusers AudioLDM2 pipeline (loads the
-    language model as `GPT2Model` instead of `GPT2LMHeadModel` → `_update_model_kwargs_for_generation`
-    AttributeError); older 4.44.x has no Python 3.13 `tokenizers` wheel. 4.49.0 is the working middle.
-  - **`torch==2.6.0` from the cu124 index** — the default `pip install torch` pulls a CUDA 13 build
-    that a 12.6 driver rejects (`torch.cuda.is_available()` → False → silent CPU fallback). cu124
-    matches `venv-chatterbox/`.
-  - **`audioop-lts`** — required on Python 3.13+, where pydub's `audioop` stdlib dependency was removed.
-
-  AudioLDM 2 Large needs ~6–8 GB VRAM in fp16; the worker auto-falls back to CPU when CUDA is
-  unavailable (CPU works but is minutes-per-clip at the default 200 steps).
-
-## Workspace Root (`XIL_PROJECTROOT`)
-
-All pipeline commands resolve content paths relative to the **workspace root**. By default this is the current working directory (existing behaviour). Set `XIL_PROJECTROOT` to point at a content directory from anywhere:
-
-```bash
-export XIL_PROJECTROOT=/path/to/xil-content
-xil produce --episode S04E02   # works from any directory
-xil-gui                        # GUI shows correct workspace
-```
-
-Resolution order for `get_workspace_root()` (in `models.py`):
-
-1. `XIL_PROJECTROOT` environment variable (absolute path, tilde-expanded)
-2. `Path.cwd()` — current working directory (no env var set)
-
-`xil-init` with no directory argument scaffolds into `XIL_PROJECTROOT` when set, otherwise into the current directory.
-
-`logs/`, `configs/`, `parsed/`, `stems/`, `SFX/`, `daw/`, `masters/`, `cues/`, `scripts/`, `posts/` all resolve under the workspace root. This enables a clean separation of the installed software from user content — install `xil-pipeline` once via `pip`, point `XIL_PROJECTROOT` at a content-only directory.
-
-## Code Root (`XIL_CODEROOT`)
-
-The **code root** is where the optional local-model virtualenvs live —
-`venv-chatterbox/` (Chatterbox TTS), `venv-whisper/` (Faster-Whisper STT), and
-`venv-audioldm2/` (AudioLDM 2 SFX/music/ambience). These carry heavy ML dependencies and
-are **never installed into the main package**; each pipeline command auto-detects them at
-run time.
-
-`XIL_CODEROOT` decouples *where the venvs live* from `XIL_PROJECTROOT` (*where the show
-content lives*). When you install `xil-pipeline` once and point `XIL_PROJECTROOT` at a
-separate content-only directory, the model venvs stay next to the code — set
-`XIL_CODEROOT` so the pipeline finds them regardless of the active workspace:
-
-```bash
-export XIL_CODEROOT=/path/to/xil-pipeline     # holds venv-chatterbox/, venv-whisper/, venv-audioldm2/
-export XIL_PROJECTROOT=/path/to/xil-content   # holds scripts/, configs/, stems/, …
-xil produce --episode S04E02 --backend chatterbox --sfx-backend audioldm2
-```
-
-Resolution order for each model venv's `python3` (`resolve_venv_python()` in `models.py`):
-
-1. The explicit per-command flag — `--chatterbox-python` / `--whisper-python` /
-   `--audioldm2-python`. Wins when provided.
-2. `XIL_CODEROOT` — when set, `$XIL_CODEROOT/<venv-name>/bin/python3` is used
-   **exclusively**: it overrides auto-detection entirely and there is **no fallback**
-   (the command errors if the interpreter is absent there).
-3. Auto-detect — `<workspace>/<venv-name>/bin/python3`, then the repo root next to the
-   running install.
-
-`XIL_CODEROOT` is optional; when unset, detection falls back to the workspace-root /
-repo-root search (existing behaviour). It is consulted only for locating these venvs —
-all content paths still resolve under `XIL_PROJECTROOT`.
-
-## Project Configuration
-
-`project.json` at the workspace root declares the show name and optional season title used across the pipeline:
-
-```json
-{
-    "show": "THE 413",
-    "season": 3,
-    "season_title": "The Holiday Shift"
-}
-```
-
-All scripts accept a `--show` CLI flag to override the show name. Resolution order: `--show` arg > `project.json` > hardcoded fallback `"sample"`.
-
-The `season_title` key in `project.json` is the workspace-level default for the season/arc title. When a script header contains `Arc: "…"`, that value takes precedence; when absent, `project.json` `season_title` fills in. Resolution order: script header `Arc:` > `project.json` `season_title` > `None`. The `{season_title}` placeholder in PREAMBLE/POSTAMBLE script text resolves from this value.
-
-The `season` key in `project.json` is the workspace-level default season number. When a script header contains `Season N:`, that value takes precedence; when absent, `project.json` `season` fills in. Resolution order: script header `Season N:` > `project.json` `season` > `None`.
-
-### Content Type
-
-`project.json` supports an optional `"type"` field (default: `"podcast"`):
-
-```json
-{
-  "show": "THE 413",
-  "type": "drama",
-  "season": 3,
-  "season_title": "The Architect"
-}
-```
-
-Four types are supported: **podcast**, **audiobook**, **drama**, **special**. The type drives:
-- Section map used by `xil-parse` (e.g. `CHAPTER ONE` for audiobook, `PROLOGUE/ACT ONE` for drama)
-- Default `gap_ms` for `xil-assemble` / `xil-daw` (400 ms audiobook, 800 ms drama, 600 ms others)
-- Sample script, speakers.json, and subdirectory layout generated by `xil-init --type`
-- Audiobook type adds `"tag_format": "V{volume:02d}C{chapter:02d}"` to `project.json` for `V01C01`-style tags
-
-`project.json` without a `type` field defaults to `"podcast"` with no change in behavior.
-
-### Workspace Layout (0.1.8+)
-
-New workspaces created with `xil-init` use a normalized directory layout:
-
-```
-configs/{slug}/speakers.json        ← was speakers.json at root
-configs/{slug}/cast_{tag}.json      ← was cast_{slug}_{tag}.json at root
-configs/{slug}/sfx_{tag}.json       ← was sfx_{slug}_{tag}.json at root
-parsed/{slug}/parsed_{tag}.json     ← was parsed/parsed_{slug}_{tag}.json
-daw/{slug}/{tag}/                   ← was daw/{tag}/
-masters/{slug}/{tag}_master.mp3     ← was masters/{slug}_{tag}_master.mp3
-cues/{slug}/cues_{tag}.md           ← was cues/cues_{slug}_{tag}.md
-stems/{slug}/{tag}/                 ← unchanged
-```
-
-Existing pre-0.1.8 workspaces continue to work automatically — `derive_paths()` detects the legacy layout (cast config at root) and returns legacy paths. Run `xil migrate-workspace` to move files to the new layout.
-
-File paths are derived dynamically via `derive_paths(slug, tag)`. The slug is the show name lowercased with all non-alphanumeric characters removed (e.g., `"THE 413"` → `"the413"`, `"Night Owls"` → `"nightowls"`).
-
-## Project Scaffolding
-
-`xil-init` scaffolds a new show workspace with sample content:
-
-```bash
-xil-init my-show --show "Night Owls"
-xil-init my-show --show "Night Owls" --type drama
-xil-init my-show --show "Night Owls" --type audiobook
-```
-
-The `--type` flag (choices: `podcast` [default], `audiobook`, `drama`, `special`) selects:
-- A type-specific sample script with appropriate sections and cast
-- A type-specific `speakers.json` (single narrator for audiobook, full cast for drama, etc.)
-- `project.json` `"type"` field + `"tag_format"` for audiobook (`V01C01`)
-
-Creates: `project.json`, `speakers.json`, `scripts/sample_{tag}.md`, and empty subdirectories in the normalized layout. The sample script exercises all parser features so the user can immediately run `xil-scan` and `xil-parse --dry-run`.
-
-## Speaker Configuration
-
-`configs/{slug}/speakers.json` provides optional enrichment (voice_id, pan, filter, role, etc.) for the parser.  Since 0.2.0 it is **not required** for speaker recognition — characters declared in the script's `CAST:` block are always recognized.
-
-```json
-[
-    {"display": "ADAM", "key": "adam"},
-    {"display": "MR. PATTERSON", "key": "mr_patterson"},
-    {"display": "FILM AUDIO (MARGARET'S VOICE)", "key": "film_audio"}
-]
-```
-
-Recognition order (merged, all sources combined): `CAST:` block entries from the script itself → `configs/{slug}/speakers.json` (JSON key always wins over auto-derived key) → built-in defaults (only when neither CAST entries nor JSON file exist). The list is auto-sorted longest-first for compound-name matching. Both `xil-scan` (XILP000) and `xil-parse` (XILP001) accept the `--speakers` flag.
-
-### CAST: block format
-
-Every script should declare its cast in the header using dialogue-label names (the ALL-CAPS prefix used in dialogue lines), with optional `—` role descriptions:
-
-```
-CAST:
-* ADAM — Adam Santos, Host
-* MR. PATTERSON — Recurring Caller
-* FILM AUDIO (MARGARET'S VOICE) — Archive audio
-```
-
-Characters listed here are automatically recognized during parsing even if absent from `speakers.json`. For new series or one-off characters added mid-series, adding them to the `CAST:` block is sufficient to parse correctly; run `xil scan --harvest-cast` afterwards to propagate them to `speakers.json` for enrichment.
-
-## Pre-Flight Script Scanner
-
-`XILP000_script_scanner.py` — Scans a raw markdown script and reports recognized/unrecognized speakers and sections **before** running XILP001. Use this whenever onboarding a new script to catch missing speakers or `SECTION_MAP` entries early.
-
-```bash
-xil scan "scripts/<script>.md"
-xil scan "scripts/<script>.md" --json
-xil scan --harvest-cast                  # union CAST: blocks across all scripts → speakers.json diff
-xil scan --harvest-cast --yes            # auto-add new entries to speakers.json
-xil scan --backfill-cast --dry-run       # preview CAST: block insertion for old scripts
-xil scan --backfill-cast --yes           # write CAST: blocks to all scripts that lack one
-```
-
-- No `--episode` flag required for single-script scan — reads only the script file, no side effects
-- Exit code 0 = all recognized (safe to run XILP001); exit code 1 = action needed
-- Imports XILP001's pure functions directly — no duplicated logic
-- `--json` outputs machine-readable scan results
-- `--speakers PATH` overrides the speaker list (see Speaker Configuration)
-- `--harvest-cast` scans all `scripts/*.md`, collects CAST: entries, and reports characters missing from speakers.json; `--yes` adds them automatically; `--scripts-dir DIR` overrides the default scripts directory
-- `--backfill-cast` adds CAST: blocks to scripts that don't have one, inferring speakers from existing parsed JSON (most reliable) or body scan against speakers.json; `--yes` writes files, default is dry-run; `--scripts-dir DIR` overrides the default scripts directory
+- **PARALINGUISTIC TAG NEAR-MISSES** report section: flags inline `[tags]` that look like misspelled Chatterbox Turbo cues (`[laughs]` → `[laugh]`, `[clears throat]` → `[clear throat]`, `[surprise]` → `[surprised]`) and suggests the correct token. Turbo silently strips unknown tags, so these otherwise fail invisibly at produce time. Detection is `difflib` similarity ≥ 0.72 against `ALLOWED_TAGS` plus an alias map for variants difflib scores too low; tags that simply aren't Turbo cues (ElevenLabs-only `[exhausted]`, `[pause]`, `[curious]`) are never flagged. **Advisory only — never affects the exit code**, since the same script may target the ElevenLabs backend. Implemented by `scan_paralinguistic_tags()`; the scan JSON carries it under `paralinguistic_near_misses`
 
 ## Architecture: Nine-Stage Pipeline (+ Cues Ingester Pre-Processing)
 
@@ -277,6 +80,7 @@ xil parse "scripts/<script>.md" --episode S01E01 --preview 10
 - Known speakers resolved in priority order: `CAST:` block in the script header (auto-discovered, no setup required) → `speakers.json` enrichment (JSON key overrides auto-derived key) → built-in defaults (only when both sources are absent); new characters declared in `CAST:` are recognized immediately without editing `speakers.json`
 - `--speakers PATH` overrides the speakers.json path (see Speaker Configuration)
 - Sections: COLD OPEN, OPENING CREDITS, ACT ONE, ACT TWO, MID-EPISODE BREAK, CLOSING
+- Direction pipe-hints: `[<TEXT> | <file>.mp3 | <key>=<value>]` — segments after the direction text are classified independently (order-free, either half optional). A `.mp3`/`.wav` segment becomes the cue's `source`; a `key=value` segment whose key is in `HINT_ATTRS` becomes a per-cue config override (currently `play_volume_pct=20%` → `volume_percentage: 20`, the `%` optional, range 0–200). Unrecognized segments are left on the direction text rather than swallowed, and a malformed value warns and is dropped instead of failing the parse. Hints land on the parsed entry as `sfx_source` / `sfx_overrides`, then flow into `sfx_<TAG>.json` via `generate_sfx_config()` (new config) or `backfill_sfx_sources()` / `xil sfx-hydrate` (existing config). **A `source` hint never replaces one already in the config; attribute hints do overwrite** — the script is authoritative for playback settings. Silence cues (BEAT) ignore attribute hints. Add a key to `HINT_ATTRS` to support a new attribute; the rest of the chain is generic
 
 ### Stage 1.5: Cues Sheet Ingestion (Pre-processing)
 
@@ -319,10 +123,34 @@ xil produce --episode S01E01 --dry-run
 - Supports `--terse` to truncate each line to 3 words (minimizes TTS character cost)
 - Supports `--gen-sfx`, `--gen-music`, `--gen-ambience` to generate only the specified categories of stems (replaces deprecated `--sfx-music` which is kept as a shorthand for all three)
 - Supports `--local-only` (used with `--gen-sfx`/`--gen-music`/`--gen-ambience`) to skip any effect that would require an API call — only assets already in `SFX/` (CACHED) or silence entries are placed; no credits spent
-- Supports `--backend elevenlabs|gtts|chatterbox` (default: `elevenlabs`): `gtts` routes all dialogue voice stems through Google Translate TTS at no cost — flat single voice, useful for duration checks; `chatterbox` uses local Chatterbox TTS with per-character zero-shot voice cloning from `voice_refs/<key>.wav` reference clips — near-production quality, GPU-accelerated, free after setup; SFX/music/ambience generation is unaffected by `--backend`; eleven_v3 inline tags are stripped before gTTS/Chatterbox calls
-- `--backend chatterbox` options: `--chatterbox-python PATH` (default: auto-detect `./venv-chatterbox/bin/python3`); `--voice-refs DIR` (default: `voice_refs/`) for per-speaker `.wav` reference clips; `--exaggeration FLOAT` emotion level 0.0–1.0 (default: 0.5); missing voice refs fall back to Chatterbox default voice
-- Supports `--sfx-backend elevenlabs|audioldm2` (default: `elevenlabs`) — an **independent** backend axis for SFX/MUSIC/AMBIENCE generation, orthogonal to the dialogue `--backend`. `audioldm2` runs a local AudioLDM 2 Large diffusion model (`venv-audioldm2/`, via `audioldm2_worker.py`) — free, GPU-accelerated, no API credits. Model-generated assets are stored backend-tagged as `SFX/<slug>.audioldm2.mp3` so they coexist with ElevenLabs assets and switching backends does not silently reuse the wrong audio; `silence`/`source` assets stay backend-independent (plain name). ElevenLabs API key is only required when `--sfx-backend elevenlabs` and SFX generation is requested (or the dialogue backend is elevenlabs)
-- `--sfx-backend audioldm2` options: `--audioldm2-python PATH` (default: auto-detect `./venv-audioldm2/bin/python3`); `--audioldm2-guidance FLOAT` guidance scale / prompt adherence (default: 3.5); `--audioldm2-steps INT` diffusion inference steps (default: 200); `--audioldm2-negative-prompt STR` (default: `"low quality, noise"`). AudioLDM 2 emits 16 kHz audio and quantises `duration_seconds` to its latent rate, so very short SFX may run slightly long
+- Supports `--backend elevenlabs|gtts|chatterbox-turbo` (default: `elevenlabs`): `gtts` routes all dialogue voice stems through Google Translate TTS at no cost — flat single voice, useful for duration checks; `chatterbox-turbo` uses the local **Chatterbox Turbo** model (`venv-chatterbox`) with per-character zero-shot voice cloning from `voice_refs/<key>.wav` reference clips, and natively renders 19 paralinguistic tags (see Chatterbox Turbo Paralinguistic Tags below); SFX/music/ambience generation is unaffected by `--backend`. Tag handling differs by backend: eleven_v3 native tags are passed through to ElevenLabs; `gtts` **strips all `[tags]`**; `chatterbox-turbo` **keeps allow-listed paralinguistic tags** and strips the rest (e.g. ElevenLabs-only `[exhausted]`)
+- **Classic `chatterbox` was removed in #62** (Turbo supersedes it). `--backend chatterbox` is still accepted as a deprecated alias: it warns and generates with Turbo, and the stem is recorded as `chatterbox-turbo`. **Historical data still says `chatterbox`** — ~8,460 log records and ~1,559 stem-manifest entries — and is still parsed by `xil-stem-log`. Those values are correct history, not corruption; `backend` is part of the manifest dedup key, so old entries simply never match a new request
+- `--backend chatterbox-turbo` options: `--chatterbox-python PATH` (default: auto-detect `./venv-chatterbox/bin/python3`); `--voice-refs DIR` (default: `voice_refs/`) for per-speaker `.wav` reference clips; missing voice refs fall back to Chatterbox default voice
+- `--backend chatterbox-turbo` uses `--chatterbox-python`/`--voice-refs` and `venv-chatterbox`. Reference clips **must be >5 seconds** (Turbo asserts this); Turbo conditionals are cached as `voice_refs/<key>.turbo.conds.pt` — kept distinct because they are **not** interchangeable with the classic `.conds.pt` files still on disk. If the model repo is gated, set `HF_TOKEN` before first run
+
+#### Chatterbox Turbo Paralinguistic Tags
+
+`ResembleAI/chatterbox-turbo` renders **19** paralinguistic cues as dedicated tokens (IDs 50257–50275 in the model's `added_tokens.json`). Write them inline in script dialogue; `chatterbox_turbo_worker.py` keeps these and strips every other bracketed token before generation.
+
+| Category | Tags |
+| --- | --- |
+| Emotion | `[angry]` `[fear]` `[surprised]` `[happy]` `[crying]` `[sarcastic]` |
+| Delivery style | `[whispering]` `[dramatic]` `[narration]` `[advertisement]` |
+| Vocal gesture | `[laugh]` `[chuckle]` `[sigh]` `[gasp]` `[groan]` `[cough]` `[sniff]` `[shush]` `[clear throat]` |
+
+Authoring rules:
+
+- **Exact spelling only — there are no plural or variant forms.** `[laugh]` is a token; `[laughs]`, `[chuckles]`, `[coughs]` are not, and are stripped. Likewise `[clear throat]` (with the space) is the token — `[clears throat]` and `[throat clearing]` are stripped.
+- Matching is case-insensitive, so `[LAUGH]` and `[Angry]` both work.
+- Any tag outside this set is removed, which is what makes ElevenLabs-only tags (`[exhausted]`, `[pause]`) safe to leave in a shared script — they are honoured under `--backend elevenlabs` and dropped under `chatterbox-turbo`.
+- The allow-list lives in `ALLOWED_TAGS` in `chatterbox_turbo_worker.py` and is pinned by `tests/test_chatterbox_turbo_worker.py`. It is derived from the model's tokenizer, not from prose docs — re-derive from `added_tokens.json` after a model bump rather than editing by hand.
+- Only the `chatterbox-turbo` backend understands these. Classic `chatterbox` and `gtts` strip all `[tags]`; ElevenLabs has its own separate tag vocabulary.
+- Supports `--sfx-backend elevenlabs|mmaudio` (default: `elevenlabs`) — an **independent** backend axis for SFX/MUSIC/AMBIENCE generation, orthogonal to the dialogue `--backend`. `mmaudio` runs MMAudio locally in `venv-mmaudio` (text-to-audio mode) — free, GPU-accelerated (~6 GB VRAM), writes backend-tagged assets to `SFX/<slug>.mmaudio.mp3`
+- **MMAudio weights are CC BY-NC 4.0 — NON-COMMERCIAL ONLY** (the code is MIT, the checkpoints are not). `--mmaudio-accept-noncommercial` is **required**; without it the backend refuses to start. Every session logs the constraint and every generated asset carries it in its ID3 comment, so an MMAudio clip stays identifiable by filename *and* by tag if a show is later monetised
+- MMAudio is trained at **8 seconds** and warns that large deviation degrades quality, so generation always runs at `--mmaudio-duration` (default 8.0) and the result is **trimmed in the backend** to the cue's `duration_seconds`. The trim cannot be left to the mixer: for a prompt-generated cue `duration_seconds` is the *generation length* and there is no mix-time clip (that applies only to `source=` cues). Other options: `--mmaudio-python`, `--mmaudio-cfg` (4.5), `--mmaudio-steps` (25), `--mmaudio-negative-prompt`, `--mmaudio-seed`
+- MMAudio is primarily a **video**-to-audio model; this uses its supported text-only path. It installs from a git clone, not PyPI
+- **venv-mmaudio install order matters.** MMAudio declares `torch >= 2.5.1` with no upper bound, so `pip install -e MMAudio` pulls the newest torch (a CUDA 13 build) and silently replaces a driver-matched one — on a CUDA 12.x driver that falls back to **CPU-only** and breaks torchaudio. Re-pin `torch/torchaudio/torchvision` from the cu124 index **after** the MMAudio install, then confirm `torch.cuda.is_available()` is True. Do **not** try to clean up the leftover `nvidia-*` CUDA 13 packages by uninstalling them individually: cu12 and cu13 share install paths, so removing one deletes shared libraries the other still claims (`libcudnn.so.9`, `libnccl.so.2` disappear while pip still lists the package). Force-reinstall the torch stack instead
+- `mmaudio_worker.py` wraps generation in `torch.inference_mode()`. This is **required**, not an optimisation — MMAudio's own `demo.py` decorates its entry point the same way, and without it generation fails with "Inference tensors cannot be saved for backward"
 - **Optional STT venv** (`venv-whisper/`): a separate virtualenv at the workspace or repo root containing `faster-whisper`. Used by `xil-stem-verify` (XILU015) for post-generation transcription verification. Worker script: `whisper_worker.py` (same JSON-over-stdin/stdout subprocess protocol as `chatterbox_worker.py`). Probes CUDA at startup and auto-falls back to CPU/int8 if `libcublas` is unavailable.
 - Intro music (`INTRO MUSIC` source entry): trimmed at copy time using `play_duration` percentage from sfx config, so the stem file reflects the actual playback length
 - Skips stems that already exist on disk
@@ -401,6 +229,8 @@ xil daw --episode S01E01 --timeline --timeline-html
 - `--save-aup3` includes a `SaveProject2` command in the generated `{TAG}_open_in_audacity.py` helper script (requires mod-script-pipe in Audacity)
 - `--timeline` prints an ASCII multitrack timeline to stdout (works with `--dry-run` via fast mutagen header reads)
 - `--timeline-html` writes a self-contained interactive HTML timeline to `daw/{TAG}/{TAG}_timeline.html` (hover tooltips, Ctrl+scroll zoom)
+- The HTML timeline shows two **structure bands above the minute ruler** — Sections (`cold-open`, `act1`, …) over Scenes (`scene-1`, …) — derived from the parsed entries' `section`/`scene` fields via `derive_structure_bands()` in `mix_common.py`. Band boundaries come from the first *stemmed* entry of each group (section/scene headers carry no stem); entries with no scene (e.g. preamble) leave a deliberate gap
+- **The HTML is a static artifact**: all CSS/JS/data are inlined at generation time and the GUI only reads the file off disk, so renderer changes never reach already-generated timelines. Regenerate cheaply — without re-exporting layer WAVs — with `xil daw --episode {TAG} --dry-run --timeline-html`
 - Preamble/postamble stems are picked up automatically via `collect_stem_plans()` — they are regular seq-numbered entries in the parsed JSON (no special negative-seq handling)
 - No ElevenLabs API key required — no API calls made
 - Shared mixing logic imported from `mix_common.py`; visualization via `timeline_viz.py`
@@ -556,6 +386,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILU016_*` — stem compare (cross-references a `stem_verify` Whisper transcript report against the parsed script; flags garbled/silent/missing dialogue stems using `difflib.SequenceMatcher`; no extra dependencies)
 - `XILU017_*` — remove show (delete all workspace files for a given show slug; `--dry-run` safe; `--yes` skips confirmation prompt; `--include-scripts` also removes `scripts/*_{slug}_*.md` files; `SFX/` and `logs/` are never touched; accepts show name or slug; clears `.active_show` when it points to the removed show)
 - `XILU018_*` — remove episode (delete all workspace artifacts for a single episode tag — cast/sfx configs, parsed JSON/CSV, stems dir, DAW dir, master MP3s, cues, posts, voice_samples; `--dry-run` safe; `--yes` skips confirmation prompt; source script in `scripts/`, shared `SFX/`, and `logs/` are never touched; handles both normalized and legacy layouts)
+- `XILU021_*` — SFX clipping impact report (`xil sfx-impact`; sweeps every show's `sfx_<tag>.json`, measures each `source=` cue against the file on disk, and grades how much audio `duration_seconds` is cutting: `1-nochange` <0.1s lost, `2-minor` <3s, `3-review` ≥3s, `EXCLUDED` for looped beds and explicit `play_duration`, `MISSING` for unreadable sources; mirrors the precedence in `mix_common.collect_stem_plans` so the report cannot drift from the mixer; each impacted row carries the config edit that would restore full length — always `play_duration: 100`, **not** `duration_seconds: 0`: both play the whole file, but only `play_duration` is in `SFX_EDIT_FIELDS` and therefore replayed by the timeline edit journal, so a `duration_seconds` edit silently reverts to the parser's 5.0 default on the next skeleton rebuild; **read-only — never writes a config**; emits CSV to `reports/sfx_impact_<date>.csv` plus an optional self-contained `--html` review page; `--show` / `--episode` narrow the sweep, `--tier` filters, `--output -` streams CSV to stdout)
 - `xil_gui.py` — Gradio web dashboard (`xil-gui` entry point); requires `[gui]` extra; nine tabs in order: Setup (with content type selector), Project, Episodes, Run Stage, Speakers, Cast Config, SFX Config, Audio Preview, Timeline
 - `xil_use.py` — active show context switcher (`xil-use` entry point / `xil use`); no args lists shows in `configs/` and marks the active one; with a show name or slug (multi-word names may be unquoted) writes `<workspace>/.active_show`
 - `XILP001_*` — script parser
@@ -572,7 +403,7 @@ All scripts live under `src/xil_pipeline/` and are installed as `xil-*` console 
 - `XILP012_*` — social media post draft generator (parsed JSON + Claude Haiku → `posts/{slug}/{tag}_posts.md`; 3 variants: Hype, Quote, Spotlight; requires `[publish]` extra + `ANTHROPIC_API_KEY`)
 - `mix_common.py` — shared mixing utilities (timeline, layer builders, fast label helpers) used by XILP003 and XILP005; `StemPlan.scene` (str|None): scene label from parsed JSON, used for scene-scoped vintage filter; `StemPlan.loop` field: `True` (default) tiles audio, `False` plays once up to scene boundary; `StemPlan.pre_trimmed` flag: skips play_duration trim for source-based stems already trimmed at copy time; `StemPlan.volume_percentage` (float|None): volume as a percentage (100 = unity, None = no change); `StemPlan.ramp_in_seconds` / `StemPlan.ramp_out_seconds`: fade durations in seconds (None = no fade); `_resolve_audio_params()` resolves volume/ramp from per-effect config or category defaults for MUSIC, AMBIENCE, SFX, and BEAT direction types; `volume_percentage`, `ramp_in_seconds`, and `ramp_out_seconds` each fall back to the global key when no category-specific key exists (e.g. SFX/MUSIC when `sfx_volume_percentage`/`music_ramp_in_seconds` are absent from the config defaults); `collect_stem_plans()` skips stale stems (header entries, type mismatch, speaker mismatch), deduplicates by seq number, and injects synthetic stop-marker `StemPlan` entries (filepath="") for `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` directives found in the entries index; `build_sfx_layer()` and `build_foreground()` apply `volume_percentage` to SFX/BEAT stems; `build_ambience_layer()` skips corrupt or unreadable stem files with a warning rather than crashing; `apply_vintage_filter()` applies a 1960s-era HF roll-off + 1 dB reduction; `_apply_speaker_filters(segment, filter_val)` resolves the cast config `filter` string and applies the named filter chain (`false`/`None` = none, `true`/`"phone"` = phone, `"vintage"` = vintage, `"vintage,phone"` = both); `_vf_engaged_seqs(stem_plans)` returns the set of dialogue seq numbers that fall within a `VINTAGE FILTER: ENGAGES`…`VINTAGE FILTER: DISENGAGES` span — used by `build_foreground()` and `build_dialogue_layer()` to apply the vintage EQ to dialogue within those spans (script-direction spans take precedence over `vintage_scenes` list fallback)
 - `sfx_common.py` — shared SFX library management, ID3 tagging (`tag_mp3`, `tag_wav`), effect generation; `ensure_shared_sfx()` / `generate_sfx()` accept a `backend: SfxBackend` (defaults to an ElevenLabs backend wrapping `client`) and delegate all model generation to it — the streaming-download + 429/5xx/network retry loop now lives in `ElevenLabsSfxBackend`, not inline; `shared_sfx_path(sfx_dir, effect_key, backend="elevenlabs")` returns backend-tagged paths for non-default backends; `load_sfx_entries()` accepts `direction_types` filter set, returns `direction_type` field in each entry dict, skips entries with `duration_seconds=0.0`; `dry_run_sfx()` accepts `backend_name` — matches assets against the backend-tagged path and reports local backends as free instead of API credits; `tag_mp3()` accepts optional `cover_art_path` — when supplied and file exists, reads the image and embeds an APIC front-cover frame (PNG or JPEG detected by extension) in the same `tags.save()` call as other ID3 fields
-- `sfx_backends.py` — pluggable SFX/music/ambience generation backends behind the `SfxBackend` protocol (`generate_to(out_path, prompt, duration_seconds, prompt_influence)` + `close()`); `ElevenLabsSfxBackend` wraps `client.text_to_sound_effects.convert` (streaming, atomic rename, retry on 429/5xx/network); `AudioLDM2SfxBackend` drives `_AudioLDM2Client`, a persistent `audioldm2_worker.py` subprocess in `venv-audioldm2/` (JSON-over-stdio, same pattern as `_ChatterboxClient`); `make_sfx_backend(name, client=None, *, audioldm2_python=None, guidance=3.5, steps=200, negative_prompt=…, device="cuda")` is the factory, auto-detecting the venv-audioldm2 Python (workspace root → repo root). AudioLDM 2 maps `duration_seconds`→`audio_length_in_s` and uses `guidance_scale` in place of `prompt_influence`
+- `sfx_backends.py` — SFX/music/ambience generation behind the `SfxBackend` protocol (`generate_to(out_path, prompt, duration_seconds, prompt_influence)` + `close()`); `ElevenLabsSfxBackend` wraps `client.text_to_sound_effects.convert` (streaming, atomic rename, retry on 429/5xx/network); `_WorkerClient` is the shared JSON-over-stdio subprocess bridge for local model workers (subclasses set `_WORKER`/`_LABEL`/`_READY_HINT`, may override `_request_extras()`); `MMAudioSfxBackend` drives `_MMAudioClient` (`mmaudio_worker.py`) and exposes `asset_comment`, which `ensure_shared_sfx` passes to `tag_mp3` so the CC BY-NC notice is embedded in the file; `make_sfx_backend(name, client=None, **kw)` is the factory and raises `ValueError` for unknown names
 - `timeline_viz.py` — multitrack timeline visualization; `render_terminal_timeline()` (ASCII) and `render_html_timeline()` (interactive HTML); no pydub dependency; HTML bar badges: `ri` (↑ ramp in, left), `ro` (↓ ramp out, right-top), `pd` (% play duration, center), `vb` (🔊 volume%, right-bottom, shown when `volume_pct != 100`); applies to music, ambience, and SFX spans
 - `models.py` — Pydantic data models plus `get_workspace_root()` (respects `XIL_PROJECTROOT` env var), `show_slug()`, `derive_paths()`, `resolve_slug()` for dynamic show-based path derivation; `DEFAULT_SLUG = "sample"` fallback; `ProjectConfig` model with `type`/`tag_format` fields; `TYPE_DEFAULTS` dict with gap_ms and stability per content type; `derive_paths_legacy()` returns pre-0.1.8 paths anchored to workspace root (used by migration tool); `derive_paths()` auto-detects layout (legacy if root cast config exists, normalized otherwise); `load_project_config()` / `resolve_project_type()` helpers
 - `xil.py` — unified dispatcher that maps subcommands (`scan`, `parse`, `produce`, etc.) to existing module `main()` entry points; prints command list on `xil --help`; `xil-*` commands remain supported
@@ -638,13 +469,14 @@ Intro/outro music lives in the SFX config under `"INTRO MUSIC"` / `"OUTRO MUSIC"
 - Stop markers: `AMBIENCE: STOP` and `AMBIENCE: * FADES OUT` entries use `type: "silence", duration_seconds: 0.0`; they inject a boundary marker into the mixing timeline without generating audio
 - `vintage_scenes` — optional top-level list of scene labels (e.g. `["scene-3", "scene-4", "scene-5"]`); all dialogue in those scenes receives the vintage audio filter (HF roll-off + 1 dB reduction) during assembly; applied after per-speaker filters; omit or leave empty for no vintage treatment; the same scene labels used in the parsed JSON `scene` field
 - SFX stems use `_sfx` suffix: `002_cold-open_sfx.mp3`
+- Both per-effect overrides (`effects.<key>.volume_percentage`/`ramp_in_seconds`/`ramp_out_seconds`/`play_duration`) and category defaults (`defaults.<layer>_volume_percentage`/`<layer>_ramp_in_seconds`/`<layer>_ramp_out_seconds` for `music`/`sfx`/`ambience`) are editable from the xil-gui Timeline tab's double-click modal — see the Web Dashboard section's Timeline-tab bullet
 
 ### Shared SFX Library
 
-Each unique sound effect is generated **once** into the `SFX/` directory as a shared asset (e.g. `SFX/beat.mp3`, `SFX/sfx_phone-buzzing.mp3`). Episode stems in `stems/<slug>/<TAG>/` are copies of these shared assets with sequence-numbered filenames. This avoids regenerating the same effect for repeated uses (e.g. BEAT appears 26 times in S01E01). See `docs/sfx-reuse-guide.md` for a workflow guide on maximizing SFX reuse and minimizing API credit spend.
+Each unique sound effect is generated **once** into the `SFX/` directory as a shared asset (e.g. `SFX/beat.mp3`, `SFX/sfx_phone-buzzing.mp3`). Episode stems in `stems/<slug>/<TAG>/` are copies of these shared assets with sequence-numbered filenames. This avoids regenerating the same effect for repeated uses (e.g. BEAT appears 26 times in S01E01). See `docs/guides/sfx-reuse-guide.md` for a workflow guide on maximizing SFX reuse and minimizing API credit spend.
 
-- Shared asset naming: `slugify_effect_key()` in `sfx_common.py` converts direction text to filesystem-safe slugs; `shared_sfx_path(sfx_dir, effect_key, backend)` appends a `.<backend>` infix for non-ElevenLabs backends (e.g. `SFX/sfx_door-opens.audioldm2.mp3`), keeping the plain name for `elevenlabs` so existing caches still hit. Only model-generated `type: sfx` assets are backend-tagged; `silence`/`source` assets stay plain
-- `--dry-run` shows three statuses: `EXISTS` (episode stem on disk), `CACHED` (shared asset exists, will be copied), `NEW` (needs generation). For `--sfx-backend audioldm2`, NEW generation is reported as **local (free)** instead of an API credit estimate
+- Shared asset naming: `slugify_effect_key()` in `sfx_common.py` converts direction text to filesystem-safe slugs; `shared_sfx_path(sfx_dir, effect_key, backend)` appends a `.<backend>` infix for non-ElevenLabs backends (historical assets only, e.g. `SFX/sfx_door-opens.audioldm2.mp3`), keeping the plain name for `elevenlabs` so existing caches still hit. Only model-generated `type: sfx` assets are backend-tagged; `silence`/`source` assets stay plain
+- `--dry-run` shows three statuses: `EXISTS` (episode stem on disk), `CACHED` (shared asset exists, will be copied), `NEW` (needs generation). NEW generation is reported with an API credit estimate
 - Common SFX functions live in `sfx_common.py` — both XILU002 and XILP002 delegate to it. The actual audio generation is delegated to a pluggable `SfxBackend` (`sfx_backends.py`)
 - `tag_mp3()` writes ID3 metadata (Album, Genre, Year, Title, Artist, Lyrics) to MP3 stems
 - `tag_wav()` writes ID3 metadata (Album, Genre, Year, Title, Artist) to WAV layer exports
@@ -660,7 +492,7 @@ xil sfx --episode S01E01 --gen-music
 xil sfx --episode S01E01 --gen-ambience
 xil sfx --episode S01E01 --max-duration 5.0
 xil sfx --episode S01E01 --local-only
-xil sfx --episode S01E01 --sfx-backend audioldm2 --gen-sfx
+xil sfx --episode S01E01 --gen-sfx
 xil sfx --episode S01E01
 ```
 
@@ -673,7 +505,7 @@ xil sfx --episode S01E01
 - `--dry-run` SUMMARY now shows per-category credit subtotals (MUSIC / AMBIENCE / SFX / silence)
 - `--max-duration N` filters to effects ≤ N seconds (controls API credit spend)
 - `--local-only` skips any effect not already present in `SFX/`; only CACHED assets and silence entries are placed, no API calls made
-- `--sfx-backend elevenlabs|audioldm2` (default: `elevenlabs`) selects the generation backend; `--audioldm2-python`, `--audioldm2-guidance`, `--audioldm2-steps`, `--audioldm2-negative-prompt` configure the local model (same semantics as `xil-produce`). ElevenLabs API key is only required for `--sfx-backend elevenlabs`
+- `--sfx-backend elevenlabs` (default) selects the generation backend; it is the only remaining choice since #62
 - 429 rate-limit errors are retried automatically up to 5 times with linear backoff (10s, 20s, 30s, 40s, 50s)
 - Skips stems that already exist on disk
 
@@ -706,11 +538,11 @@ xil sample --episode S02E03 --force
 
 - `--episode` or `--tag` (one required) or `--cast PATH` to specify the cast config
 - `--show` overrides the show name used for slug derivation (see Project Configuration)
-- `--backend elevenlabs|gtts|chatterbox` (default: `elevenlabs`): selects TTS backend for sample generation
+- `--backend elevenlabs|gtts|chatterbox-turbo` (default: `elevenlabs`): selects TTS backend for sample generation (`chatterbox-turbo` renders the 19 native paralinguistic tags — see Chatterbox Turbo Paralinguistic Tags under Stage 2; uses `venv-chatterbox`, needs reference clips >5 s). `chatterbox` is a deprecated alias that warns and uses Turbo. Putting a tag in `--sample-text` (e.g. `"[sarcastic] I am {name}"`) is a quick way to audition a cue against a voice ref
 - Default sample text: `"I am {name} not yo momma"`; override with `--sample-text` (use `{name}` placeholder)
 - Output: `voice_samples/{TAG}/{backend}/{actor}.mp3` — backend subdirectory enables side-by-side comparison
 - Skips members with `voice_id=TBD` (ElevenLabs only); `--force` regenerates existing samples
-- `--chatterbox-python PATH`, `--voice-refs DIR`, `--exaggeration FLOAT` — Chatterbox-specific options (same as `xil-produce`)
+- `--chatterbox-python PATH`, `--voice-refs DIR` — Chatterbox Turbo options (same as `xil-produce`)
 - Requires `ELEVENLABS_API_KEY` for `--backend elevenlabs`
 
 ### SFX Library Discovery
@@ -766,6 +598,27 @@ xil splice --episode S02E03 --insert-after 322 \
 - Recomputes the `stats` block after modification
 - No ElevenLabs API key required — no API calls made
 
+### Logging
+
+`log_config.py` writes **two formats from one logger** — the console stays human-readable, the file is machine-readable.
+
+- **Console (stdout)** — unchanged: plain `INFO`, `[!]` for warnings, `[ERROR]`/`[CRITICAL]`, `[debug]`. The `run_banner()` bars print here as always.
+- **File** — `logs/xil_v2_YYYY-MM-DD_<host>.log`, one record per line:
+
+```text
+2026-07-26T19:03:00-0400|RUN|hibirdy|produce|BEGIN argv="xil produce --episode S01E01 --backend chatterbox-turbo" pid=1234 ver=0.3.1 cwd=/mnt/cloudsy/xil-projects
+2026-07-26T19:03:02-0400|INFO|hibirdy|produce|  > [006] adam via Chatterbox Turbo (282 chars)...
+2026-07-26T19:05:22-0400|RUN|hibirdy|produce|END elapsed=142.3s
+```
+
+- Fields are `<iso-8601 ts>|<LEVEL>|<host>|<stage>|<message>`. **The message may contain `|`** — split off only the four leading fields.
+- **One file per host.** The workspace is often a shared network mount, and appends are *not* atomic across clients on 9p/SMB/NFS — two machines sharing one file can interleave or lose lines. Each host owns `xil_v2_<date>_<host>.log`; the `host` field additionally keeps attribution visible when grepping or concatenating.
+- `stage` comes from `sys.argv[0]`: both `xil-produce` and `xil produce` yield `produce`.
+- Each invocation is bracketed by `RUN` records from `run_banner()` — the `BEGIN` line records the full command, so any block of output can be traced to what produced it.
+- Whitespace-only records are dropped from the file (console spacing only); multi-line messages get one prefixed line each.
+- A record can be routed to one sink via `logger.log(..., extra={"console": False})` or `{"file": False}` — used to keep the decorative bars on the terminal and the `BEGIN`/`END` records in the file.
+- **v1 → v2**: pre-v2 logs were a bare stdout transcript named `xil_YYYY-MM-DD.log`. Run `python3 tools/migrate_logs_v1.py` (`-n` to preview) to rename them to `xil_v1_YYYY-MM-DD.log` so the format is unambiguous from the filename. Both formats are still parsed by `xil-stem-log` and `tools/xil_effort.py`.
+
 ### Stem Log Report
 
 `XILU008_stem_log_report.py` — Parses daily pipeline log files into a chronological stem generation CSV. Useful for auditing what was generated, when, with which backend, and confirming SHA256 checksums.
@@ -787,9 +640,10 @@ xil-stem-log --episode S03E03 --audit --audit-threshold 20
 - `--show` print CSV to stdout (equivalent to `--output -`)
 - `--audit` cross-references logged `char_count` values against the current parsed JSON and flags stems whose logged character count differs from the current text length by more than `--audit-threshold` percent (default: 10); useful for detecting stale stems after script edits
 - `--audit-threshold N` percentage threshold for the `--audit` flag (default: 10)
-- Parses `logs/xil_YYYY-MM-DD.log` files; three regex patterns match ElevenLabs, gTTS, and Chatterbox generation lines
+- Parses both log formats — v2 `logs/xil_v2_YYYY-MM-DD.log` (structured; the `ts|LEVEL|stage|` prefix is stripped before matching) and v1 `logs/xil_YYYY-MM-DD.log` / `xil_v1_*` (bare stdout transcript); regex patterns match ElevenLabs, gTTS, Chatterbox, and Chatterbox Turbo generation lines
 - State machine: generation line → saved line → SHA256 line → emits one record
-- `run_index` counter increments per `Phase 1: Generating` marker, grouping stems by production run
+- `run_index` groups stems by production run — from `run_banner`'s `RUN … BEGIN` record in v2 logs, or the `Phase 1: Generating` marker in v1 logs (never both, so runs aren't double-counted)
+- Log files are ordered by the date in the filename, so v1 and v2 files interleave chronologically
 - Output columns: `log_date`, `log_file`, `run_index`, `log_line`, `seq`, `speaker`, `backend`, `char_count`, `stem_path`, `stem_filename`, `sha256`
 - No ElevenLabs API key required — reads local log files only
 
@@ -802,6 +656,7 @@ pip install 'xil-pipeline[gui]'
 xil-gui                        # opens http://localhost:7860
 xil-gui --share                # generates a public ngrok URL for partner access (72h, no auth)
 xil-gui --port 8080            # custom port
+xil-gui --verbose              # detailed logs for the Timeline SFX dialog (open/save)
 xil gui                        # via unified dispatcher
 ```
 
@@ -819,7 +674,7 @@ xil migrate-workspace              # execute moves
 - **Episodes tab**: workspace overview — all detected episodes with parse/stems/DAW/master status; episode dropdowns show `[Arc]  —  Title` next to the tag (read from cast config); Episodes table has a `Title [Arc]` column
 - **Audio Preview tab**: episode + filter selector (all/dialogue/sfx/music/ambience), stem dropdown, in-browser MP3 playback via `gr.Audio`; stem labels enriched from parsed JSON when available
 - **Run Stage tab**: select episode + stage (assemble/daw/master/produce/parse), dry-run checkbox (default on), extra flags field; live stdout streaming via generator + `demo.queue()`
-- **Timeline tab**: embeds the `daw/{TAG}/{TAG}_timeline.html` iframe if generated; prompts `xil daw --timeline-html` when absent
+- **Timeline tab**: embeds the `daw/{TAG}/{TAG}_timeline.html` iframe if generated; prompts `xil daw --timeline-html` when absent; double-clicking a MUSIC/SFX/AMBIENCE span opens a sound-profile editor modal (`GET /xil/get-sfx`, `POST /xil/update-sfx`) with a collapsed "Category defaults (`<layer>`)" section (`POST /xil/update-sfx-defaults`) for editing that layer's `defaults.<layer>_*` fallback values — both save paths journal to `configs/{slug}/sfx_{tag}_edits.jsonl` (`scope: "defaults"` for the latter) so edits survive config regeneration (see `xil sfx-restore`)
 - `--share` uses Gradio's ngrok tunnel — open access, suitable for trusted collaborators during a session only
 - `allowed_paths=[os.getcwd()]` enables Gradio to serve local MP3/WAV/HTML files
 - Subprocess isolation: each stage run is a fresh `subprocess.Popen` so the GUI stays alive if a stage errors
@@ -836,7 +691,7 @@ Use tests for everything it implements:
 
 ### Documentation Currency Rule
 
-After executing any plan that changes pipeline behaviour, CLI flags, file formats, or module interfaces, **both** `CLAUDE.md` (root) and `docs/pipeline.md` must be updated to reflect those changes **before committing**. This applies equally to Claude and human contributors. Specifically:
+After executing any plan that changes pipeline behaviour, CLI flags, file formats, or module interfaces, **both** `CLAUDE.md` (root) and `docs/internals/pipeline.md` must be updated to reflect those changes **before committing**. This applies equally to Claude and human contributors. Specifically:
 
 - New CLI flags or flag removals → update the relevant stage description in CLAUDE.md and the corresponding section/sequence diagram in pipeline.md
 - New module fields or dataclass additions → update `mix_common.py` / `sfx_common.py` bullet points in CLAUDE.md
@@ -845,6 +700,17 @@ After executing any plan that changes pipeline behaviour, CLI flags, file format
 - Any behavioural change visible to operators → update the relevant stage bullets in CLAUDE.md
 
 If a plan is large enough to have its own plan file, tick this as the final step before closing the plan.
+
+### Docs Site Navigation
+
+`mkdocs.yml` has no `nav:` — `awesome-pages` builds it from `.pages` files and otherwise sorts by ASCII filename. Two knobs, both in the repo:
+
+- `docs/.pages` — top-level order. The trailing `...` catches unlisted pages, so a new doc never vanishes from the nav.
+- `DOC_CATEGORIES` in `docs/build_docs.py` — maps a **repo-root** `.md` to `configuration` / `guides` / `internals`. Adding a categorized doc is one dict entry; only the symlink is placed in the section, the source file stays at the repo root so existing path references keep working. Unlisted files land flat in `docs/`.
+
+Pages authored directly under `docs/` just live in the right folder — `should_copy_markdown_file` skips `docs`, so the build never touches them. `clean_generated_docs` removes only *symlinks* from category folders (an `rmtree` would delete committed pages) and sweeps stale root symlinks for any newly categorized file.
+
+Cross-page links must resolve in the **docs** layout, not the repo layout. `strict: true` fails the build on a broken internal link — that is the safety net when moving a page between sections.
 
 ### Docstring Standard
 

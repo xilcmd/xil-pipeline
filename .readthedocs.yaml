@@ -13,9 +13,12 @@ build:
     pre_build:
       - python docs/build_docs.py
 
-# Build documentation with Mkdocs
+# Build documentation with Mkdocs. strict: true already lives in mkdocs.yml
+# (applies to every invocation); fail_on_warning is RTD's own belt-and-braces
+# gate — there is no "strict" key in this schema, only fail_on_warning.
 mkdocs:
    configuration: mkdocs.yml
+   fail_on_warning: true
 
 # Install the package with docs dependencies so MkDocs plugins are available
 python:

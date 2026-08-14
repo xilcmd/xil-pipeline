@@ -14,6 +14,7 @@ xil-gui                              # opens http://localhost:7860
 xil-gui --port 8080                  # custom port
 xil-gui --share                      # generate public URL for partner access (72h tunnel)
 xil-gui --output session.log         # append timestamped activity log to file
+xil-gui --verbose                    # detailed logs for the Timeline SFX dialog (open/save)
 ```
 
 Install the optional [gui] extra first:
@@ -24,22 +25,28 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import io
 import json
+import logging
 import os
 import re
 import shlex
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import Request as _FastAPIRequest
 
+from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import get_workspace_root
 from xil_pipeline.sfx_common import read_sfx_grade as _read_sfx_grade
 from xil_pipeline.sfx_common import write_sfx_grade as _write_sfx_grade
+
+logger = get_logger(__name__)
 
 # ── Optional activity log (set by --output in main()) ─────────────────────────
 
@@ -179,25 +186,23 @@ def _script_choices() -> list[str]:
     return sorted(glob.glob(os.path.join(str(root), "scripts", "*.md")))
 
 
+def _default_mmaudio_python() -> str:
+    """Return the venv-mmaudio python path if it exists, or an empty string."""
+    for cand in (
+        get_workspace_root() / "venv-mmaudio" / "bin" / "python3",
+        Path(sys.executable).parent.parent.parent / "venv-mmaudio" / "bin" / "python3",
+    ):
+        if cand.exists():
+            return str(cand)
+    return ""
+
+
 def _default_chatterbox_python() -> str:
     """Return the first existing venv-chatterbox python3, or an empty string."""
     from pathlib import Path
     candidates = [
         get_workspace_root() / "venv-chatterbox" / "bin" / "python3",
         Path(sys.executable).parent.parent.parent / "venv-chatterbox" / "bin" / "python3",
-    ]
-    for c in candidates:
-        if c.exists():
-            return str(c)
-    return ""
-
-
-def _default_audioldm2_python() -> str:
-    """Return the venv-audioldm2 python path if it exists, or an empty string."""
-    from pathlib import Path
-    candidates = [
-        get_workspace_root() / "venv-audioldm2" / "bin" / "python",
-        Path(sys.executable).parent.parent.parent / "venv-audioldm2" / "bin" / "python",
     ]
     for c in candidates:
         if c.exists():
@@ -392,11 +397,22 @@ def _stage_status(slug: str, tag: str) -> dict[str, str]:
     }
 
 
-def _refresh_episodes() -> list[list[str]]:
+# Rows memoised per workspace root: demo.load fires _refresh_episodes on every
+# browser connect, and the staleness scan stats every stem/daw file per episode
+# — prohibitive when XIL_PROJECTROOT is a NAS mount. The ⟳ button forces.
+_EPISODES_CACHE: dict[str, tuple[float, list[list[str]]]] = {}
+_EPISODES_TTL_S = 300.0
+
+
+def _refresh_episodes(force: bool = False) -> list[list[str]]:
     """Build the Episodes tab table rows from current workspace state."""
+    root = str(get_workspace_root())
+    if not force:
+        hit = _EPISODES_CACHE.get(root)
+        if hit is not None and time.monotonic() - hit[0] < _EPISODES_TTL_S:
+            return hit[1]
+
     episodes = list(_find_episodes())
-    if not episodes:
-        return []
 
     def _eval_one(slug_tag: tuple[str, str]) -> list[str]:
         slug, tag = slug_tag
@@ -407,9 +423,12 @@ def _refresh_episodes() -> list[list[str]]:
             desc = f"[{season_title}]  —  {title}" if title else f"[{season_title}]"
         return [tag, slug, desc, st["parse"], st["produce"], st["daw"], st["master"], st["overall"]]
 
-    workers = min(8, len(episodes))
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        rows = list(ex.map(_eval_one, episodes))
+    rows: list[list[str]] = []
+    if episodes:
+        workers = min(8, len(episodes))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            rows = list(ex.map(_eval_one, episodes))
+    _EPISODES_CACHE[root] = (time.monotonic(), rows)
     return rows
 
 
@@ -464,8 +483,95 @@ def _load_stems(slug: str, tag: str, filter_type: str = "all") -> list[tuple[str
     return choices
 
 
-def _concatenate_stems(ep_choice: str, filter_type: str) -> str | None:
-    """Concatenate all stems of filter_type for ep_choice into a temp MP3. Returns path."""
+# ── Local audio cache (NAS workspaces) ──────────────────────────────────────
+#
+# gr.Audio streams whatever path a handler returns; when XIL_PROJECTROOT is a
+# NAS mount that means silently-slow network reads. _cached_audio_path copies
+# the file into a bounded local cache (chunked, with progress for gr.Progress)
+# and returns the local path — keys carry (size, mtime) so an updated source
+# is a new entry and nothing ever needs explicit invalidation.
+
+_AUDIO_CACHE_MAX_BYTES = 2 * 1024**3
+_AUDIO_COPY_CHUNK = 4 * 1024 * 1024
+
+
+def _audio_cache_dir() -> str:
+    """Local cache dir for workspace audio ($XDG_CACHE_HOME or ~/.cache)."""
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    d = os.path.join(base, "xil-gui", "audio")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _evict_audio_cache(cache_dir: str, keep: str = "") -> None:
+    """Delete oldest-mtime cache files until under _AUDIO_CACHE_MAX_BYTES."""
+    try:
+        entries = []
+        with os.scandir(cache_dir) as it:
+            for e in it:
+                if e.is_file() and e.path != keep:
+                    st = e.stat()
+                    entries.append((st.st_mtime, st.st_size, e.path))
+        total = sum(size for _, size, _ in entries)
+        if keep and os.path.exists(keep):
+            total += os.path.getsize(keep)
+        for _, size, path in sorted(entries):
+            if total <= _AUDIO_CACHE_MAX_BYTES:
+                break
+            try:
+                os.remove(path)
+                total -= size
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def _cached_audio_path(src: str, progress_cb=None) -> str:
+    """Copy src into the local audio cache and return the local path.
+
+    progress_cb(done_bytes, total_bytes) fires per copied chunk (a plain
+    callable so this module stays gradio-free). Cache hits bump the file's
+    mtime (LRU-ish for eviction) and skip the copy. On any OSError the
+    original path is returned unchanged — playback degrades to streaming
+    straight off the workspace rather than breaking.
+    """
+    try:
+        st = os.stat(src)
+        cache_dir = _audio_cache_dir()
+        key = hashlib.sha1(
+            f"{os.path.abspath(src)}|{st.st_size}|{st.st_mtime_ns}".encode()
+        ).hexdigest()
+        dest = os.path.join(cache_dir, key + os.path.splitext(src)[1])
+        if os.path.exists(dest):
+            os.utime(dest)
+            return dest
+        part = dest + ".part"
+        done = 0
+        with open(src, "rb") as fin, open(part, "wb") as fout:
+            while True:
+                chunk = fin.read(_AUDIO_COPY_CHUNK)
+                if not chunk:
+                    break
+                fout.write(chunk)
+                done += len(chunk)
+                if progress_cb:
+                    progress_cb(done, st.st_size)
+        os.replace(part, dest)
+        _evict_audio_cache(cache_dir, keep=dest)
+        return dest
+    except OSError:
+        return src
+
+
+def _concatenate_stems(ep_choice: str, filter_type: str, progress_cb=None) -> str | None:
+    """Concatenate all stems of filter_type for ep_choice into a cached MP3. Returns path.
+
+    The output is keyed by the ordered (path, size, mtime) signature of the
+    input stems, so repeat clicks return the existing file without
+    re-decoding and a re-produced stem naturally rolls the key over.
+    progress_cb(stem_index, stem_count) fires per decoded stem.
+    """
     if not ep_choice:
         return None
     _log_activity(f"PLAY {filter_type} → {ep_choice}")
@@ -474,15 +580,27 @@ def _concatenate_stems(ep_choice: str, filter_type: str) -> str | None:
     if not stems:
         return None
     try:
-        import tempfile
+        sig_parts = [filter_type]
+        for _, path in stems:
+            st = os.stat(path)
+            sig_parts.append(f"{os.path.abspath(path)}|{st.st_size}|{st.st_mtime_ns}")
+        key = hashlib.sha1("\n".join(sig_parts).encode()).hexdigest()
+        out = os.path.join(_audio_cache_dir(), f"concat_{key}.mp3")
+        if os.path.exists(out):
+            os.utime(out)
+            return out
 
         from pydub import AudioSegment
         combined = AudioSegment.empty()
-        for _, path in stems:
-            combined += AudioSegment.from_mp3(path)
-        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-        combined.export(tmp.name, format="mp3")
-        return tmp.name
+        for i, (_, path) in enumerate(stems):
+            if progress_cb:
+                progress_cb(i, len(stems))
+            combined += AudioSegment.from_mp3(_cached_audio_path(path))
+        part = out + ".part"
+        combined.export(part, format="mp3")
+        os.replace(part, out)
+        _evict_audio_cache(_audio_cache_dir(), keep=out)
+        return out
     except Exception:
         return None
 
@@ -512,20 +630,100 @@ def _sfx_dir(slug: str = "") -> str:
     return str(root / "SFX")
 
 
+_GRADE_CACHE_VERSION = 1
+
+
+def _grade_cache_path() -> str:
+    """Path of the persisted grade cache, inside the SFX root."""
+    return os.path.join(_sfx_dir(), ".xil_grade_cache.json")
+
+
+def _load_grade_cache_file() -> dict:
+    """Return the persisted {rel_path: {grade, size, mtime_ns}} map.
+
+    Missing, corrupt, or version-mismatched files return {} — the next scan
+    simply pays the full ID3 pass once and rewrites a good cache.
+    """
+    try:
+        with open(_grade_cache_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("version") != _GRADE_CACHE_VERSION:
+            return {}
+        files = data.get("files", {})
+        return files if isinstance(files, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_grade_cache_file(files: dict) -> None:
+    """Persist the grade map. Best-effort: the cache is a pure accelerator."""
+    try:
+        with open(_grade_cache_path(), "w", encoding="utf-8") as f:
+            json.dump({"version": _GRADE_CACHE_VERSION, "files": files}, f, indent=2)
+            f.write("\n")
+    except OSError:
+        pass
+
+
 def _scan_sfx_grades() -> dict[str, str]:
     """Rebuild _sfx_grade_cache from disk for every SFX/*.mp3.
 
     Recurses into per-show subdirectories (the ``SFX/{slug}/`` hierarchical
     layout) as well as the flat shared pool, so both are found. Returns the
     cache.
+
+    Grades are memoised in SFX/.xil_grade_cache.json keyed by (size, mtime):
+    only new/changed files pay an ID3 read, so a rescan is one directory walk
+    plus stats instead of ~842 file opens — prohibitive on a NAS workspace.
+    Paths in the file are relative to the SFX root so the cache survives
+    mount-point moves.
     """
     _sfx_grade_cache.clear()
     sfx_dir = _sfx_dir()
-    if os.path.isdir(sfx_dir):
-        pattern = os.path.join(sfx_dir, "**", "*.mp3")
-        for path in sorted(glob.glob(pattern, recursive=True)):
-            _sfx_grade_cache[path] = _read_sfx_grade(path)
+    if not os.path.isdir(sfx_dir):
+        return _sfx_grade_cache
+    persisted = _load_grade_cache_file()
+    fresh: dict[str, dict] = {}
+    changed = False
+    pattern = os.path.join(sfx_dir, "**", "*.mp3")
+    for path in sorted(glob.glob(pattern, recursive=True)):
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        rel = os.path.relpath(path, sfx_dir)
+        rec = persisted.get(rel)
+        if rec and rec.get("size") == st.st_size and rec.get("mtime_ns") == st.st_mtime_ns:
+            grade = rec.get("grade", "")
+        else:
+            grade = _read_sfx_grade(path)
+            changed = True
+        fresh[rel] = {"grade": grade, "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+        _sfx_grade_cache[path] = grade
+    if changed or set(fresh) != set(persisted):
+        _save_grade_cache_file(fresh)
     return _sfx_grade_cache
+
+
+def _update_grade_cache_entry(path: str, grade: str) -> None:
+    """Patch one file's record in the persisted grade cache after a grade write.
+
+    The ID3 write changed the mp3's size/mtime; storing the post-write stat
+    keeps the next scan read-free. Best-effort: failure is silent and the next
+    scan self-heals.
+    """
+    try:
+        st = os.stat(path)
+        rel = os.path.relpath(path, _sfx_dir())
+        files = _load_grade_cache_file()
+        files[rel] = {
+            "grade": grade if grade in _GRADES else "",
+            "size": st.st_size,
+            "mtime_ns": st.st_mtime_ns,
+        }
+        _save_grade_cache_file(files)
+    except OSError:
+        pass
 
 
 def _sfx_show_label(path: str, root: str) -> str:
@@ -797,11 +995,9 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
                  gen_sfx: bool, gen_music: bool, gen_ambience: bool,
                  local_only: bool, terse: bool,
                  start_from: int | None, stop_at: int | None,
-                 exaggeration: float, cb_python: str = "",
-                 force: bool = False, cfg_weight: float = 0.5,
-                 sfx_backend: str = "elevenlabs", adl2_python: str = "",
-                 adl2_guidance: float = 3.5, adl2_steps: int = 200,
-                 adl2_neg_prompt: str = "low quality, noise") -> list[str]:
+                 cb_python: str = "", force: bool = False,
+                 sfx_backend: str = "elevenlabs", mm_python: str = "",
+                 mm_accept_nc: bool = False) -> list[str]:
     """Build the xil-produce command list."""
     module = _STAGE_MODULES["produce"]
     cmd = [sys.executable, "-m", module, "--episode", tag]
@@ -823,24 +1019,18 @@ def _cmd_produce(slug: str, tag: str, dry_run: bool, backend: str,
         cmd += ["--start-from", str(int(start_from))]
     if stop_at is not None and stop_at > 0:
         cmd += ["--stop-at", str(int(stop_at))]
-    if backend == "chatterbox":
-        if exaggeration != 0.5:
-            cmd += ["--exaggeration", f"{exaggeration:.2f}"]
-        if cfg_weight != 0.5:
-            cmd += ["--cfg-weight", f"{cfg_weight:.2f}"]
+    if backend == "chatterbox-turbo":
         if cb_python and cb_python.strip():
             cmd += ["--chatterbox-python", cb_python.strip()]
     if sfx_backend and sfx_backend != "elevenlabs":
         cmd += ["--sfx-backend", sfx_backend]
-    if sfx_backend == "audioldm2":
-        if adl2_python and adl2_python.strip():
-            cmd += ["--audioldm2-python", adl2_python.strip()]
-        if adl2_guidance != 3.5:
-            cmd += ["--audioldm2-guidance", f"{adl2_guidance:.1f}"]
-        if adl2_steps != 200:
-            cmd += ["--audioldm2-steps", str(int(adl2_steps))]
-        if adl2_neg_prompt and adl2_neg_prompt.strip() != "low quality, noise":
-            cmd += ["--audioldm2-negative-prompt", adl2_neg_prompt.strip()]
+    if sfx_backend == "mmaudio":
+        # MMAudio refuses to start without the non-commercial acknowledgement,
+        # so pass it through rather than letting the run fail downstream.
+        if mm_accept_nc:
+            cmd.append("--mmaudio-accept-noncommercial")
+        if mm_python and mm_python.strip():
+            cmd += ["--mmaudio-python", mm_python.strip()]
     if force:
         cmd.append("--force")
     return cmd
@@ -920,6 +1110,13 @@ def _build_app():
 
     # ── callback helpers ──────────────────────────────────────────────────
 
+    def _copy_progress(progress, label):
+        """Adapt gr.Progress to _cached_audio_path's (done, total) callback."""
+        def cb(done, total):
+            frac = (done / total) if total else None
+            progress(frac, desc=f"Copying {label}… {done >> 20} / {total >> 20} MB")
+        return cb
+
     def on_ep_or_filter_change(choice, filter_type):
         if not choice:
             return gr.update(choices=[], value=None), gr.update(value=None)
@@ -932,14 +1129,16 @@ def _build_app():
             gr.update(value=None),
         )
 
-    def on_stem_select(episode_choice, stem_label, filter_type):
+    def on_stem_select(episode_choice, stem_label, filter_type, progress=gr.Progress()):
         if not episode_choice or not stem_label:
             return gr.update(value=None)
         _log_activity(f"PREVIEW stem → {stem_label}")
         slug, tag = _parse_choice(episode_choice)
         for lbl, path in _load_stems(slug, tag, filter_type):
             if lbl == stem_label:
-                return gr.update(value=path)
+                local = _cached_audio_path(
+                    path, _copy_progress(progress, os.path.basename(path)))
+                return gr.update(value=local)
         return gr.update(value=None)
 
     def on_timeline_ep_change(choice):
@@ -960,7 +1159,7 @@ def _build_app():
 
     def refresh_all():
         new_choices = _episode_choices()
-        rows = _refresh_episodes()
+        rows = _refresh_episodes(force=True)
         return (
             rows,
             gr.update(choices=new_choices),
@@ -1006,8 +1205,10 @@ def _build_app():
             return
         cmd = [sys.executable, "-m", "xil_pipeline.xil_init",
                "--show", show_name.strip(), "--type", content_type, "--flat"]
-        if season.strip():
-            cmd += ["--season", season.strip()]
+        # Sample scripts are always named e.g. sample_S01E01.md (SAMPLE_TAG_BY_TYPE),
+        # which bakes in "season 1" — default to it here so the generated header's
+        # season declaration (or lack of one) doesn't disagree with that filename.
+        cmd += ["--season", season.strip() if season.strip() else "1"]
         if season_title.strip():
             cmd += ["--season-title", season_title.strip()]
         _log_activity("CMD: " + " ".join(cmd))
@@ -1131,9 +1332,9 @@ def _build_app():
         gr.Markdown(f"**Workspace:** `{workspace}`")
 
         with gr.Row():
-            refresh_btn = gr.Button("⟳ Refresh", size="sm", scale=0)
+            refresh_btn = gr.Button("⟳ Refresh", size="sm", scale=0, elem_id="global-refresh-btn")
 
-        with gr.Tabs():
+        with gr.Tabs(elem_id="app-root"):
 
             # ── Tab 0: Setup ─────────────────────────────────────────
             with gr.Tab("Setup"):
@@ -1173,6 +1374,7 @@ def _build_app():
                 with gr.Row():
                     init_show = gr.Textbox(
                         label="Show name *", placeholder='e.g. "Night Owls"', scale=3,
+                        elem_id="init-show-name",
                     )
                     init_type = gr.Dropdown(
                         label="Content type",
@@ -1189,9 +1391,10 @@ def _build_app():
                         placeholder='e.g. "The Holiday Shift"',
                         scale=3,
                     )
-                init_btn = gr.Button("▶ Create show", variant="primary")
+                init_btn = gr.Button("▶ Create show", variant="primary", elem_id="init-create-btn")
                 init_log = gr.Textbox(
                     label="Output", lines=12, max_lines=12, autoscroll=True, interactive=False,
+                    elem_id="init-log",
                 )
 
                 def run_init_and_refresh(show_name, content_type, season, season_title):
@@ -1257,7 +1460,8 @@ def _build_app():
                     "**Dry-run is on by default** — uncheck to write output files."
                 )
                 with gr.Row():
-                    run_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices, scale=3)
+                    run_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices, scale=3,
+                                             elem_id="run-episode")
                     run_ep_refresh_btn = gr.Button("⟳", size="sm", scale=0)
 
                 with gr.Tabs():
@@ -1301,6 +1505,7 @@ def _build_app():
                                 choices=_script_choices(),
                                 allow_custom_value=True,
                                 scale=3,
+                                elem_id="scan-script",
                             )
                             scan_refresh_btn = gr.Button("⟳", size="sm", scale=0)
                             scan_speakers = gr.Textbox(
@@ -1309,7 +1514,7 @@ def _build_app():
                                 scale=2,
                             )
                         scan_json_cb = gr.Checkbox(label="--json  (machine-readable output)")
-                        scan_btn = gr.Button("▶ Run Scan", variant="primary")
+                        scan_btn = gr.Button("▶ Run Scan", variant="primary", elem_id="scan-run-btn")
 
                     # ── Parse ─────────────────────────────────────────
                     with gr.Tab("Parse"):
@@ -1319,6 +1524,7 @@ def _build_app():
                                 choices=ep_choices,
                                 allow_custom_value=True,
                                 scale=3,
+                                elem_id="parse-episode",
                             )
                             parse_ep_refresh_btn = gr.Button("⟳", size="sm", scale=0)
                         with gr.Row():
@@ -1342,16 +1548,18 @@ def _build_app():
                             parse_quiet_cb = gr.Checkbox(label="--quiet  (JSON only, skip summary)")
                             parse_debug_cb = gr.Checkbox(label="--debug  (write diagnostic CSV)", value=True)
                             parse_stats_cb = gr.Checkbox(label="--stats  (per-speaker line/word/char distribution)")
-                        parse_btn = gr.Button("▶ Run Parse", variant="primary")
+                        parse_btn = gr.Button("▶ Run Parse", variant="primary", elem_id="parse-run-btn")
 
                     # ── Produce ───────────────────────────────────────
                     with gr.Tab("Produce"):
                         with gr.Row():
-                            prod_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
+                            prod_dry_run_cb = gr.Checkbox(label="--dry-run", value=True,
+                                                            elem_id="prod-dry-run")
                             prod_backend_dd = gr.Dropdown(
                                 label="--backend  (dialogue voice generator)",
-                                choices=["elevenlabs", "gtts", "chatterbox"],
-                                value="chatterbox",
+                                choices=["elevenlabs", "gtts", "chatterbox-turbo"],
+                                value="chatterbox-turbo",
+                                elem_id="prod-backend",
                             )
                         with gr.Row():
                             prod_gen_sfx_cb    = gr.Checkbox(label="--gen-sfx")
@@ -1361,8 +1569,17 @@ def _build_app():
                             prod_terse_cb      = gr.Checkbox(label="--terse")
                         prod_sfx_backend_dd = gr.Dropdown(
                             label="--sfx-backend  (SFX / music / ambience generator)",
-                            choices=["elevenlabs", "audioldm2"],
+                            choices=["elevenlabs", "mmaudio"],
                             value="elevenlabs",
+                        )
+                        prod_mm_python = gr.Textbox(
+                            label="--mmaudio-python  (blank = auto-detect venv-mmaudio/)",
+                            placeholder=_default_mmaudio_python(),
+                        )
+                        prod_mm_accept_nc = gr.Checkbox(
+                            label=("--mmaudio-accept-noncommercial  \u26a0\ufe0f MMAudio weights are "
+                                   "CC BY-NC 4.0 — generated audio must NOT be used commercially"),
+                            value=False,
                         )
                         with gr.Row():
                             prod_start_from = gr.Number(
@@ -1373,41 +1590,16 @@ def _build_app():
                                 label="--stop-at  (seq, 0 = all)",
                                 value=0, minimum=0, precision=0,
                             )
-                        prod_exaggeration = gr.Slider(
-                            label="--exaggeration  (Chatterbox only, 0.0–1.0)",
-                            minimum=0.0, maximum=1.0, step=0.05, value=0.5,
-                        )
-                        prod_cfg_weight = gr.Slider(
-                            label="--cfg-weight  (Chatterbox only, 0.1–1.0)",
-                            minimum=0.1, maximum=1.0, step=0.05, value=0.5,
-                        )
                         prod_cb_python = gr.Textbox(
                             label="--chatterbox-python  (blank = auto-detect venv-chatterbox/)",
                             placeholder=_default_chatterbox_python(),
-                        )
-                        prod_adl2_python = gr.Textbox(
-                            label="--audioldm2-python  (blank = auto-detect venv-audioldm2/)",
-                            placeholder=_default_audioldm2_python(),
-                        )
-                        with gr.Row():
-                            prod_adl2_guidance = gr.Number(
-                                label="--audioldm2-guidance  (default: 3.5)",
-                                value=3.5, minimum=1.0, maximum=10.0, step=0.5,
-                            )
-                            prod_adl2_steps = gr.Number(
-                                label="--audioldm2-steps  (default: 200)",
-                                value=200, minimum=10, maximum=1000, step=10, precision=0,
-                            )
-                        prod_adl2_neg_prompt = gr.Textbox(
-                            label="--audioldm2-negative-prompt",
-                            value="low quality, noise",
                         )
                         with gr.Row():
                             prod_force_cb = gr.Checkbox(
                                 label="--force  ⚠️ overwrite existing stems (API cost!)",
                                 value=False,
                             )
-                        prod_btn = gr.Button("▶ Run Produce", variant="primary")
+                        prod_btn = gr.Button("▶ Run Produce", variant="primary", elem_id="prod-run-btn")
 
                     # ── Assemble ──────────────────────────────────────
                     with gr.Tab("Assemble"):
@@ -1432,7 +1624,8 @@ def _build_app():
                     # ── DAW ───────────────────────────────────────────
                     with gr.Tab("DAW"):
                         with gr.Row():
-                            daw_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
+                            daw_dry_run_cb = gr.Checkbox(label="--dry-run", value=True,
+                                                           elem_id="daw-dry-run")
                             daw_gap_ms = gr.Number(
                                 label="--gap-ms  (ms)",
                                 value=600, minimum=0, precision=0,
@@ -1440,16 +1633,18 @@ def _build_app():
                         with gr.Row():
                             daw_timeline_cb      = gr.Checkbox(label="--timeline  (ASCII)")
                             daw_timeline_html_cb = gr.Checkbox(label="--timeline-html", value=True)
-                            daw_macro_cb         = gr.Checkbox(label="--macro  (Audacity)", value=True)
+                            daw_macro_cb         = gr.Checkbox(label="--macro  (Audacity)", value=True,
+                                                                 elem_id="daw-macro")
                         daw_output_dir = gr.Textbox(
                             label="--output-dir  (blank = auto)",
                             placeholder="daw/S01E01/",
                         )
-                        daw_btn = gr.Button("▶ Run DAW", variant="primary")
+                        daw_btn = gr.Button("▶ Run DAW", variant="primary", elem_id="daw-run-btn")
 
                     # ── Master ────────────────────────────────────────
                     with gr.Tab("Master"):
-                        master_dry_run_cb = gr.Checkbox(label="--dry-run", value=True)
+                        master_dry_run_cb = gr.Checkbox(label="--dry-run", value=True,
+                                                          elem_id="master-dry-run")
                         with gr.Row():
                             master_output = gr.Textbox(
                                 label="--output  (blank = auto)",
@@ -1461,10 +1656,11 @@ def _build_app():
                                 placeholder="daw/S01E01/",
                                 scale=2,
                             )
-                        master_btn = gr.Button("▶ Run Master", variant="primary")
+                        master_btn = gr.Button("▶ Run Master", variant="primary", elem_id="master-run-btn")
 
                 log_box = gr.Textbox(
                     label="Output", lines=24, max_lines=24, autoscroll=True, interactive=False,
+                    elem_id="run-stage-log",
                 )
 
                 # ── Button handlers ───────────────────────────────────
@@ -1489,8 +1685,10 @@ def _build_app():
                     if not tag:
                         if re.match(r"^[A-Z][A-Z0-9]+$", ep):
                             # User typed a raw episode tag (e.g. S01E01) — derive slug
-                            from xil_pipeline.models import resolve_slug
-                            slug = resolve_slug(
+                            # from the active show, falling back to a legacy root
+                            # project.json when no show has been activated.
+                            from xil_pipeline.models import get_active_show, resolve_slug
+                            slug = get_active_show() or resolve_slug(
                                 None,
                                 os.path.join(str(get_workspace_root()), "project.json"),
                             )
@@ -1509,9 +1707,8 @@ def _build_app():
                     yield from _execute_cmd(cmd)
 
                 def run_produce(ep, dry_run, backend, gen_sfx, gen_music, gen_amb,
-                                local_only, terse, start_from, stop_at, exaggeration,
-                                cfg_weight, cb_python, force, sfx_backend,
-                                adl2_python, adl2_guidance, adl2_steps, adl2_neg_prompt):
+                                local_only, terse, start_from, stop_at,
+                                cb_python, force, sfx_backend, mm_python, mm_accept_nc):
                     if not ep:
                         yield "Select an episode first."
                         return
@@ -1523,13 +1720,10 @@ def _build_app():
                                        local_only, terse,
                                        int(start_from) if start_from else None,
                                        int(stop_at) if stop_at else None,
-                                       exaggeration, cb_python or "", force=force,
-                                       cfg_weight=cfg_weight,
+                                       cb_python or "", force=force,
                                        sfx_backend=sfx_backend or "elevenlabs",
-                                       adl2_python=adl2_python or "",
-                                       adl2_guidance=adl2_guidance or 3.5,
-                                       adl2_steps=int(adl2_steps) if adl2_steps else 200,
-                                       adl2_neg_prompt=adl2_neg_prompt or "low quality, noise")
+                                       mm_python=mm_python or "",
+                                       mm_accept_nc=bool(mm_accept_nc))
                     yield from _execute_cmd(cmd)
 
                 def run_assemble(ep, gap_ms, parsed_path, output):
@@ -1616,10 +1810,9 @@ def _build_app():
                     inputs=[run_ep_dd, prod_dry_run_cb, prod_backend_dd,
                              prod_gen_sfx_cb, prod_gen_music_cb, prod_gen_amb_cb,
                              prod_local_only_cb, prod_terse_cb,
-                             prod_start_from, prod_stop_at, prod_exaggeration,
-                             prod_cfg_weight, prod_cb_python, prod_force_cb,
-                             prod_sfx_backend_dd, prod_adl2_python,
-                             prod_adl2_guidance, prod_adl2_steps, prod_adl2_neg_prompt],
+                             prod_start_from, prod_stop_at,
+                             prod_cb_python, prod_force_cb, prod_sfx_backend_dd,
+                             prod_mm_python, prod_mm_accept_nc],
                     outputs=log_box,
                 )
                 asm_btn.click(
@@ -1793,18 +1986,32 @@ def _build_app():
                     inputs=[audio_ep_dd, stem_dd, stem_filter],
                     outputs=audio_player,
                 )
+                def _play_all(ep, filter_type, progress):
+                    def cb(i, n):
+                        progress(i / n if n else None, desc=f"Decoding stems… {i + 1} / {n}")
+                    return _concatenate_stems(ep, filter_type, progress_cb=cb)
+
+                def on_play_all_sfx(ep, progress=gr.Progress()):
+                    return _play_all(ep, "sfx", progress)
+
+                def on_play_all_music(ep, progress=gr.Progress()):
+                    return _play_all(ep, "music", progress)
+
+                def on_play_all_ambience(ep, progress=gr.Progress()):
+                    return _play_all(ep, "ambience", progress)
+
                 play_all_sfx_btn.click(
-                    fn=lambda ep: _concatenate_stems(ep, "sfx"),
+                    fn=on_play_all_sfx,
                     inputs=[audio_ep_dd],
                     outputs=[audio_player],
                 )
                 play_all_music_btn.click(
-                    fn=lambda ep: _concatenate_stems(ep, "music"),
+                    fn=on_play_all_music,
                     inputs=[audio_ep_dd],
                     outputs=[audio_player],
                 )
                 play_all_amb_btn.click(
-                    fn=lambda ep: _concatenate_stems(ep, "ambience"),
+                    fn=on_play_all_ambience,
                     inputs=[audio_ep_dd],
                     outputs=[audio_player],
                 )
@@ -1852,12 +2059,14 @@ def _build_app():
                     labels = [lbl for lbl, _ in _sfx_choices(grade_filter_val)]
                     return gr.update(choices=labels, value=labels[0] if labels else None)
 
-                def on_sfx_select(label, grade_filter_val):
+                def on_sfx_select(label, grade_filter_val, progress=gr.Progress()):
                     path = _path_for_label(label, grade_filter_val)
                     if not path:
                         return gr.update(value=None), ""
                     _log_activity(f"GRADE preview → {os.path.basename(path)}")
-                    return gr.update(value=path), _grade_status_md(path)
+                    local = _cached_audio_path(
+                        path, _copy_progress(progress, os.path.basename(path)))
+                    return gr.update(value=local), _grade_status_md(path)
 
                 def _apply_grade(label, grade_filter_val, status):
                     path = _path_for_label(label, grade_filter_val)
@@ -1865,6 +2074,7 @@ def _build_app():
                         return gr.update(), gr.update(), "", _sfx_summary()
                     _write_sfx_grade(path, status)
                     _sfx_grade_cache[path] = status if status in _GRADES else ""
+                    _update_grade_cache_entry(path, status)
                     _log_activity(f"GRADE {status or 'cleared'} → {os.path.basename(path)}")
                     # Rebuild the (filtered) list; if the graded item dropped out of
                     # the current filter, advance to the next item for fast grading.
@@ -1874,7 +2084,7 @@ def _build_app():
                     sel_path = _path_for_label(sel, grade_filter_val) if sel else None
                     return (
                         gr.update(choices=labels, value=sel),
-                        gr.update(value=sel_path),
+                        gr.update(value=_cached_audio_path(sel_path) if sel_path else None),
                         _grade_status_md(sel_path),
                         _sfx_summary(),
                     )
@@ -1908,8 +2118,8 @@ def _build_app():
 
             # ── Tab 9: Timeline ──────────────────────────────────────
             with gr.Tab("Timeline"):
-                tl_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices)
-                tl_html = gr.HTML("<p>Select an episode above.</p>")
+                tl_ep_dd = gr.Dropdown(label="Episode", choices=ep_choices, elem_id="tl-episode")
+                tl_html = gr.HTML("<p>Select an episode above.</p>", elem_id="tl-html")
                 tl_ep_dd.change(fn=on_timeline_ep_change, inputs=tl_ep_dd, outputs=tl_html)
 
         def _use_show_and_reload(show_name):
@@ -1997,6 +2207,11 @@ def get_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="Append a timestamped session activity log to FILE",
     )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Log detailed activity for the Timeline audio-properties dialog "
+             "(SFX open/save requests) to stdout and logs/xil_YYYY-MM-DD.log",
+    )
     return parser
 
 
@@ -2009,9 +2224,29 @@ def _register_sfx_routes(app) -> None:
     """
     from fastapi.responses import JSONResponse as _JSONResponse
 
+    def _source_duration_s(source: str | None) -> float | None:
+        """Return a cue's source-file length in seconds, or ``None``.
+
+        ``None`` for generated (prompt-only) cues, or when the file is missing or
+        unreadable — the caller falls back to a duration_seconds-based preview.
+        """
+        if not source:
+            return None
+        path = source if os.path.isabs(source) else os.path.join(os.getcwd(), source)
+        try:
+            _check_workspace_path(path)
+            from xil_pipeline.mix_common import _mp3_duration_ms
+            ms = _mp3_duration_ms(path)
+        except Exception as exc:
+            logger.debug("get-sfx: could not probe %s (%s)", source, type(exc).__name__)
+            return None
+        return ms / 1000.0 if ms > 0 else None
+
     @app.get("/xil/get-sfx")
     async def _api_get_sfx(slug: str, tag: str, key: str):
+        logger.debug("get-sfx request: slug=%r tag=%r key=%r", slug, tag, key)
         if not (_is_safe_slug_or_tag(slug) and _is_safe_slug_or_tag(tag)):
+            logger.warning("get-sfx rejected: invalid slug/tag slug=%r tag=%r", slug, tag)
             return _JSONResponse({"error": "invalid slug or tag"}, status_code=400)
         # Already validated above (no separators possible) — basename() is a
         # no-op here, kept only because static analysis specifically
@@ -2021,19 +2256,27 @@ def _register_sfx_routes(app) -> None:
         sfx_path = _dp(slug, tag)["sfx"]
         _check_workspace_path(sfx_path)
         if not os.path.exists(sfx_path):
+            logger.debug("get-sfx: sfx config not found at %s", sfx_path)
             return _JSONResponse({"error": "sfx config not found"}, status_code=404)
         with open(sfx_path, encoding="utf-8") as f:
             data = json.load(f)
-        return _JSONResponse({
-            "effect": data.get("effects", {}).get(key, {}),
-            "defaults": data.get("defaults", {}),
-        })
+        effect = data.get("effects", {}).get(key, {})
+        defaults = data.get("defaults", {})
+        # The modal previews how long the cue will play. play_duration is a
+        # percentage OF THE SOURCE FILE, not of duration_seconds, so the preview
+        # needs the file's true length or it under-reports every clipped cue.
+        natural_s = _source_duration_s(effect.get("source"))
+        logger.debug("get-sfx: returned effect=%r defaults=%r natural_s=%r for key=%r",
+                     effect, defaults, natural_s, key)
+        return _JSONResponse({"effect": effect, "defaults": defaults, "natural_s": natural_s})
 
     @app.post("/xil/update-sfx")
     async def _api_update_sfx(request: _FastAPIRequest):
         body = await request.json()
+        logger.debug("update-sfx request body: %r", body)
         slug_b, tag_b, key_b = body["slug"], body["tag"], body["key"]
         if not (_is_safe_slug_or_tag(slug_b) and _is_safe_slug_or_tag(tag_b)):
+            logger.warning("update-sfx rejected: invalid slug/tag slug=%r tag=%r", slug_b, tag_b)
             return _JSONResponse({"ok": False, "error": "invalid slug or tag"}, status_code=400)
         # Already validated above (no separators possible) — basename() is a
         # no-op here, kept only because static analysis specifically
@@ -2043,12 +2286,15 @@ def _register_sfx_routes(app) -> None:
         sfx_path = _dp(slug_b, tag_b)["sfx"]
         _check_workspace_path(sfx_path)
         if not os.path.exists(sfx_path):
+            logger.warning("update-sfx: sfx config not found at %s", sfx_path)
             return _JSONResponse({"ok": False, "error": "sfx config not found"}, status_code=404)
         with open(sfx_path, encoding="utf-8") as f:
             data = json.load(f)
         effect = data.setdefault("effects", {}).setdefault(key_b, {})
+        fields = {}
         for field in ("volume_percentage", "ramp_in_seconds", "ramp_out_seconds", "play_duration"):
             val = body.get(field)
+            fields[field] = val
             if val is None:
                 effect.pop(field, None)
             else:
@@ -2056,6 +2302,7 @@ def _register_sfx_routes(app) -> None:
         with open(sfx_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.write("\n")
+        logger.debug("update-sfx: wrote %s (key=%r fields=%r)", sfx_path, key_b, fields)
         # Journal the edit so it survives sfx_{tag}.json being cleared and
         # regenerated (replayed by generate_sfx_config / xil sfx-restore).
         # A journal failure must never fail the save itself.
@@ -2064,8 +2311,68 @@ def _register_sfx_routes(app) -> None:
             append_sfx_edit(sfx_path, key_b, {f: body.get(f) for f in SFX_EDIT_FIELDS})
         except Exception as exc:
             _log_activity(f"[WARN] sfx edit journal write failed: {exc}")
+            logger.warning("sfx edit journal write failed for %s (key=%r): %s", sfx_path, key_b, exc)
         _log_activity(f"SFX edit via timeline: {slug_b}/{tag_b} → {key_b!r}")
+        logger.info("SFX edit via timeline: %s/%s → %r", slug_b, tag_b, key_b)
         return _JSONResponse({"ok": True, "message": f"Saved {key_b!r} — re-run xil daw to apply."})
+
+    @app.post("/xil/update-sfx-defaults")
+    async def _api_update_sfx_defaults(request: _FastAPIRequest):
+        """Patch one category's defaults (e.g. music_volume_percentage).
+
+        Like /xil/update-sfx, resends every field on each save rather than a
+        diff, and re-reads the config fresh on every request — sequential
+        saves never clobber each other's write, but a save can still revert
+        a field the user didn't touch if another session changed it on disk
+        in between (same lost-update characteristic /xil/update-sfx already
+        has; higher blast-radius here since a defaults edit affects every
+        cue in the category — accepted for v1).
+        """
+        body = await request.json()
+        logger.debug("update-sfx-defaults request body: %r", body)
+        slug_b, tag_b, layer = body["slug"], body["tag"], body["layer"]
+        if not (_is_safe_slug_or_tag(slug_b) and _is_safe_slug_or_tag(tag_b)):
+            logger.warning("update-sfx-defaults rejected: invalid slug/tag slug=%r tag=%r", slug_b, tag_b)
+            return _JSONResponse({"ok": False, "error": "invalid slug or tag"}, status_code=400)
+        if layer not in ("music", "sfx", "ambience"):
+            logger.warning("update-sfx-defaults rejected: invalid layer %r", layer)
+            return _JSONResponse({"ok": False, "error": "invalid layer"}, status_code=400)
+        # Already validated above (no separators possible) — basename() is a
+        # no-op here, kept only because static analysis specifically
+        # recognizes it as neutralizing path-injection taint.
+        slug_b, tag_b = os.path.basename(slug_b), os.path.basename(tag_b)
+        from xil_pipeline.models import derive_paths as _dp
+        sfx_path = _dp(slug_b, tag_b)["sfx"]
+        _check_workspace_path(sfx_path)
+        if not os.path.exists(sfx_path):
+            logger.warning("update-sfx-defaults: sfx config not found at %s", sfx_path)
+            return _JSONResponse({"ok": False, "error": "sfx config not found"}, status_code=404)
+        with open(sfx_path, encoding="utf-8") as f:
+            data = json.load(f)
+        defaults = data.setdefault("defaults", {})
+        fields = {}
+        for field in ("volume_percentage", "ramp_in_seconds", "ramp_out_seconds"):
+            val = body.get(field)
+            prefixed = f"{layer}_{field}"
+            fields[prefixed] = val
+            if val is None:
+                defaults.pop(prefixed, None)
+            else:
+                defaults[prefixed] = val
+        with open(sfx_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        logger.debug("update-sfx-defaults: wrote %s (layer=%r fields=%r)", sfx_path, layer, fields)
+        # A journal failure must never fail the save itself.
+        try:
+            from xil_pipeline.sfx_common import append_sfx_defaults_edit
+            append_sfx_defaults_edit(sfx_path, fields)
+        except Exception as exc:
+            _log_activity(f"[WARN] sfx defaults edit journal write failed: {exc}")
+            logger.warning("sfx defaults edit journal write failed for %s (layer=%r): %s", sfx_path, layer, exc)
+        _log_activity(f"SFX defaults edit via timeline: {slug_b}/{tag_b} → {layer!r}")
+        logger.info("SFX defaults edit via timeline: %s/%s → %r", slug_b, tag_b, layer)
+        return _JSONResponse({"ok": True, "message": f"Saved {layer!r} defaults — re-run xil daw to apply."})
 
 
 def _print_workspace_banner() -> Path:
@@ -2094,6 +2401,14 @@ def main() -> None:
     global _activity_log
     args = get_parser().parse_args()
     _print_workspace_banner()
+    # Root stays at INFO regardless of --verbose — raising it to DEBUG would
+    # also unmask every third-party library's own DEBUG chatter (PIL, httpx,
+    # uvicorn, ...) since they inherit the root level. --verbose instead
+    # raises only this module's logger, which still reaches root's stdout +
+    # logs/xil_YYYY-MM-DD.log handlers via normal propagation.
+    configure_logging()
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
     if args.output:
         _activity_log = open(args.output, "a", encoding="utf-8", buffering=1)
     try:

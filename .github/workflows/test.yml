@@ -13,6 +13,13 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      # Only "test (ubuntu-latest, 3.13)" blocks a merge; the rest are
+      # informational.  With the default fail-fast, one of those informational
+      # jobs failing CANCELS the required one — which then reports "fail"
+      # without ever having run ("The strategy configuration was canceled
+      # because test.macos-latest_3_13 failed").  A flaky network-dependent
+      # test on macOS must not be able to block a merge that way.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.12", "3.13"]
@@ -45,5 +52,18 @@ jobs:
       - name: Man page drift check
         if: runner.os == 'Linux'
         run: python docs/build_man.py --check
+      - name: Docs strict build
+        if: runner.os == 'Linux'
+        # Built from a copy named "latest", matching how Read the Docs checks
+        # out. The runner's own workspace is .../xil-pipeline/xil-pipeline, and
+        # build_docs.py used to derive its output directory from that name — so
+        # this job passed while RTD failed on ~86 duplicate-anchor warnings.
+        # Keep the rename: it is the only thing here that exercises that path.
+        run: |
+          pip install -e ".[docs]"
+          cp -a "$GITHUB_WORKSPACE" /tmp/latest
+          cd /tmp/latest
+          python docs/build_docs.py
+          python -m mkdocs build --strict
       - name: Run tests
         run: pytest tests/ -v --tb=short

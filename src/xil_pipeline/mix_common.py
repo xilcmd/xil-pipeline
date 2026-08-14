@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover
     _MutagenMP3 = None
 
 from xil_pipeline.log_config import get_logger
+from xil_pipeline.models import SfxConfiguration
 
 logger = get_logger(__name__)
 
@@ -195,7 +196,7 @@ def _find_effect_entry(sfx_config, text: str):
 
 def _resolve_audio_params(
     plan: "StemPlan",
-    sfx_config,
+    sfx_config: SfxConfiguration | None,
 ) -> tuple[float | None, float | None, float | None, float | None]:
     """Resolve volume/ramp/play_duration values from per-effect override or category defaults.
 
@@ -252,7 +253,7 @@ def _resolve_audio_params(
 
 
 def collect_stem_plans(
-    stems_dir: str, entries_index: dict[int, dict], sfx_config=None
+    stems_dir: str, entries_index: dict[int, dict], sfx_config: SfxConfiguration | None = None
 ) -> list[StemPlan]:
     """Collect and classify all MP3 stems in a stems directory.
 
@@ -1131,6 +1132,56 @@ def compute_sfx_labels(
             None, None, plan.play_duration, None, plan.volume_percentage, plan.seq,
         ))
     return labels
+
+
+def derive_structure_bands(
+    entries_index: dict[int, dict],
+    timeline: dict[int, int],
+    total_ms: int,
+    key: str = "section",
+) -> list[tuple[float, float, str]]:
+    """Derive contiguous script-structure bands (sections or scenes) for the timeline.
+
+    Groups consecutive parsed entries sharing the same ``entry[key]`` value into
+    one band spanning from the first *placed* entry of the group to the start of
+    the next group (the last band runs to ``total_ms``).
+
+    Section and scene *header* entries carry no stem, so they never appear in
+    ``timeline``; boundaries therefore come from the first entry of each group
+    that does have a cue point.  Entries whose value is ``None`` (e.g. preamble
+    lines have no scene) produce no band — a legitimate gap.
+
+    Args:
+        entries_index: Parsed entries keyed by seq (see :func:`load_entries_index`).
+        timeline: Cue-point timestamps in ms, keyed by seq.
+        total_ms: Total episode duration in ms, used to close the final band.
+        key: Entry field to band on — ``"section"`` or ``"scene"``.
+
+    Returns:
+        List of ``(start_s, end_s, label)`` tuples in chronological order.
+    """
+    # Walk in seq order, collapsing runs of the same value into one group and
+    # taking each group's start from its first entry that has a cue point.
+    groups: list[tuple[str, int]] = []  # (label, start_ms)
+    current: str | None = None
+    for seq in sorted(entries_index):
+        value = entries_index[seq].get(key)
+        if value != current:
+            current = value
+            if value:
+                groups.append((value, -1))  # start filled in by the next placed entry
+        if value and groups and groups[-1][1] < 0 and seq in timeline:
+            groups[-1] = (groups[-1][0], timeline[seq])
+
+    # Drop groups that never got a cue point (nothing audible in them).
+    placed = [(label, start) for label, start in groups if start >= 0]
+
+    bands: list[tuple[float, float, str]] = []
+    for i, (label, start_ms) in enumerate(placed):
+        end_ms = placed[i + 1][1] if i + 1 < len(placed) else total_ms
+        if end_ms > start_ms:
+            bands.append((start_ms / 1000.0, end_ms / 1000.0, label))
+    return bands
 
 
 def build_sfx_layer(

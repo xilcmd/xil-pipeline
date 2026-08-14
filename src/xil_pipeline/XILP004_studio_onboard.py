@@ -25,6 +25,7 @@ import sys
 
 from elevenlabs.client import ElevenLabs
 from elevenlabs.core.api_error import ApiError
+from elevenlabs.types import AddProjectResponseModel
 
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import derive_paths, resolve_slug
@@ -43,7 +44,7 @@ client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
 # Data loading
 # ---------------------------------------------------------------------------
 
-def load_episode(episode_tag: str, slug: str | None = None):
+def load_episode(episode_tag: str, slug: str | None = None) -> tuple[dict, dict]:
     """Load parsed JSON and cast config for *episode_tag* (e.g. ``S01E02``).
 
     Validates that no cast member has ``voice_id == "TBD"``.
@@ -197,7 +198,7 @@ def check_elevenlabs_quota() -> int | None:
 def create_project(name: str, content_json: list[dict], *,
                    default_voice_id: str,
                    model_id: str = "eleven_v3",
-                   quality: str = "standard"):
+                   quality: str = "standard") -> AddProjectResponseModel:
     """Create an ElevenLabs Studio project from content JSON.
 
     Args:

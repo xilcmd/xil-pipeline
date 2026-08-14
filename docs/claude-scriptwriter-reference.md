@@ -1,1 +1,0 @@
-../claude-scriptwriter-reference.md

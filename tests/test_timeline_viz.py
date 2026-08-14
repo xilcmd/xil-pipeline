@@ -717,6 +717,20 @@ class TestHtmlEditorIntegrity:
         assert 'const XIL_SLUG = "myshow";' in html
         assert 'const XIL_TAG  = "S01E01";' in html
 
+    def test_category_defaults_section_present(self, tmp_path):
+        """The double-click modal's 'Category defaults' section — ids,
+        POST target, and the deliberate vintage_filter exclusion note."""
+        html = self._render(tmp_path)
+        assert 'id="sfx-defaults-section"' in html
+        assert 'id="sfx-defaults-summary"' in html
+        assert 'id="sfx-defaults-fields"' in html
+        assert 'id="sfxd-' in html
+        assert "_sfxDefaultsField('volume_percentage'" in html
+        assert "_sfxDefaultsField('ramp_in_seconds'" in html
+        assert "_sfxDefaultsField('ramp_out_seconds'" in html
+        assert "/xil/update-sfx-defaults" in html
+        assert "vintage_filter" in html.lower()
+
     def test_script_runs_clean_in_node(self, tmp_path):
         """Execute the generated script in node with a stub DOM: it must run
         without throwing and register the modal-button and play listeners."""
@@ -747,8 +761,9 @@ function el(id) {
 const ids = ['xil-player','player-label','audio-el','zoom-info','floattip','tc','ti',
              'ruler','layers','sfx-modal-overlay','sfx-modal','sfx-modal-title',
              'sfx-modal-fields','sfx-modal-status','sfx-modal-save','sfx-modal-cancel',
-             'transport','transport-play','transport-time','transport-mutes',
-             'transport-hint','playhead'];
+             'transport','transport-restart','transport-play','transport-time','transport-mutes',
+             'transport-hint','playhead','sections-track','scenes-track',
+             'mix-loading','mix-loading-text','mix-loading-layers','mix-loading-cancel'];
 const elements = {};
 ids.forEach(i => elements[i] = el(i));
 global.document = {
@@ -771,7 +786,7 @@ console.log(listeners.join(','));
         registered = result.stdout.strip().split(",")
         for expected in ("sfx-modal-cancel:click", "sfx-modal-save:click",
                          "sfx-modal-overlay:click", "layers:click",
-                         "document:dblclick"):
+                         "document:dblclick", "mix-loading-cancel:click"):
             assert expected in registered, f"listener not registered: {expected}"
 
     def test_preview_gain_graph_wiring(self, tmp_path):
@@ -850,10 +865,213 @@ class TestTransport:
         assert "seekTo" in html          # ruler-seek handler
         assert "requestAnimationFrame" in html
 
+    def test_return_to_start_button(self, tmp_path):
+        """Issue #41: accessible 'return to start' control alongside play/pause."""
+        ldir = tmp_path / "daw"
+        ldir.mkdir()
+        html = self._render(tmp_path, layers_dir=ldir, wav_keys=self.LAYER_KEYS)
+        # Button markup + accessible labelling
+        assert 'id="transport-restart"' in html
+        assert 'aria-label="Return to start"' in html
+        assert "&#9198;" in html                       # ⏮ skip-to-start glyph
+        assert 'aria-label="Play/pause full mix"' in html   # a11y parity on play button
+        # Click restarts via the existing state-preserving seek
+        assert "getElementById('transport-restart').addEventListener('click'" in html
+        assert "seekTo(0)" in html
+        # Keyboard accessibility: Home key returns to start
+        assert "e.key === 'Home'" in html
+        # Restart is hidden when there is no full mix to control
+        assert "getElementById('transport-restart').style.display = 'none'" in html
+
     def test_no_layers_dir_renders_empty_layer_audio(self, tmp_path):
         html = self._render(tmp_path, layers_dir=None)
         assert "const LAYER_AUDIO = {};" in html
         assert "run xil daw to enable full-mix playback" in html
+
+
+class TestStructureBands:
+    """Section/scene bands rendered above the minute ruler."""
+
+    def _render(self, tmp_path, **kwargs):
+        data = build_timeline_data(
+            total_s=20.0, tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")],
+            amb_labels=[], mus_labels=[], sfx_labels=[],
+            **kwargs,
+        )
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(data, out)
+        return open(out, encoding="utf-8").read()
+
+    def test_band_markup_present(self, tmp_path):
+        html = self._render(tmp_path)
+        assert 'id="sections-track"' in html
+        assert 'id="scenes-track"' in html
+        assert "structure-block" in html          # CSS class
+        assert ">Sections<" in html and ">Scenes<" in html   # gutter labels
+
+    def test_bands_serialized_into_data(self, tmp_path):
+        html = self._render(
+            tmp_path,
+            section_bands=[(0.0, 10.0, "cold-open"), (10.0, 20.0, "act1")],
+            scene_bands=[(5.0, 20.0, "scene-1")],
+        )
+        assert '"sections": [' in html
+        assert '"label": "cold-open"' in html
+        assert '"label": "act1"' in html
+        assert '"label": "scene-1"' in html
+
+    def test_bands_default_to_empty(self, tmp_path):
+        html = self._render(tmp_path)
+        assert '"sections": []' in html
+        assert '"scenes": []' in html
+
+    def test_bands_not_counted_as_assets(self, tmp_path):
+        """Structure bands live outside DATA.layers, so the asset count is unchanged."""
+        plain = self._render(tmp_path)
+        with_bands = self._render(
+            tmp_path,
+            section_bands=[(0.0, 20.0, "act1")],
+            scene_bands=[(0.0, 20.0, "scene-1")],
+        )
+        assert "1 assets across 5 layers" in plain
+        assert "1 assets across 5 layers" in with_bands
+
+
+# ─── Tests: audio prefetch (NAS-aware loading feedback) ───
+
+class TestAudioPrefetch:
+    """Fetch-to-Blob prefetch with byte progress for the mix and clip previews.
+
+    Streaming/abort behavior is browser-only; these are structural guards on
+    the generated script (the node stub-DOM test covers eval-time safety).
+    """
+
+    def _render(self, tmp_path, stems_dir=None, layers_dir=None):
+        data = build_timeline_data(
+            total_s=10.0, tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")],
+            amb_labels=[], mus_labels=[],
+            sfx_labels=[(3.0, 4.0, "SFX: DOOR")],
+        )
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(
+            data, out,
+            stems_dir=str(stems_dir) if stems_dir is not None else None,
+            slug="myshow", tag="TEST",
+            layers_dir=str(layers_dir) if layers_dir is not None else None,
+        )
+        return open(out, encoding="utf-8").read()
+
+    def test_loader_markup_before_script(self, tmp_path):
+        """The loading strip must be in the DOM before the script runs."""
+        html = self._render(tmp_path)
+        pre_script = html[:html.index("<script>")]
+        for elem_id in ("mix-loading", "mix-loading-text",
+                        "mix-loading-layers", "mix-loading-cancel"):
+            assert f'id="{elem_id}"' in pre_script, f"{elem_id} not before <script>"
+
+    def test_prefetch_helper_present(self, tmp_path):
+        """fetchAudioBlob: streamed fetch with Content-Length progress,
+        blob-URL result, URL-keyed cache, and abort support."""
+        html = self._render(tmp_path)
+        assert "async function fetchAudioBlob" in html
+        assert "Content-Length" in html
+        assert "getReader()" in html
+        assert "createObjectURL" in html
+        assert "_blobCache" in html
+        assert "AbortController" in html
+
+    def test_mix_and_clip_both_prefetch(self, tmp_path):
+        """Both the transport mix and single-clip playSpan await the prefetch:
+        the mix fans out under Promise.all, the clip awaits directly."""
+        html = self._render(tmp_path)
+        # definition + mix call site + clip call site
+        assert html.count("fetchAudioBlob(") >= 3
+        assert "await Promise.all" in html
+        assert "await fetchAudioBlob" in html
+
+    def test_mute_change_does_not_prefetch(self, tmp_path):
+        """Toggling a mute checkbox before loading must record the preference,
+        not trigger a multi-GB download."""
+        html = self._render(tmp_path)
+        idx = html.index("querySelectorAll('.mute-toggle input')")
+        handler = html[idx:idx + 500]
+        assert "ensureMix" not in handler
+        assert "mixMuted" in handler
+
+    def test_clips_carry_cache_buster(self, tmp_path):
+        """CLIPS values need ?v={mtime} so clip blobs self-invalidate on
+        stem regen (the blob cache is keyed by full URL)."""
+        import json as _json
+        import re
+        stems = tmp_path / "stems"
+        stems.mkdir()
+        (stems / "001_intro_host.mp3").write_bytes(b"ID3")
+        html = self._render(tmp_path, stems_dir=stems)
+        clips = _json.loads(re.search(r"const CLIPS = ({.*?});", html).group(1))
+        assert clips, "CLIPS empty — stems dir not picked up"
+        for path in clips.values():
+            assert "?v=" in path
+
+    def test_loading_glyph_and_cancel_wiring(self, tmp_path):
+        """Transport shows an hourglass while loading; the strip's Cancel
+        button aborts the in-flight prefetch."""
+        html = self._render(tmp_path)
+        assert "&#8987;" in html  # hourglass glyph during load
+        assert "getElementById('mix-loading-cancel')" in html
+        assert ".abort()" in html
+
+    def test_playspan_loading_state(self, tmp_path):
+        """playSpan marks the span .loading during fetch and bails if the
+        user clicked elsewhere mid-load (token check)."""
+        html = self._render(tmp_path)
+        assert ".span.loading {" in html
+        assert "classList.add('loading')" in html
+        assert "token !== _playToken" in html
+
+    def test_paths_are_root_agnostic_relative(self, tmp_path):
+        """Timeline embeds audio paths relative to its own location, so an
+        artifact works whether served from a local root or the NAS — no baked
+        absolute XIL_PROJECTROOT prefix, and the prefetch fetches the relative
+        path directly (resolved against the iframe's document URL), never via
+        an absolute '/gradio_api/file=' + path concatenation."""
+        import json as _json
+        import re
+        stems = tmp_path / "stems" / "myshow" / "TEST"
+        stems.mkdir(parents=True)
+        (stems / "001_intro_host.mp3").write_bytes(b"ID3")
+        # Mirror the real layout: the timeline sits in the same dir as the WAVs.
+        ldir = tmp_path / "daw" / "myshow" / "TEST"
+        ldir.mkdir(parents=True)
+        for k in ("dialogue", "sfx", "music", "ambience", "vintage_filter"):
+            (ldir / f"TEST_layer_{k}.wav").write_bytes(b"RIFF")
+        data = build_timeline_data(
+            total_s=10.0, tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")], amb_labels=[], mus_labels=[],
+            sfx_labels=[(3.0, 4.0, "SFX: DOOR")],
+        )
+        out = str(ldir / "TEST_timeline.html")
+        render_html_timeline(
+            data, out, stems_dir=str(stems),
+            slug="myshow", tag="TEST", layers_dir=str(ldir),
+        )
+        html = open(out, encoding="utf-8").read()
+        la = _json.loads(re.search(r"const LAYER_AUDIO = ({.*?});", html).group(1))
+        assert la, "LAYER_AUDIO empty"
+        for p in la.values():
+            assert not p.startswith("/"), f"layer path is absolute: {p}"
+            assert str(tmp_path) not in p, f"workspace root leaked: {p}"
+        # layers share the timeline's dir → bare filename
+        assert la["dialogue"].startswith("TEST_layer_dialogue.wav?v=")
+        clips = _json.loads(re.search(r"const CLIPS = ({.*?});", html).group(1))
+        assert clips, "CLIPS empty"
+        for p in clips.values():
+            assert not p.startswith("/"), f"clip path is absolute: {p}"
+            assert str(tmp_path) not in p, f"workspace root leaked: {p}"
+        # stems are a sibling tree of daw/ → path climbs out with ../
+        assert clips["1"].startswith("../../../stems/myshow/TEST/")
+        assert "'/gradio_api/file=' +" not in html
 
 
 # ─── Tests: text timeline map ({tag}_timeline.txt cue sheet) ───
@@ -928,3 +1146,66 @@ class TestTextTimelineMap:
         assert "myshow" in joined
         assert "3:40" in joined            # 220.0s duration
         assert "music/ambience omitted" in joined
+
+
+class TestPreviewLengthArithmetic:
+    """The modal's span preview must agree with what the mixer will render.
+
+    play_duration is a percentage of the SOURCE FILE, not of duration_seconds
+    (see mix_common.collect_stem_plans). Basing the preview on duration_seconds
+    made "Play Duration % = 100" look like a no-op on exactly the cues that
+    duration_seconds was clipping — inviting the user to undo a correct edit.
+    """
+
+    def _preview_length(self, tmp_path, dur_s, nat_s, pd):
+        """Run the real emitted _previewLength() in node and return its result."""
+        import json as _json
+        import shutil
+        import subprocess
+
+        if shutil.which("node") is None:
+            pytest.skip("node not available")
+
+        data = build_timeline_data(total_s=10.0, tag="TEST", dlg_labels=[],
+                                   amb_labels=[], mus_labels=[], sfx_labels=[])
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(data, out)
+        html = open(out, encoding="utf-8").read()
+        script = html[html.index("<script>") + len("<script>"):html.index("</script>")]
+
+        # Lift just the preview helper out of _applySfxEditToSpans.
+        start = script.index("function _previewLength(pd) {")
+        end = script.index("\n  }", start) + len("\n  }")
+        body = script[start:end]
+
+        harness = tmp_path / "h.js"
+        harness.write_text(
+            f"const durS = {_json.dumps(dur_s)}, natS = {_json.dumps(nat_s)};\n"
+            f"{body}\n"
+            f"console.log(JSON.stringify(_previewLength({_json.dumps(pd)})));\n",
+            encoding="utf-8",
+        )
+        r = subprocess.run(["node", str(harness)], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return _json.loads(r.stdout.strip())
+
+    def test_full_play_uses_source_length_not_duration_seconds(self, tmp_path):
+        """The regression: a 65s file clipped to 5s, user sets 100%."""
+        assert self._preview_length(tmp_path, 5.0, 65.0, 100) == 65.0
+
+    def test_partial_play_is_a_percentage_of_the_source(self, tmp_path):
+        assert self._preview_length(tmp_path, 5.0, 65.0, 50) == 32.5
+
+    def test_cleared_play_duration_falls_back_to_clipping(self, tmp_path):
+        """No play_duration → duration_seconds clips, capped at the file length."""
+        assert self._preview_length(tmp_path, 5.0, 65.0, None) == 5.0
+        assert self._preview_length(tmp_path, 30.0, 10.0, None) == 10.0
+
+    def test_no_clipping_configured_plays_whole_file(self, tmp_path):
+        assert self._preview_length(tmp_path, 0, 65.0, None) == 65.0
+
+    def test_generated_cue_falls_back_to_duration_seconds(self, tmp_path):
+        """No source file to probe — duration_seconds IS the rendered length."""
+        assert self._preview_length(tmp_path, 15.0, None, 100) == 15.0
+        assert self._preview_length(tmp_path, 15.0, None, 50) == 7.5
+

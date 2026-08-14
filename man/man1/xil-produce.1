@@ -1,9 +1,9 @@
-.TH XIL\-PRODUCE "1" "2026\-07\-09" "xil\-pipeline 0.3.1" "User Commands"
+.TH XIL\-PRODUCE "1" "2026\-08\-06" "xil\-pipeline 0.3.2" "User Commands"
 .SH NAME
 xil\-produce
 .SH SYNOPSIS
 .B xil\-produce
-[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--reconcile] [--apply] [--force] [--start-from START_FROM] [--stop-at STOP_AT] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--exaggeration FLOAT] [--cfg-weight FLOAT] [--sfx-backend BACKEND] [--audioldm2-python PATH] [--audioldm2-guidance FLOAT] [--audioldm2-steps INT] [--audioldm2-negative-prompt STR]
+[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--reconcile] [--apply] [--force] [--start-from START_FROM] [--stop-at STOP_AT] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--sfx-backend BACKEND] [--mmaudio-python PATH] [--mmaudio-duration FLOAT] [--mmaudio-cfg FLOAT] [--mmaudio-steps INT] [--mmaudio-negative-prompt STR] [--mmaudio-seed INT] [--mmaudio-accept-noncommercial]
 .SH DESCRIPTION
 Voice Generation — generate voice stems via ElevenLabs
 
@@ -80,15 +80,23 @@ Only place stems for effects already present in SFX/; skip API generation
 TTS backend for dialogue voice stems. 'elevenlabs' (default) calls the
 ElevenLabs API. 'gtts' generates a flat\-voice draft via Google Translate TTS
 at no cost — all characters sound the same, useful for checking episode
-duration before spending API credits. 'chatterbox' uses local Chatterbox TTS
-with per\-character voice cloning from voice_refs/<key>.wav reference clips —
-near\-production quality, free, GPU\-accelerated. Requires: pip install xil\-
-pipeline[tts\-alt] (gtts) or a configured venv\-chatterbox (chatterbox).
+duration before spending API credits. 'chatterbox\-turbo' uses the local
+Chatterbox Turbo model in venv\-chatterbox with per\-character voice cloning
+from voice_refs/<key>.wav reference clips: it natively renders 19
+paralinguistic tags — [angry] [fear] [surprised] [happy] [crying] [sarcastic]
+[whispering] [dramatic] [narration] [advertisement] [laugh] [chuckle] [sigh]
+[gasp] [groan] [cough] [sniff] [shush] [clear throat] — and strips every other
+bracketed tag. Spelling is exact: there are no plural forms ([laugh], not
+[laughs]). Requires reference clips >5s. 'chatterbox' is a deprecated alias
+for 'chatterbox\-turbo' — it warns and generates with Turbo; classic Chatterbox
+was removed. Requires: pip install xil\-pipeline[tts\-alt] (gtts) or a
+configured venv\-chatterbox (chatterbox\-turbo).
 
 .TP
 \fB\-\-chatterbox\-python\fR \fI\,PATH\/\fR
 Path to the Python executable in the chatterbox venv (default: auto\-detect
-./venv\-chatterbox/bin/python3). Used only with \-\-backend chatterbox.
+./venv\-chatterbox/bin/python3). Used with \-\-backend chatterbox or chatterbox\-
+turbo.
 
 .TP
 \fB\-\-voice\-refs\fR \fI\,DIR\/\fR
@@ -97,43 +105,46 @@ cloning (default: <workspace>/voice_refs/). Missing refs fall back to
 Chatterbox's default voice.
 
 .TP
-\fB\-\-exaggeration\fR \fI\,FLOAT\/\fR
-Chatterbox emotion exaggeration level: 0.0 = flat/monotone, 1.0 = dramatically
-expressive (default: 0.5). Used only with \-\-backend chatterbox.
-
-.TP
-\fB\-\-cfg\-weight\fR \fI\,FLOAT\/\fR
-Chatterbox CFG weight controlling pacing/delivery: lower values (e.g. 0.3)
-produce slower, more deliberate speech and help compensate for acceleration at
-high exaggeration (default: 0.5). Used only with \-\-backend chatterbox.
-
-.TP
 \fB\-\-sfx\-backend\fR \fI\,BACKEND\/\fR
 Backend for SFX/music/ambience generation, independent of the dialogue
 \-\-backend. 'elevenlabs' (default) calls the ElevenLabs Sound Effects API.
-'audioldm2' uses a local AudioLDM 2 Large diffusion model (venv\-audioldm2) —
-free, GPU\-accelerated, writes backend\-tagged assets to
-SFX/<slug>.audioldm2.mp3.
+'mmaudio' runs MMAudio locally in venv\-mmaudio — free and GPU\-accelerated,
+writes backend\-tagged assets to SFX/<slug>.mmaudio.mp3. MMAudio's weights are
+CC BY\-NC 4.0 (non\-commercial only) and require \-\-mmaudio\-accept\-noncommercial.
 
 .TP
-\fB\-\-audioldm2\-python\fR \fI\,PATH\/\fR
-Path to the Python executable in the AudioLDM 2 venv (default: auto\-detect
-./venv\-audioldm2/bin/python3). Used only with \-\-sfx\-backend audioldm2.
+\fB\-\-mmaudio\-python\fR \fI\,PATH\/\fR
+Path to the Python executable in the MMAudio venv (default: auto\-detect
+./venv\-mmaudio/bin/python3). Used only with \-\-sfx\-backend mmaudio.
 
 .TP
-\fB\-\-audioldm2\-guidance\fR \fI\,FLOAT\/\fR
-AudioLDM 2 guidance scale — how closely generation follows the prompt
-(default: 3.5). Used only with \-\-sfx\-backend audioldm2.
+\fB\-\-mmaudio\-duration\fR \fI\,FLOAT\/\fR
+Generation length in seconds before trimming (default: 8.0, MMAudio's training
+duration). The result is trimmed to each cue's duration_seconds; generating at
+the native length and trimming gives better audio than asking for a short
+clip.
 
 .TP
-\fB\-\-audioldm2\-steps\fR \fI\,INT\/\fR
-AudioLDM 2 diffusion inference steps — higher is slower but cleaner (default:
-200). Used only with \-\-sfx\-backend audioldm2.
+\fB\-\-mmaudio\-cfg\fR \fI\,FLOAT\/\fR
+MMAudio classifier\-free guidance strength (default: 4.5).
 
 .TP
-\fB\-\-audioldm2\-negative\-prompt\fR \fI\,STR\/\fR
-AudioLDM 2 negative prompt (default: 'low quality, noise'). Used only with
-\-\-sfx\-backend audioldm2.
+\fB\-\-mmaudio\-steps\fR \fI\,INT\/\fR
+MMAudio flow\-matching sampling steps (default: 25).
+
+.TP
+\fB\-\-mmaudio\-negative\-prompt\fR \fI\,STR\/\fR
+Optional MMAudio negative prompt (default: none).
+
+.TP
+\fB\-\-mmaudio\-seed\fR \fI\,INT\/\fR
+MMAudio reproducibility seed (default: nondeterministic).
+
+.TP
+\fB\-\-mmaudio\-accept\-noncommercial\fR
+Acknowledge that MMAudio's weights are CC BY\-NC 4.0 (NON\-COMMERCIAL USE ONLY)
+and that generated audio must not appear in a monetised production. Required
+for \-\-sfx\-backend mmaudio.
 
 .SH SEE ALSO
 .BR xil (1),
@@ -162,6 +173,7 @@ AudioLDM 2 negative prompt (default: 'low quality, noise'). Used only with
 .BR xil-remove-episode (1),
 .BR xil-status (1),
 .BR xil-sfx-restore (1),
+.BR xil-sfx-impact (1),
 .BR xil-db-profile (1),
 .BR xil-sfx-csv (1),
 .BR xil-parsed-csv (1),

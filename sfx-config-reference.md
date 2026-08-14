@@ -138,6 +138,18 @@ Meaning depends on context:
 }
 ```
 
+> **Watch this one on `source` cues.** `xil parse` writes a default of `5.0` into every
+> skeleton entry, so a long music bed dropped into a hinted cue is clipped to five
+> seconds unless you change it. To see every cue this is affecting across the workspace,
+> run `xil sfx-impact` — it grades each one by how much audio is being cut and names the
+> edit that would restore it, without modifying anything.
+>
+> **To un-clip a cue, set `play_duration: 100` rather than `duration_seconds: 0`.** Both
+> play the whole file, but `duration_seconds` is not in `SFX_EDIT_FIELDS`, so it is not
+> replayed by the timeline edit journal — a `duration_seconds` edit reverts to `5.0` the
+> next time the config is rebuilt from a skeleton, silently re-clipping the cue.
+> `play_duration` survives regeneration.
+
 ### `play_duration`
 
 Percentage of the source file to use (0–100). Applied at **stem copy time** (XILP002),
@@ -190,6 +202,18 @@ Per-entry volume override. Overrides the `defaults` category key for this entry 
 - `100` = unity gain (no change).
 - `40` = 40% of full volume (roughly −8 dB).
 - Applies to SFX, MUSIC, and AMBIENCE entries.
+
+It can also come straight from the script. A `play_volume_pct` pipe-hint on the
+direction sets this field, and the script wins over whatever the config holds:
+
+```
+[OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20%]
+```
+
+Reparsing (`xil parse`) or `xil sfx-hydrate` applies it; `xil regen` writes it back
+into the markdown, so the annotation survives a full round-trip. Hand-editing this
+field is still fine — just remember a later re-parse will restore the script's value
+if the direction still carries the hint.
 
 ### `prompt_influence`
 
@@ -338,7 +362,7 @@ effect entry
 
 ## See Also
 
-- [SFX Reuse Guide](sfx-reuse-guide.md) — how to minimise ElevenLabs credit spend
+- [SFX Reuse Guide](../guides/sfx-reuse-guide.md) — how to minimise ElevenLabs credit spend
 - [DIRECTION_TYPES](DIRECTION_TYPES_info.md) — how the parser classifies direction text
 - `xil sfx --dry-run` — preview EXISTS / CACHED / NEW status before generating
 - `xil produce --dry-run` — full voice + SFX cost estimate

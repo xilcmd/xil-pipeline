@@ -215,6 +215,42 @@ flowchart TD
     STATS --> JSON["📦 parsed_sample_S01E01.json"]
 ```
 
+### Direction pipe-hints
+
+Scriptwriters can annotate any bracketed direction with pipe-separated hints, which
+`_parse_direction_hint()` strips from the direction text and carries into
+`sfx_<TAG>.json`:
+
+```
+[<DIRECTION TEXT> | <file>.mp3|.wav | <key>=<value> | …]
+```
+
+| Segment | Effect |
+|---------|--------|
+| ends `.mp3` / `.wav` | Becomes the cue's `source` (`SFX/<slug>/<filename>`). First filename wins. |
+| `play_volume_pct=20%` | Becomes the cue's `volume_percentage` (0–200; the `%` is optional). |
+| anything else | Not consumed — re-joined onto the direction text, so a prose note survives verbatim. |
+
+Segments are classified independently, so order does not matter and either half may
+appear alone:
+
+```
+[SFX: RADIO STATIC — BRIEF TUNING | sfx_radio-static-tuning-transition.mp3]
+[OUTRO MUSIC | sundy3M4_v3_(tech)_1.05mn_125bpm_-_TAGEO.mp3 | play_volume_pct=20%]
+[MUSIC: STING | play_volume_pct=40%]
+```
+
+The hints land on the parsed entry as `sfx_source` and `sfx_overrides`, then flow into
+the SFX config through `generate_sfx_config()` (fresh config) or `backfill_sfx_sources()`
+/ `xil sfx-hydrate` (existing config). **Precedence differs between the two:** a `source`
+hint never replaces one already in the config, while attribute hints overwrite it — the
+script is authoritative for playback settings. A malformed or out-of-range value logs a
+warning and is dropped rather than failing the parse, and silence cues (`BEAT`) ignore
+attribute hints entirely.
+
+New attributes are added by extending `HINT_ATTRS` in `XILP001_script_parser.py`; the
+rest of the chain is generic.
+
 ### Speaker normalization
 
 ```mermaid
@@ -290,16 +326,95 @@ sequenceDiagram
 > spending ElevenLabs credits. No API key required. eleven_v3 inline tags are stripped automatically.
 > SFX/music/ambience generation is unaffected. Requires: `pip install xil-pipeline[tts-alt]`
 
-> **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs|audioldm2` (default
-> `elevenlabs`) selects the generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue
-> `--backend`. `audioldm2` runs a local **AudioLDM 2 Large** diffusion model in its own
-> `venv-audioldm2/` (driven by `audioldm2_worker.py`, same persistent JSON-over-stdio subprocess
-> pattern as Chatterbox) — free, GPU-accelerated, no API credits. Model-generated assets are
-> stored backend-tagged (`SFX/<slug>.audioldm2.mp3`) so ElevenLabs and AudioLDM 2 audio coexist
-> and a backend switch never silently reuses the wrong file. Tunables: `--audioldm2-guidance`
-> (prompt adherence, default 3.5), `--audioldm2-steps` (default 200), `--audioldm2-negative-prompt`,
-> `--audioldm2-python` (auto-detected). Generation is delegated through the `SfxBackend` adapter in
-> `sfx_backends.py`, which both `xil-produce` and `xil-sfx` share.
+> **Local voice clones:** `--backend chatterbox-turbo` runs local GPU TTS in `venv-chatterbox/`
+> (driven by `chatterbox_turbo_worker.py`), cloning each character from `voice_refs/<key>.wav`.
+> It natively renders 19 paralinguistic cues (see below) and strips every other bracketed tag.
+> Requires reference clips **>5 s**, and caches conditionals as `voice_refs/<key>.turbo.conds.pt`.
+>
+> Classic `chatterbox` was **removed in #62**; `--backend chatterbox` is a deprecated alias that
+> warns and generates with Turbo. The `.turbo.` cache suffix is deliberately kept distinct: Turbo
+> conditionals are **not** interchangeable with the classic `.conds.pt` files still on disk.
+> Historical stems and logs recording `backend: chatterbox` remain valid and are still parsed by
+> `xil-stem-log`.
+
+#### Chatterbox Turbo paralinguistic tags
+
+`ResembleAI/chatterbox-turbo` carries dedicated tokens for exactly these 19 cues (IDs 50257–50275
+in the model's `added_tokens.json`). Write them inline in dialogue; `chatterbox_turbo_worker.py`
+keeps them and strips every other bracketed token before generation.
+
+| Category | Tags |
+| --- | --- |
+| Emotion | `[angry]` `[fear]` `[surprised]` `[happy]` `[crying]` `[sarcastic]` |
+| Delivery style | `[whispering]` `[dramatic]` `[narration]` `[advertisement]` |
+| Vocal gesture | `[laugh]` `[chuckle]` `[sigh]` `[gasp]` `[groan]` `[cough]` `[sniff]` `[shush]` `[clear throat]` |
+
+```markdown
+ADAM
+[sarcastic] Oh, that went perfectly. [sigh]
+```
+
+Spelling is exact — there are **no plural forms**. `[laugh]` is a token; `[laughs]`, `[chuckles]`,
+and `[coughs]` are not and get stripped. `[clear throat]` keeps the space; `[clears throat]` and
+`[throat clearing]` are stripped. Matching is case-insensitive. Because unknown tags are removed,
+ElevenLabs-only tags such as `[exhausted]` and `[pause]` can stay in a shared script — honoured
+under `--backend elevenlabs`, dropped under `chatterbox-turbo`.
+
+`xil scan` catches these mistakes before any audio is generated — its
+**PARALINGUISTIC TAG NEAR-MISSES** section flags `[laughs]`, `[clears throat]`, `[surprise]` and
+similar with the correct token to use. The check is advisory and never changes the exit code, since
+the same script may be produced through ElevenLabs where those tags mean something else.
+
+Audition a cue without a full run:
+
+```bash
+xil sample --episode S01E01 --backend chatterbox-turbo \
+    --sample-text "[sarcastic] I am {name}, and this is fine."
+```
+
+> **SFX backend (independent of dialogue):** `--sfx-backend elevenlabs|mmaudio`
+> (default `elevenlabs`) selects the generator for SFX/MUSIC/AMBIENCE, orthogonal to the dialogue
+> `--backend`. Generation is delegated through the `SfxBackend` adapter in `sfx_backends.py`,
+> which both `xil-produce` and `xil-sfx` share.
+>
+> `mmaudio` runs **MMAudio** locally in `venv-mmaudio` via a persistent JSON-over-stdio worker
+> (`mmaudio_worker.py`, the same pattern as Chatterbox) — free, GPU-accelerated, ~6 GB VRAM,
+> 44.1 kHz. It uses MMAudio's text-to-audio path; the model is primarily *video*-to-audio, so
+> this is a pilot rather than a proven SFX generator.
+>
+> ⚠️ **MMAudio's weights are CC BY-NC 4.0 — non-commercial use only** (its code is MIT; the
+> checkpoints are not). `--mmaudio-accept-noncommercial` is required or the backend refuses to
+> start, the constraint is logged every session, and each generated asset carries it in its ID3
+> comment alongside the `.mmaudio` filename infix — so a clip stays identifiable if a show is
+> later monetised.
+>
+> **Duration:** MMAudio is trained at 8 s and warns that large deviation degrades quality.
+> Generation therefore runs at `--mmaudio-duration` (default 8.0) and the backend **trims the
+> result** to the cue's `duration_seconds`. The trim cannot be deferred to the mixer: for a
+> prompt-generated cue `duration_seconds` is the *generation length* and there is no mix-time
+> clip — that applies only to `source=` cues.
+>
+> Install (not on PyPI):
+>
+> ```bash
+> python -m venv venv-mmaudio
+> git clone https://github.com/hkchengrex/MMAudio
+> venv-mmaudio/bin/pip install -e MMAudio
+> # Re-pin torch AFTER: MMAudio's `torch >= 2.5.1` has no upper bound and pulls a
+> # CUDA 13 build, which falls back to CPU on a CUDA 12.x driver and breaks torchaudio.
+> venv-mmaudio/bin/pip install 'torch==2.6.0' 'torchaudio==2.6.0' 'torchvision==0.21.0' \
+>     --index-url https://download.pytorch.org/whl/cu124
+> venv-mmaudio/bin/python -c "import torch; print(torch.cuda.is_available())"   # must be True
+> ```
+>
+> Two local diffusion backends — **AudioLDM 2 Large** and **Stable Audio Open 1.0**, each driven
+> by a persistent worker subprocess in a `venv-audioldm2/` — were **removed in #62** after both
+> trials produced unusable audio. `elevenlabs` is the only remaining choice; the adapter and
+> factory are kept as the seam a future backend plugs into.
+>
+> `shared_sfx_path()` still appends a `.<backend>` infix for non-ElevenLabs backends, because
+> assets generated during those trials (e.g. `SFX/<slug>.audioldm2.mp3`) may still exist on disk
+> and remain playable when referenced as a cue `source`.
 
 ---
 
@@ -769,9 +884,6 @@ xil sfx --episode S02E03 --gen-sfx --dry-run
 xil sfx --episode S02E03 --gen-music --dry-run
 xil sfx --episode S02E03 --gen-ambience --dry-run
 xil sfx --episode S02E03
-# Or generate SFX/music/ambience locally for free with AudioLDM 2 (needs venv-audioldm2/):
-xil sfx --episode S02E03 --sfx-backend audioldm2 --gen-sfx --dry-run
-xil sfx --episode S02E03 --sfx-backend audioldm2
 
 # 6. Assemble master MP3 or export DAW layers
 xil assemble --episode S02E03
@@ -814,7 +926,7 @@ Consumed by XILP005 via `--timeline` and `--timeline-html`.
 
 ### 10a. Data model
 
-`timeline_viz.py` is built on two dataclasses — full field listing in [§27e](#27e-pipeline-utility-models).
+`timeline_viz.py` is built on two dataclasses — full field listing in [§28e](#28e-pipeline-utility-models).
 
 | Class | Role |
 |-------|------|
@@ -1070,11 +1182,12 @@ xil-stem-log --logs-dir /path/to/logs
 
 ```mermaid
 flowchart TD
-    LOGS["`📂 logs/xil_YYYY-MM-DD.log
-    One or more daily log files`"]
+    LOGS["`📂 logs/xil_v2_YYYY-MM-DD_HOST.log
+    Structured: ts|LEVEL|host|stage|msg
+    one file per host; v1 transcripts also read`"]
     PARSE["`Parse log lines
     Regex patterns per backend:
-    elevenlabs / gtts / chatterbox`"]
+    elevenlabs / gtts / chatterbox / chatterbox-turbo`"]
     STATE["`State machine
     generation line → saved → SHA256`"]
     RUNIDX["`run_index
@@ -1175,7 +1288,7 @@ xil regen --episode S02E03 --sfx configs/sample/sfx_S02E03.json
 | `--tag TAG` | — | Raw non-episodic tag (e.g. `V01C03`). Mutually exclusive with `--episode`. |
 | `--parsed PATH` | `parsed/<slug>/parsed_<slug>_<TAG>.json` | Override parsed JSON input path. |
 | `--cast PATH` | `configs/<slug>/cast_<TAG>.json` | Override cast config path. |
-| `--sfx PATH` | `configs/<slug>/sfx_<TAG>.json` | Override SFX config path. When the file exists, direction entries are emitted with a pipe-hint filename suffix (`[SFX: TEXT \| filename.mp3]`) for any entry whose SFX config key has a `source` field. Prompt-only and silence entries are unaffected. |
+| `--sfx PATH` | `configs/<slug>/sfx_<TAG>.json` | Override SFX config path. When the file exists, direction entries are emitted with a pipe-hint suffix (`[SFX: TEXT \| filename.mp3 \| play_volume_pct=20%]`) for any entry whose SFX config key has a `source` and/or a `volume_percentage`. Bare-prompt and silence entries are unaffected. |
 | `--output PATH` | `scripts/revised_<slug>_<TAG>.md` | Override output markdown path. |
 | `--show NAME` | from `project.json` | Show name override for slug derivation. |
 | `--speakers PATH` | auto-detect → built-in | Path to `speakers.json` for speaker key → display name mapping. |
@@ -1188,6 +1301,14 @@ entries that resolve to a `source`-backed asset are emitted in pipe-hint format:
 ```
 [SFX: PAPER LETTER FOLDED, SET DOWN ON TABLE | PAPRImpt-A_realistic_sound_of-Elevenlabs.mp3]
 [AMBIENCE: RADIO BOOTH - SOFT EQUIPMENT HUM, SLIGHT STATIC, INTIMATE | ambience_radio-booth-soft-equipment-hum-slight-static-intimate.mp3]
+```
+
+Cues carrying a `volume_percentage` also emit a `play_volume_pct` hint, with or
+without a filename, so a regenerated script round-trips losslessly:
+
+```
+[OUTRO MUSIC | sundy3M4_v3_(tech)_1.05mn_125bpm_-_TAGEO.mp3 | play_volume_pct=20%]
+[MUSIC: STING | play_volume_pct=40%]
 ```
 
 Entries with only a `prompt` key (API-generated) or `"type": "silence"` emit without a hint:
@@ -1211,7 +1332,7 @@ flowchart TD
     Speaker key → display name`"]
     SFX["`📋 sfx_sample_S02E03.json
     Direction text → source basename
-    (optional)`"]
+    + volume override (optional)`"]
 
     LOAD["`Load parsed JSON + cast config
     Build reverse mappings from XILP001
@@ -1224,7 +1345,7 @@ flowchart TD
     EMIT["`Emit markdown
     === + plain text per section_header
     scene_header → plain text
-    direction → [TEXT] or [TEXT | file.mp3]
+    direction → [TEXT], [TEXT | file.mp3], + | play_volume_pct=N%
     dialogue → SPEAKER (dir) + text
     postamble section included`"]
 
@@ -1948,11 +2069,119 @@ The stems stage is judged against `*.mp3` files **plus** `*_stem_manifest.json`.
 
 ---
 
-## 27. Data Model Reference
+## 27. XILU021 — SFX Clipping Impact Report
+
+Inventories every `source=` cue in the workspace and reports how much of each source
+file is actually reaching the mix. Read-only: no config is ever modified.
+
+```bash
+xil sfx-impact                                  # every show
+xil sfx-impact --show thewoonsocketwonders      # one show
+xil sfx-impact --episode S01E01 --show the413   # one episode
+xil sfx-impact --tier 3-review --html           # worst cues + review page
+xil sfx-impact --output - --quiet               # CSV to stdout for piping
+```
+
+### Why it exists
+
+`duration_seconds` means two different things. For an API-generated effect it is the
+requested generation length. For a `source=` cue it **clips the file at mix time** —
+and `xil parse` writes a default of `5.0` into every skeleton entry. A 120-second
+outro dropped into a hinted cue therefore plays for five seconds, silently, until
+somebody listens closely.
+
+### Precedence (mirrors the mixer)
+
+The arithmetic follows `mix_common.collect_stem_plans` exactly, so the report cannot
+drift from what the audience hears:
+
+| Cue shape | Plays | Tier |
+|-----------|-------|------|
+| `loop: true` | full file, tiled to fill the span | `EXCLUDED` |
+| explicit `play_duration` | that percentage — a deliberate trim | `EXCLUDED` |
+| `duration_seconds > 0` | clipped to that many seconds | graded by loss |
+| `duration_seconds: 0` or absent | full file | `EXCLUDED` |
+| source unreadable | — | `MISSING` |
+
+### Tiers
+
+| Tier | Audio lost | Meaning |
+|------|-----------|---------|
+| `1-nochange` | < 0.1 s | clipping only in the arithmetic; the budget exceeds the file |
+| `2-minor` | < 3 s | judgement call |
+| `3-review` | ≥ 3 s | the creative should hear this cue |
+
+Each graded row carries a `remediation` column naming the concrete edit that would
+restore full length: **`play_duration: 100`**. Applying it is a human decision; this
+tool never writes.
+
+### Why `play_duration: 100` and not `duration_seconds: 0`
+
+Both play the whole file — either satisfies the precedence table above. But only
+`play_duration` appears in `sfx_common.SFX_EDIT_FIELDS`, the set of fields the
+timeline edit journal replays:
+
+```python
+SFX_EDIT_FIELDS = ("volume_percentage", "ramp_in_seconds",
+                   "ramp_out_seconds", "play_duration")
+```
+
+A `duration_seconds` edit is **not journaled**, so the next time that config is
+rebuilt from a fresh skeleton (`xil parse` with the config absent) it reverts to the
+parser's `5.0` default and the cue silently re-clips — undoing a decision the creative
+already signed off. Setting `play_duration: 100` leaves `duration_seconds` in place but
+inert, and survives regeneration.
+
+`tests/test_sfx_impact.py::TestRemediation::test_remediation_field_is_journaled` asserts
+the recommended field stays inside `SFX_EDIT_FIELDS`, so this cannot silently regress if
+the journal's field list changes.
+
+### Outputs
+
+- `reports/sfx_impact_<date>.csv` — one row per source-backed cue (override with `--output`)
+- `--html` — a standalone, self-contained review page (no external assets, so it can be
+  mailed or dropped on a file share as-is), sorted worst-first
+- console — per-show tier tally plus the ten worst offenders, unless `--quiet`
+
+### Flow
+
+```mermaid
+flowchart TD
+    CFG["`📋 configs/*/sfx_*.json
+    every show, every episode`"]
+    DISC["`discover_configs()
+    --show / --episode narrow the sweep`"]
+    SRC{"`entry has source=?`"}
+    PROBE["`_mp3_duration_ms()
+    mutagen header read — same
+    helper the mixer uses`"]
+    PREC["`measure_cue()
+    loop > play_duration > duration_seconds`"]
+    TIER["`grade by seconds lost
+    + remediation`"]
+    OUT["`📄 reports/sfx_impact_<date>.csv
+    📄 optional .html review page
+    console tier tally`"]
+
+    CFG --> DISC --> SRC
+    SRC -->|no| SKIP["skip (generated / silence)"]
+    SRC -->|yes| PROBE --> PREC --> TIER --> OUT
+```
+
+> **Never writes.** The report is a decision sheet. Pair it with `xil sfx-restore` if a
+> config was already changed and you need the timeline editor's journal replayed back.
+> The journal (`configs/{slug}/sfx_{tag}_edits.jsonl`) holds both per-cue edits
+> (`POST /xil/update-sfx`) and category-defaults edits (`POST /xil/update-sfx-defaults`,
+> `scope: "defaults"` records) from the Timeline tab's double-click modal — `xil
+> sfx-restore` replays both kinds.
+
+---
+
+## 28. Data Model Reference
 
 All data classes used across the pipeline, grouped by layer. Pydantic `BaseModel` subclasses (all in `models.py`) carry validation and are serialized to/from JSON. `@dataclass` instances are in-memory runtime state only.
 
-### 27a. Script parsing models — XILP001 output
+### 28a. Script parsing models — XILP001 output
 
 ```mermaid
 classDiagram
@@ -1979,6 +2208,7 @@ classDiagram
         +string text
         +string? direction_type
         +string? sfx_source
+        +Dict~string,float~? sfx_overrides
     }
     class ScriptStats {
         <<Pydantic>>
@@ -1998,7 +2228,7 @@ classDiagram
 
 ---
 
-### 27b. Cast configuration models
+### 28b. Cast configuration models
 
 ```mermaid
 classDiagram
@@ -2060,7 +2290,7 @@ classDiagram
 
 ---
 
-### 27c. SFX configuration models
+### 28c. SFX configuration models
 
 ```mermaid
 classDiagram
@@ -2097,7 +2327,7 @@ classDiagram
 
 ---
 
-### 27d. Production runtime models
+### 28d. Production runtime models
 
 ```mermaid
 classDiagram
@@ -2143,7 +2373,7 @@ classDiagram
 
 ---
 
-### 27e. Pipeline utility models
+### 28e. Pipeline utility models
 
 ```mermaid
 classDiagram

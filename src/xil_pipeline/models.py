@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Hardcoded fallback when no project.json or --show is provided.
 DEFAULT_SLUG = "sample"
@@ -38,7 +38,7 @@ def get_workspace_root() -> Path:
 
 def get_code_root() -> Path | None:
     """Return the **code root** — the directory that holds the optional local-model
-    virtualenvs (``venv-chatterbox``, ``venv-whisper``, ``venv-audioldm2``).
+    virtualenvs (``venv-chatterbox``, ``venv-whisper``).
 
     Resolves the ``XIL_CODEROOT`` environment variable (absolute path, tilde-expanded),
     or ``None`` when it is unset.  This is distinct from :func:`get_workspace_root`
@@ -53,13 +53,13 @@ def get_code_root() -> Path | None:
 def resolve_venv_python(venv_name: str, explicit: str | None = None) -> str | None:
     """Resolve the ``python3`` interpreter for an optional local-model venv.
 
-    Used to locate ``venv-chatterbox`` / ``venv-whisper`` / ``venv-audioldm2``, which
+    Used to locate ``venv-chatterbox`` / ``venv-whisper``, which
     carry heavy ML dependencies and are never installed into the main package.
 
     Resolution order:
 
     1. *explicit* — a caller-supplied interpreter path (e.g. the per-command
-       ``--chatterbox-python`` / ``--whisper-python`` / ``--audioldm2-python`` flag).
+       ``--chatterbox-python`` / ``--whisper-python`` flag).
        Wins when provided.
     2. ``XIL_CODEROOT`` — when set, ``$XIL_CODEROOT/<venv_name>/bin/python3`` is used
        **exclusively**: it overrides auto-detection entirely and there is **no
@@ -68,7 +68,7 @@ def resolve_venv_python(venv_name: str, explicit: str | None = None) -> str | No
        to the running install.
 
     Args:
-        venv_name: Directory name of the venv (e.g. ``"venv-audioldm2"``).
+        venv_name: Directory name of the venv (e.g. ``"venv-chatterbox"``).
         explicit: An interpreter path that takes precedence over all detection.
 
     Returns:
@@ -216,34 +216,41 @@ def _read_project(project_path: str = "project.json") -> dict:
 # ---------------------------------------------------------------------------
 
 
-class ProjectConfig(BaseModel):
+class _DocModel(BaseModel):
+    """Base for pipeline models: field docs live in per-attribute docstrings.
+
+    Sets ``use_attribute_docstrings`` (note the *plural* Pydantic config key) so the
+    string literal beneath each field becomes its JSON-schema ``description``. This
+    keeps documentation in one place instead of duplicating it across
+    ``Field(description=...)`` and a class ``Attributes:`` block.
+    """
+
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
+
+class ProjectConfig(_DocModel):
     """Typed view of ``project.json``.
 
     All fields are optional with sensible defaults so that a minimal
     ``{"show": "My Show"}`` project.json validates without change.
-
-    Attributes:
-        show: Human-readable show title.
-        type: Content type — ``"podcast"`` (default), ``"audiobook"``,
-            ``"drama"``, or ``"special"``.  Drives section maps, gap defaults,
-            and ``xil-init`` sample templates.
-        season: Season number, or ``None``.
-        season_title: Season arc title (e.g. ``"The Holiday Shift"``).
-        tag_format: Custom episode tag format string (e.g.
-            ``"V{volume:02d}C{chapter:02d}"`` for audiobooks).  ``None``
-            uses the standard ``S01E01`` / ``E01`` derivation.
     """
 
-    show: str = Field(default="Sample Show", description="Show title")
-    type: Literal["podcast", "audiobook", "drama", "special"] = Field(
-        default="podcast", description="Content type"
-    )
-    season: int | None = Field(default=None, description="Season number")
-    season_title: str | None = Field(default=None, description="Season arc title")
-    tag_format: str | None = Field(
-        default=None,
-        description="Custom tag format (e.g. 'V{volume:02d}C{chapter:02d}')",
-    )
+    show: str = Field(default="Sample Show")
+    """Human-readable show title."""
+
+    type: Literal["podcast", "audiobook", "drama", "special"] = Field(default="podcast")
+    """Content type — ``"podcast"`` (default), ``"audiobook"``, ``"drama"``, or
+    ``"special"``. Drives section maps, gap defaults, and ``xil-init`` sample templates."""
+
+    season: int | None = Field(default=None)
+    """Season number, or ``None``."""
+
+    season_title: str | None = Field(default=None)
+    """Season arc title (e.g. ``"The Holiday Shift"``)."""
+
+    tag_format: str | None = Field(default=None)
+    """Custom episode tag format string (e.g. ``"V{volume:02d}C{chapter:02d}"`` for
+    audiobooks). ``None`` uses the standard ``S01E01`` / ``E01`` derivation."""
 
 
 def load_project_config(project_path: str = "project.json") -> ProjectConfig:
@@ -364,93 +371,102 @@ def episode_tag(season: int | None, episode: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-class ScriptEntry(BaseModel):
+class ScriptEntry(_DocModel):
     """A single parsed entry from a production script.
 
     Each entry represents one line or block from the markdown script,
     classified into one of four types: dialogue, direction,
     section_header, or scene_header.
-
-    Attributes:
-        seq: Sequence number, 1-based and unique within a script.
-        type: Entry classification determining how the line is processed.
-        section: Current section slug (e.g., ``"cold-open"``, ``"act1"``).
-        scene: Current scene slug (e.g., ``"scene-1"``) or ``None``.
-        speaker: Normalized speaker key for dialogue entries (e.g., ``"adam"``).
-        direction: Parenthetical acting direction for dialogue lines.
-        text: The spoken text, header text, or stage direction content.
-        direction_type: Subtype for direction entries indicating sound category.
     """
 
-    seq: int = Field(..., description="Sequence number")
-    type: Literal["dialogue", "direction", "section_header", "scene_header"] = Field(
-        ..., description="Entry classification"
-    )
-    section: str | None = Field(default=None, description="Current section slug")
-    scene: str | None = Field(default=None, description="Current scene slug")
-    speaker: str | None = Field(default=None, description="Normalized speaker key")
-    direction: str | None = Field(default=None, description="Acting direction")
-    text: str = Field(..., description="Entry content text")
-    direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER"] | None = Field(
-        default=None, description="Sound category for direction entries"
-    )
-    sfx_source: str | None = Field(
-        default=None,
-        description="Scriptwriter SFX source hint (e.g. 'SFX/filename.mp3'), "
-                    "stripped from '| filename' annotation in the script",
-    )
+    seq: int = Field(...)
+    """Sequence number, 1-based and unique within a script."""
+
+    type: Literal["dialogue", "direction", "section_header", "scene_header"] = Field(...)
+    """Entry classification determining how the line is processed."""
+
+    section: str | None = Field(default=None)
+    """Current section slug (e.g., ``"cold-open"``, ``"act1"``)."""
+
+    scene: str | None = Field(default=None)
+    """Current scene slug (e.g., ``"scene-1"``) or ``None``."""
+
+    speaker: str | None = Field(default=None)
+    """Normalized speaker key for dialogue entries (e.g., ``"adam"``)."""
+
+    direction: str | None = Field(default=None)
+    """Parenthetical acting direction for dialogue lines."""
+
+    text: str = Field(...)
+    """The spoken text, header text, or stage direction content."""
+
+    direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER"] | None = Field(default=None)
+    """Subtype for direction entries indicating sound category."""
+
+    sfx_source: str | None = Field(default=None)
+    """Scriptwriter SFX source hint (e.g. ``'SFX/filename.mp3'``), stripped from the
+    ``'| filename'`` annotation in the script."""
+
+    sfx_overrides: dict[str, float] | None = Field(default=None)
+    """Per-cue :class:`SfxEntry` overrides from the script's attribute hints, keyed by
+    config field name — ``'| play_volume_pct=20%'`` yields
+    ``{"volume_percentage": 20.0}``. Applied on top of the generated SFX config entry;
+    the script wins over any value already in ``sfx_<TAG>.json``."""
 
 
-class ScriptStats(BaseModel):
-    """Aggregate statistics for a parsed production script.
+class ScriptStats(_DocModel):
+    """Aggregate statistics for a parsed production script."""
 
-    Attributes:
-        total_entries: Total number of parsed entries.
-        dialogue_lines: Count of dialogue-type entries.
-        direction_lines: Count of direction-type entries.
-        characters_for_tts: Total character count across all dialogue text.
-        speakers: Sorted list of unique speaker keys found in the script.
-        sections: Sorted list of unique section slugs found in the script.
-    """
+    total_entries: int = Field(..., ge=0)
+    """Total number of parsed entries."""
 
-    total_entries: int = Field(..., ge=0, description="Total parsed entries")
-    dialogue_lines: int = Field(..., ge=0, description="Dialogue entry count")
-    direction_lines: int = Field(..., ge=0, description="Direction entry count")
-    characters_for_tts: int = Field(..., ge=0, description="TTS character budget")
-    speakers: list[str] = Field(..., description="Unique speaker keys")
-    sections: list[str] = Field(..., description="Unique section slugs")
+    dialogue_lines: int = Field(..., ge=0)
+    """Count of dialogue-type entries."""
+
+    direction_lines: int = Field(..., ge=0)
+    """Count of direction-type entries."""
+
+    characters_for_tts: int = Field(..., ge=0)
+    """Total character count across all dialogue text."""
+
+    speakers: list[str] = Field(...)
+    """Sorted list of unique speaker keys found in the script."""
+
+    sections: list[str] = Field(...)
+    """Sorted list of unique section slugs found in the script."""
 
 
-class ParsedScript(BaseModel):
+class ParsedScript(_DocModel):
     """Complete output of the script parsing stage.
 
     Produced by ``parse_script()`` in XILP001, consumed by
     ``load_production()`` in XILP002.
-
-    Attributes:
-        show: Show title (e.g., ``"nightowls"``).
-        season: Season number, or ``None`` if not declared in the script header.
-        episode: Episode number.
-        title: Episode title.
-        season_title: Season arc title extracted from ``Arc: "…"`` in the script
-            header (e.g. ``"The Holiday Shift"``).  ``None`` when the header
-            contains no arc declaration.
-        source_file: Basename of the source markdown file.
-        entries: Ordered list of parsed script entries.
-        stats: Aggregate statistics for the parsed script.
     """
 
-    show: str = Field(..., description="Show title")
-    season: int | None = Field(default=None, description="Season number")
-    episode: int = Field(..., description="Episode number")
-    title: str = Field(..., description="Episode title")
-    season_title: str | None = Field(
-        default=None,
-        description="Season arc title from 'Arc: \"…\"' in the script header",
-    )
-    source_file: str = Field(..., description="Source markdown filename")
-    entries: list[ScriptEntry] = Field(..., description="Parsed script entries")
-    stats: ScriptStats = Field(..., description="Aggregate statistics")
+    show: str = Field(...)
+    """Show title (e.g., ``"nightowls"``)."""
+
+    season: int | None = Field(default=None)
+    """Season number, or ``None`` if not declared in the script header."""
+
+    episode: int = Field(...)
+    """Episode number."""
+
+    title: str = Field(...)
+    """Episode title."""
+
+    season_title: str | None = Field(default=None)
+    """Season arc title extracted from ``Arc: "…"`` in the script header (e.g.
+    ``"The Holiday Shift"``). ``None`` when the header contains no arc declaration."""
+
+    source_file: str = Field(...)
+    """Basename of the source markdown file."""
+
+    entries: list[ScriptEntry] = Field(...)
+    """Ordered list of parsed script entries."""
+
+    stats: ScriptStats = Field(...)
+    """Aggregate statistics for the parsed script."""
 
     @property
     def tag(self) -> str:
@@ -463,130 +479,118 @@ class ParsedScript(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class CastMember(BaseModel):
+class CastMember(_DocModel):
     """Configuration for a single cast member's voice and audio settings.
 
     Maps a character to their ElevenLabs voice and stereo positioning.
-
-    Attributes:
-        full_name: Character's display name (e.g., ``"Adam Santos"``).
-        voice_id: ElevenLabs voice identifier, or ``"TBD"`` if unassigned.
-        pan: Stereo pan position from -1.0 (full left) to 1.0 (full right).
-        filter: Audio filter chain. ``False``/``None`` = none; ``True``/``"phone"``
-            = phone filter; ``"vintage"`` = vintage filter; ``"vintage,phone"``
-            = both filters applied in listed order.
-        role: Character role description (e.g., ``"Host/Narrator"``).
     """
 
-    full_name: str = Field(..., description="Character display name")
-    voice_id: str = Field(..., description="ElevenLabs voice ID, 'TBD' if unassigned, or '' for non-ElevenLabs backends")
-    pan: float = Field(..., ge=-1.0, le=1.0, description="Stereo pan position")
-    filter: str | bool | None = Field(..., description="Audio filter chain (false/phone/vintage/vintage,phone)")
-    role: str = Field(..., description="Character role description")
-    stability: float | None = Field(
-        default=None, ge=0.0, le=1.0,
-        description="Voice stability (0=expressive, 1=monotone); None uses voice default",
-    )
-    similarity_boost: float | None = Field(
-        default=None, ge=0.0, le=1.0,
-        description="Adherence to original voice (0=loose, 1=strict); None uses voice default",
-    )
-    style: float | None = Field(
-        default=None, ge=0.0, le=1.0,
-        description="Style exaggeration of the original speaker; None uses voice default",
-    )
-    use_speaker_boost: bool | None = Field(
-        default=None,
-        description="Boost similarity to original speaker (higher latency); None uses voice default",
-    )
-    language_code: str | None = Field(
-        default=None,
-        description="ISO 639-1 language code for text normalisation (e.g. 'en', 'de'); None = auto",
-    )
-    speed: float | None = Field(
-        default=None, ge=0.7, le=1.5,
-        description="TTS speaking rate (0.7=slow … 1.0=default … 1.5=fast); None uses voice default",
-    )
+    full_name: str = Field(...)
+    """Character's display name (e.g., ``"Adam Santos"``)."""
+
+    voice_id: str = Field(...)
+    """ElevenLabs voice identifier; ``"TBD"`` if unassigned, or ``""`` for
+    non-ElevenLabs backends."""
+
+    pan: float = Field(..., ge=-1.0, le=1.0)
+    """Stereo pan position from -1.0 (full left) to 1.0 (full right)."""
+
+    filter: str | bool | None = Field(...)
+    """Audio filter chain. ``False``/``None`` = none; ``True``/``"phone"`` = phone
+    filter; ``"vintage"`` = vintage filter; ``"vintage,phone"`` = both filters applied
+    in listed order."""
+
+    role: str = Field(...)
+    """Character role description (e.g., ``"Host/Narrator"``)."""
+
+    stability: float | None = Field(default=None, ge=0.0, le=1.0)
+    """Voice stability (0=expressive, 1=monotone); None uses voice default."""
+
+    similarity_boost: float | None = Field(default=None, ge=0.0, le=1.0)
+    """Adherence to original voice (0=loose, 1=strict); None uses voice default."""
+
+    style: float | None = Field(default=None, ge=0.0, le=1.0)
+    """Style exaggeration of the original speaker; None uses voice default."""
+
+    use_speaker_boost: bool | None = Field(default=None)
+    """Boost similarity to original speaker (higher latency); None uses voice default."""
+
+    language_code: str | None = Field(default=None)
+    """ISO 639-1 language code for text normalisation (e.g. 'en', 'de'); None = auto."""
+
+    speed: float | None = Field(default=None, ge=0.7, le=1.5)
+    """TTS speaking rate (0.7=slow … 1.0=default … 1.5=fast); None uses voice default."""
 
 
-class PreambleSegment(BaseModel):
-    """One text slice of a multi-part preamble or postamble.
+class PreambleSegment(_DocModel):
+    """One text slice of a multi-part preamble or postamble."""
 
-    Attributes:
-        text: Spoken text (may use {season_title}, {episode}, {title} placeholders).
-        shared_key: Retained for backward compatibility with existing cast JSONs.
-            No longer used at generation time — all segments are joined and sent
-            as a single TTS call to produce seamless prosody across the whole block.
-    """
+    text: str = Field(...)
+    """Spoken text (may use {season_title}, {episode}, {title} placeholders)."""
 
-    text: str = Field(..., description="Segment text (may use {season_title}, {episode}, {title})")
-    shared_key: str | None = Field(
-        default=None,
-        description="Legacy cache key; retained for backward compatibility, not used for generation",
-    )
+    shared_key: str | None = Field(default=None)
+    """Retained for backward compatibility with existing cast JSONs. No longer used at
+    generation time — all segments are joined and sent as a single TTS call to produce
+    seamless prosody across the whole block."""
 
 
-class Preamble(BaseModel):
-    """Broadcast introduction prepended to every episode.
+class Preamble(_DocModel):
+    """Broadcast introduction prepended to every episode."""
 
-    Attributes:
-        text: Single-string intro text (legacy).  Mutually exclusive with ``segments``.
-        segments: Ordered list of cacheable text segments.  Stock segments carry a
-            ``shared_key`` so they are generated once and reused; the variable
-            episode-identifier segment has ``shared_key=None``.
-        speaker: Cast key for the reader (e.g. "tina").
-        speed: TTS speaking rate passed to ElevenLabs VoiceSettings (0.7–1.2,
-            default 1.0). Values below 1.0 slow the reader down.
-    """
+    text: str | None = Field(default=None)
+    """Single-string intro text (legacy; may use {season_title}, {episode}, {title}
+    placeholders). Mutually exclusive with ``segments``."""
 
-    text: str | None = Field(
-        default=None,
-        description="Intro text (may use {season_title}, {episode}, {title}); legacy single-string form",
-    )
-    segments: list[PreambleSegment] | None = Field(
-        default=None,
-        description="Ordered cacheable segments; preferred over 'text' for new episodes",
-    )
-    speaker: str = Field(..., description="Cast member key for TTS generation")
-    speed: float | None = Field(
-        default=None, ge=0.7, le=1.2,
-        description="TTS speaking rate (0.7–1.2); None uses the voice default"
-    )
+    segments: list[PreambleSegment] | None = Field(default=None)
+    """Ordered list of cacheable text segments (preferred over ``text`` for new
+    episodes). Stock segments carry a ``shared_key`` so they are generated once and
+    reused; the variable episode-identifier segment has ``shared_key=None``."""
+
+    speaker: str = Field(...)
+    """Cast key for the reader (e.g. ``"tina"``)."""
+
+    speed: float | None = Field(default=None, ge=0.7, le=1.2)
+    """TTS speaking rate passed to ElevenLabs VoiceSettings (0.7–1.2, default 1.0).
+    Values below 1.0 slow the reader down; None uses the voice default."""
 
 
-
-class CastConfiguration(BaseModel):
+class CastConfiguration(_DocModel):
     """Complete cast configuration for a production episode.
 
     Loaded from the cast config JSON and used by ``load_production()``
     to map speaker keys to voice and audio settings.
-
-    Attributes:
-        show: Show title (e.g., ``"nightowls"``).
-        season: Season number, or ``None`` if not set in the cast file.
-        episode: Episode number.
-        title: Episode title (optional, not used during production).
-        season_title: Season subtitle/arc title (e.g., ``"The Letters"``).
-        preamble: Broadcast intro configuration, or ``None`` if not configured.
-        cast: Mapping of speaker keys to their voice configurations.
     """
 
-    show: str = Field(..., description="Show title")
-    season: int | None = Field(default=None, description="Season number")
-    episode: int | None = Field(default=None, description="Episode number")
-    tag_override: str | None = Field(
-        default=None,
-        description="Raw tag for non-episodic content (e.g. V01C03, D01) — overrides season/episode derivation",
-    )
-    title: str | None = Field(default=None, description="Episode title")
-    season_title: str | None = Field(default=None, description="Season subtitle/arc title")
-    artist: str = Field(
-        default="XIL Pipeline",
-        description="Artist/creator credit for audio metadata",
-    )
-    preamble: Preamble | None = Field(default=None, description="Broadcast intro config")
-    postamble: Preamble | None = Field(default=None, description="Broadcast outro config")
-    cast: dict[str, CastMember] = Field(..., description="Speaker-to-config mapping")
+    show: str = Field(...)
+    """Show title (e.g., ``"nightowls"``)."""
+
+    season: int | None = Field(default=None)
+    """Season number, or ``None`` if not set in the cast file."""
+
+    episode: int | None = Field(default=None)
+    """Episode number."""
+
+    tag_override: str | None = Field(default=None)
+    """Raw tag for non-episodic content (e.g. ``V01C03``, ``D01``) — overrides
+    season/episode derivation."""
+
+    title: str | None = Field(default=None)
+    """Episode title (optional, not used during production)."""
+
+    season_title: str | None = Field(default=None)
+    """Season subtitle/arc title (e.g., ``"The Letters"``)."""
+
+    artist: str = Field(default="XIL Pipeline")
+    """Artist/creator credit for audio metadata."""
+
+    preamble: Preamble | None = Field(default=None)
+    """Broadcast intro configuration, or ``None`` if not configured."""
+
+    postamble: Preamble | None = Field(default=None)
+    """Broadcast outro configuration, or ``None`` if not configured."""
+
+    cast: dict[str, CastMember] = Field(...)
+    """Mapping of speaker keys to their voice configurations."""
 
     @property
     def tag(self) -> str:
@@ -603,43 +607,47 @@ class CastConfiguration(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class VoiceConfig(BaseModel):
+class VoiceConfig(_DocModel):
     """Simplified voice configuration used during voice generation.
 
     Built from ``CastMember`` by ``load_production()``, carrying only
     the fields needed for TTS generation and audio assembly.
-
-    Attributes:
-        id: ElevenLabs voice identifier.
-        pan: Stereo pan position from -1.0 (full left) to 1.0 (full right).
-        filter: Audio filter chain (see ``CastMember.filter``).
     """
 
-    id: str = Field(..., description="ElevenLabs voice ID")
-    pan: float = Field(..., ge=-1.0, le=1.0, description="Stereo pan position")
-    filter: str | bool | None = Field(..., description="Audio filter chain (false/phone/vintage/vintage,phone)")
+    id: str = Field(...)
+    """ElevenLabs voice identifier."""
+
+    pan: float = Field(..., ge=-1.0, le=1.0)
+    """Stereo pan position from -1.0 (full left) to 1.0 (full right)."""
+
+    filter: str | bool | None = Field(...)
+    """Audio filter chain (see ``CastMember.filter``)."""
 
 
-class DialogueEntry(BaseModel):
+class DialogueEntry(_DocModel):
     """A single dialogue line prepared for voice generation.
 
     Produced by ``load_production()`` from parsed script entries,
     enriched with the stem filename for audio output.
-
-    Attributes:
-        speaker: Normalized speaker key (e.g., ``"adam"``).
-        text: Spoken dialogue text to synthesize.
-        stem_name: Output filename stem (e.g., ``"003_cold-open_adam"``).
-        seq: Sequence number from the parsed script.
-        direction: Acting direction for the line, if any.
     """
 
-    speaker: str = Field(..., description="Speaker key")
-    text: str = Field(..., description="Dialogue text for TTS")
-    stem_name: str = Field(..., description="Output audio stem name")
-    seq: int = Field(..., description="Sequence number")
-    section: str | None = Field(default=None, description="Script section slug (e.g. 'preamble', 'act1')")
-    direction: str | None = Field(default=None, description="Acting direction")
+    speaker: str = Field(...)
+    """Normalized speaker key (e.g., ``"adam"``)."""
+
+    text: str = Field(...)
+    """Spoken dialogue text to synthesize."""
+
+    stem_name: str = Field(...)
+    """Output filename stem (e.g., ``"003_cold-open_adam"``)."""
+
+    seq: int = Field(...)
+    """Sequence number from the parsed script."""
+
+    section: str | None = Field(default=None)
+    """Script section slug (e.g. ``'preamble'``, ``'act1'``)."""
+
+    direction: str | None = Field(default=None)
+    """Acting direction for the line, if any."""
 
 
 # ---------------------------------------------------------------------------
@@ -647,7 +655,7 @@ class DialogueEntry(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class SfxEntry(BaseModel):
+class SfxEntry(_DocModel):
     """A single sound effect mapping from script direction to API parameters.
 
     Maps a direction entry's text (e.g., ``"SFX: PHONE BUZZING"``) to the
@@ -656,49 +664,51 @@ class SfxEntry(BaseModel):
 
     Note: per-effect volume is always ``volume_percentage``, not the prefixed
     form (``ambience_volume_percentage`` etc.) — those belong in ``defaults`` only.
-
-    Attributes:
-        prompt: Natural-language description for the ElevenLabs SFX API.
-            ``None`` for silence entries.
-        type: Whether this is an API-generated sound effect or local silence.
-        duration_seconds: Length of the generated audio (0.5–30.0s).
-        prompt_influence: How closely the output follows the prompt (0.0–1.0).
-            ``None`` to use the config-level default.
-        loop: Whether the effect should be loopable (useful for ambience).
     """
 
-    prompt: str | None = Field(default=None, description="ElevenLabs SFX prompt")
-    type: Literal["sfx", "silence"] = Field(
-        default="sfx", description="Effect type: API-generated or local silence"
-    )
-    duration_seconds: float = Field(
-        default=5.0, ge=0.0, description="Audio duration in seconds (0.0 for stop markers)"
-    )
-    prompt_influence: float | None = Field(
-        default=None, ge=0.0, le=1.0,
-        description="Prompt adherence (0.0–1.0), None for config default",
-    )
-    loop: bool = Field(default=False, description="Generate loopable audio")
-    source: str | None = Field(
-        default=None,
-        description="Path to a pre-existing audio file (bypasses API generation)",
-    )
-    volume_percentage: float | None = Field(
-        default=None, ge=0.0, le=200.0,
-        description="Playback volume as percentage (100=unity); None uses category default",
-    )
-    ramp_in_seconds: float | None = Field(
-        default=None, ge=0.0, le=30.0,
-        description="Fade-in duration in seconds; None uses category default",
-    )
-    ramp_out_seconds: float | None = Field(
-        default=None, ge=0.0, le=30.0,
-        description="Fade-out duration in seconds; None uses category default",
-    )
-    play_duration: float | None = Field(
-        default=None, ge=0.0, le=100.0,
-        description="Percentage of clip duration to play (100=full); None plays full clip",
-    )
+    prompt: str | None = Field(default=None)
+    """Natural-language description for the ElevenLabs SFX API. ``None`` for
+    ``type="silence"`` or ``source``-based entries (no generation)."""
+
+    type: Literal["sfx", "silence"] = Field(default="sfx")
+    """Whether this is an API-generated sound effect (``"sfx"``) or local silence
+    (``"silence"``, e.g. a BEAT stop marker)."""
+
+    duration_seconds: float = Field(default=5.0, ge=0.0)
+    """Audio length in seconds — meaning depends on the entry kind. For
+    API-generated cues (no ``source``), the requested generation length (must be
+    > 0 and ≤ 30). For ``source=`` cues, clips the file to this many seconds **at
+    mix time** unless ``play_duration`` is set; ``0`` plays the source full-length.
+    For ``type="silence"``, the silence duration (``0.0`` = stop marker)."""
+
+    prompt_influence: float | None = Field(default=None, ge=0.0, le=1.0)
+    """How closely the ElevenLabs output follows the prompt (0.0–1.0); ``None``
+    uses the config-level default."""
+
+    loop: bool = Field(default=False)
+    """Whether to generate loopable audio (useful for ambience beds)."""
+
+    source: str | None = Field(default=None)
+    """Path to a pre-existing audio file. When set, bypasses API generation and the
+    file is used directly; length is governed by ``play_duration`` /
+    ``duration_seconds`` (see those fields)."""
+
+    volume_percentage: float | None = Field(default=None, ge=0.0, le=200.0)
+    """Per-effect playback volume as a percentage (100 = unity gain, 0–200); ``None``
+    uses the category default. Always the un-prefixed form (the prefixed variants
+    belong in ``defaults`` only)."""
+
+    ramp_in_seconds: float | None = Field(default=None, ge=0.0, le=30.0)
+    """Fade-in duration in seconds (0–30); ``None`` uses the category default."""
+
+    ramp_out_seconds: float | None = Field(default=None, ge=0.0, le=30.0)
+    """Fade-out duration in seconds (0–30); ``None`` uses the category default."""
+
+    play_duration: float | None = Field(default=None, ge=0.0, le=100.0)
+    """Percentage of the clip to play (0–100; 100 = full). Applies to ``source=``
+    one-shots (SFX/MUSIC/BEAT) and **takes precedence over ``duration_seconds``**
+    when set. ``None`` plays the full clip, subject to any ``duration_seconds``
+    clipping."""
 
     @model_validator(mode="before")
     @classmethod
@@ -735,38 +745,35 @@ class SfxEntry(BaseModel):
         return self
 
 
-class SfxConfiguration(BaseModel):
+class SfxConfiguration(_DocModel):
     """Sound effects configuration for a production episode.
 
     Analogous to :class:`CastConfiguration` for voices. Maps parsed
     direction entry text to ElevenLabs Sound Effects API parameters.
-
-    Attributes:
-        show: Show title (e.g., ``"nightowls"``).
-        season: Season number, or ``None`` if not declared.
-        episode: Episode number.
-        defaults: Shared default settings (e.g., ``prompt_influence``).
-        effects: Mapping of direction text to SFX entry configurations.
     """
 
-    show: str = Field(..., description="Show title")
-    season: int | None = Field(default=None, description="Season number")
-    episode: int | None = Field(default=None, description="Episode number")
-    tag_override: str | None = Field(
-        default=None,
-        description="Raw tag for non-episodic content (e.g. V01C03, D01) — overrides season/episode derivation",
-    )
-    defaults: dict = Field(default_factory=dict, description="Shared SFX defaults")
-    effects: dict[str, SfxEntry] = Field(
-        ..., description="Direction text to SFX mapping"
-    )
-    vintage_scenes: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Scene labels whose dialogue receives the vintage audio filter "
-            "(e.g. [\"scene-3\", \"scene-4\"]). Empty list = no vintage treatment."
-        ),
-    )
+    show: str = Field(...)
+    """Show title (e.g., ``"nightowls"``)."""
+
+    season: int | None = Field(default=None)
+    """Season number, or ``None`` if not declared."""
+
+    episode: int | None = Field(default=None)
+    """Episode number."""
+
+    tag_override: str | None = Field(default=None)
+    """Raw tag for non-episodic content (e.g. ``V01C03``, ``D01``) — overrides
+    season/episode derivation."""
+
+    defaults: dict = Field(default_factory=dict)
+    """Shared default settings (e.g., ``prompt_influence``)."""
+
+    effects: dict[str, SfxEntry] = Field(...)
+    """Mapping of direction text to SFX entry configurations."""
+
+    vintage_scenes: list[str] = Field(default_factory=list)
+    """Scene labels whose dialogue receives the vintage audio filter
+    (e.g. ``["scene-3", "scene-4"]``). Empty list = no vintage treatment."""
 
     @property
     def tag(self) -> str:

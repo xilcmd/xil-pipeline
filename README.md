@@ -14,6 +14,82 @@ pip install xil-pipeline[all]       # all optional backends (Google GenAI, gTTS,
 pip install xil-pipeline[dev]       # development and testing
 ```
 
+### Optional: local GPU TTS (Chatterbox / Chatterbox Turbo)
+
+The default dialogue backend is the ElevenLabs API. For a free, local, GPU-accelerated
+alternative with per-character voice cloning, set up a dedicated `venv-chatterbox/` at your
+code root (`XIL_CODEROOT`). It hosts **Chatterbox Turbo**, which natively renders 19
+paralinguistic tags (emotion, delivery style, and vocal gestures — see [the pipeline guide](https://xil-pipeline.readthedocs.io/en/latest/pipeline/#chatterbox-turbo-paralinguistic-tags)).
+This venv carries heavy ML dependencies (PyTorch) and is intentionally kept out of the main
+package; each `xil` command auto-detects it at run time.
+
+```bash
+# First-time setup (CUDA 12.4 wheels shown; adjust for your GPU/driver)
+python -m venv venv-chatterbox
+venv-chatterbox/bin/pip install --upgrade pip
+venv-chatterbox/bin/pip install 'torch==2.6.0' 'torchaudio==2.6.0' \
+    --index-url https://download.pytorch.org/whl/cu124
+venv-chatterbox/bin/pip install chatterbox-tts      # provides Chatterbox Turbo
+
+# Model weights auto-download from Hugging Face on first run. If the Turbo repo
+# (ResembleAI/chatterbox-turbo) is gated for your account, authenticate first:
+export HF_TOKEN=hf_...                               # or: huggingface-cli login
+```
+
+Then place a per-character reference clip at `voice_refs/<speaker_key>.wav` (Chatterbox Turbo
+requires clips **longer than 5 seconds**) and select the backend:
+
+```bash
+xil-produce --episode S01E01 --backend chatterbox-turbo   # native paralinguistic tags
+```
+
+`--chatterbox-python PATH` overrides the auto-detected venv Python.
+
+Classic Chatterbox was removed in v0.3.3 — `--backend chatterbox` is a deprecated alias
+that warns and generates with Turbo.
+
+Under `chatterbox-turbo` you can write cues straight into dialogue —
+`[angry]` `[fear]` `[surprised]` `[happy]` `[crying]` `[sarcastic]` `[whispering]` `[dramatic]`
+`[narration]` `[advertisement]` `[laugh]` `[chuckle]` `[sigh]` `[gasp]` `[groan]` `[cough]`
+`[sniff]` `[shush]` `[clear throat]`. Spelling is exact (no plurals: `[laugh]`, not `[laughs]`);
+any other bracketed tag is stripped, so ElevenLabs-only tags can safely stay in a shared script.
+
+### Optional: local SFX generation (MMAudio) — non-commercial only
+
+`--sfx-backend mmaudio` generates sound effects locally instead of calling the
+ElevenLabs API. It runs in a dedicated `venv-mmaudio/`, needs ~6 GB of VRAM, and
+installs from a git clone rather than PyPI:
+
+```bash
+python -m venv venv-mmaudio
+git clone https://github.com/hkchengrex/MMAudio
+venv-mmaudio/bin/pip install -e MMAudio
+
+# MMAudio declares `torch >= 2.5.1` with no upper bound, so the line above pulls
+# the newest torch — currently a CUDA 13 build. On a CUDA 12.x driver that
+# silently falls back to CPU ("NVIDIA driver on your system is too old") and
+# breaks torchaudio. Re-pin a driver-matched stack AFTERWARDS, not before:
+venv-mmaudio/bin/pip install 'torch==2.6.0' 'torchaudio==2.6.0' 'torchvision==0.21.0' \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# Confirm the GPU is actually visible before generating anything:
+venv-mmaudio/bin/python -c "import torch; print(torch.cuda.is_available())"   # must print True
+```
+
+> **⚠️ MMAudio's model weights are CC BY-NC 4.0 — non-commercial use only.** The code is
+> MIT licensed; the checkpoints are not. Audio generated here must not appear in a
+> monetised production. `--mmaudio-accept-noncommercial` is required or the backend
+> refuses to start, and every generated asset is tagged `.mmaudio` in its filename and
+> carries the licence notice in its ID3 comment so it stays identifiable later.
+
+```bash
+xil-sfx --episode S01E01 --gen-sfx --sfx-backend mmaudio --mmaudio-accept-noncommercial
+```
+
+MMAudio is trained at 8 seconds, so cues are generated at that length and trimmed to
+each cue's `duration_seconds` — this produces better audio than asking the model for a
+short clip directly.
+
 ## Quick Start
 
 See [`samples/Tech_Deep_Dive_S01E04.md`](samples/Tech_Deep_Dive_S01E04.md) for an example of the markdown script format the pipeline expects. It demonstrates dialogue, acting directions, SFX/ambience/music cues, beats, sections, and scenes. [`samples/S01E04_techdeepdive_2026-04-02.mp3`](samples/S01E04_techdeepdive_2026-04-02.mp3) is the rendered output — a two-host tech podcast segment generated entirely from that script.
@@ -104,7 +180,7 @@ xil-daw --episode V01C03
 
 Stems are stored under `stems/<slug>/<TAG>/`, so multiple shows and tag formats coexist safely in one workspace.
 
-See the [SFX Reuse Guide](sfx-reuse-guide.md) for workflows that minimize ElevenLabs API credit usage by referencing existing assets in the `SFX/` library.
+See the [SFX Reuse Guide](guides/sfx-reuse-guide.md) for workflows that minimize ElevenLabs API credit usage by referencing existing assets in the `SFX/` library.
 
 ## Environment
 
@@ -179,6 +255,59 @@ cd xil-pipeline
 pip install -e ".[all,dev]"
 pytest tests/ -v
 ```
+
+The `pre-push` hook runs `ruff` only, so pushing is instant — CI is the real
+gate and `main` requires a green check to merge. Run the full local gate when a
+branch is ready to ship, rather than on every push:
+
+```bash
+tools/check-all.sh          # ruff + pytest + strict docs build
+tools/check-all.sh --fast   # skip the docs build
+```
+
+### Documentation
+
+`pyproject.toml`'s `docs` extra is the single source of truth for the docs
+stack — the same thing Read the Docs installs. Versions are intentionally
+unpinned, so RTD always resolves the latest release satisfying each floor.
+
+Build in a **dedicated venv**, which is what RTD does and the only way to
+reproduce its resolution faithfully:
+
+```bash
+python3 -m venv venv-docs
+venv-docs/bin/pip install ".[docs]"
+venv-docs/bin/python docs/build_docs.py
+venv-docs/bin/python -m mkdocs build --strict
+```
+
+Recreate `venv-docs` (or `pip install --upgrade`) whenever you want to check
+against what RTD will resolve today — a stale environment can build clean
+while RTD fails on a newer release.
+
+#### Navigation
+
+`mkdocs.yml` has no `nav:` — the `awesome-pages` plugin builds it from `.pages`
+files, falling back to ASCII filename order.
+
+- **`docs/.pages`** sets the top-level order. Its trailing `...` catches every
+  page not named explicitly, so a new doc never disappears from the nav.
+- **Repo-root docs are filed into sections** by `DOC_CATEGORIES` in
+  `docs/build_docs.py`. To categorize a new one, add a single entry mapping its
+  filename to `configuration`, `guides`, or `internals`. Only the symlink moves;
+  the source file stays at the repo root, so paths that reference it keep
+  working. Files not listed land flat in `docs/`.
+- **Pages written directly under `docs/`** just live in the right folder; the
+  build never touches them.
+
+Links between pages must resolve in the *docs* layout, not the repo layout —
+`strict: true` fails the build on a broken internal link, which is the safety
+net when moving a page between sections.
+
+Avoid `pip install -e ".[docs]" --upgrade --upgrade-strategy eager` in your
+main dev venv: it drags unrelated transitive dependencies forward and
+conflicts with the pins `gradio` and `gtts` declare. A separate venv keeps
+the two concerns apart.
 
 ## License
 

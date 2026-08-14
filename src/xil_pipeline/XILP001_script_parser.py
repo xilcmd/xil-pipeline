@@ -441,6 +441,16 @@ def get_section_map(project_type: str = "podcast") -> dict[str, str]:
 # Direction subtypes
 DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER"]
 
+# Scriptwriter pipe-hint attributes: the name written in the script → the
+# SfxEntry field it populates in sfx_<TAG>.json.  Keeping the two decoupled means
+# the script-facing spelling can stay writer-friendly (play_volume_pct=20%) while
+# the config keeps its canonical field name.  Add a key here to support a new
+# attribute; nothing else in the parser needs to change.
+HINT_ATTRS = {"play_volume_pct": "volume_percentage"}
+
+# Accepted range per target field, mirroring the SfxEntry validators.
+HINT_ATTR_RANGES = {"volume_percentage": (0.0, 200.0)}
+
 
 def strip_markdown_escapes(text: str) -> str:
     """Remove markdown backslash escapes from the script.
@@ -565,25 +575,88 @@ def is_stage_direction(line: str) -> bool:
     return line.startswith("[") and "]" in line
 
 
-def _parse_direction_hint(raw: str, slug: str = "") -> tuple[str, str | None]:
-    """Strip a scriptwriter SFX-source hint from a direction text.
+def _parse_direction_hint(raw: str, slug: str = "") -> tuple[str, str | None, dict[str, float]]:
+    """Strip scriptwriter hints from a direction text.
 
-    Scriptwriters may annotate directions with a filename hint separated
-    by a pipe, e.g.::
+    Scriptwriters may annotate directions with pipe-separated hints::
 
         SFX: RADIO STATIC — BRIEF TUNING | sfx_radio-static-tuning-transition.mp3
+        OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20%
 
-    Returns the clean direction text and the SFX source path (``"SFX/{slug}/<filename>"``
-    when *slug* is provided, ``"SFX/<filename>"`` otherwise), or ``None`` if no hint
-    is present.
+    Every segment after the first is classified independently and order-free:
+
+    * ends in ``.mp3``/``.wav`` — the SFX source filename (first one wins)
+    * ``key=value`` with *key* in :data:`HINT_ATTRS` — a per-cue config override
+    * anything else — left alone and re-joined onto the direction text, so a
+      scriptwriter's prose note (``[SFX: DOOR OPENS | some notes]``) is preserved
+      verbatim rather than silently swallowed
+
+    A malformed value (non-numeric, or outside the field's range) is warned about
+    and dropped — one bad hint must never abort a whole script parse.
+
+    Returns:
+        ``(clean_text, source_path, overrides)`` where *source_path* is
+        ``"SFX/{slug}/<filename>"`` when *slug* is given and ``"SFX/<filename>"``
+        otherwise (``None`` with no filename hint), and *overrides* maps
+        :class:`~xil_pipeline.models.SfxEntry` field names to values (empty when
+        no attribute hints are present).
     """
-    if " | " in raw:
-        clean, hint = raw.split(" | ", 1)
-        hint = hint.strip()
-        if hint.endswith(".mp3") or hint.endswith(".wav"):
-            prefix = f"SFX/{slug}" if slug else "SFX"
-            return clean.strip(), f"{prefix}/{hint}"
-    return raw.strip(), None
+    if " | " not in raw:
+        return raw.strip(), None, {}
+
+    head, *segments = [s.strip() for s in raw.split(" | ")]
+    source: str | None = None
+    overrides: dict[str, float] = {}
+    unconsumed: list[str] = []
+
+    for seg in segments:
+        if seg.endswith(".mp3") or seg.endswith(".wav"):
+            if source is None:
+                prefix = f"SFX/{slug}" if slug else "SFX"
+                source = f"{prefix}/{seg}"
+            else:
+                unconsumed.append(seg)
+            continue
+        key, sep, value = seg.partition("=")
+        field = HINT_ATTRS.get(key.strip())
+        if not sep or field is None:
+            unconsumed.append(seg)
+            continue
+        parsed = _parse_hint_value(field, value.strip(), raw)
+        if parsed is None:
+            unconsumed.append(seg)
+        else:
+            overrides[field] = parsed
+
+    clean = " | ".join([head, *unconsumed]) if unconsumed else head
+    return clean, source, overrides
+
+
+def format_hint_attr(field: str, value: float) -> str:
+    """Render an override back into script-hint form (``'play_volume_pct=20%'``).
+
+    Inverse of the :data:`HINT_ATTRS` lookup, used by the script regenerator so a
+    parse → regenerate round-trip is lossless.  Whole numbers lose the trailing
+    ``.0`` so regenerated scripts read the way a writer would type them.
+    """
+    name = next((k for k, v in HINT_ATTRS.items() if v == field), field)
+    num = f"{value:g}"
+    return f"{name}={num}%"
+
+
+def _parse_hint_value(field: str, value: str, raw: str) -> float | None:
+    """Coerce a hint value to a number, or warn and return ``None``."""
+    lo, hi = HINT_ATTR_RANGES[field]
+    try:
+        num = float(value.rstrip("%").strip())
+    except ValueError:
+        logger.warning("  Ignoring non-numeric hint value in [%s]: %r", raw, value)
+        return None
+    if not lo <= num <= hi:
+        logger.warning("  Ignoring out-of-range %s in [%s]: %s (expected %g–%g)",
+                       field, raw, value, lo, hi)
+        return None
+    return num
 
 
 def is_section_header(line: str, section_map: dict[str, str] | None = None) -> bool:
@@ -897,7 +970,7 @@ def parse_script(
             if is_stage_direction(line):
                 brackets = re.findall(r"\[([^\]]+)\]", line)
                 for bracket_text in brackets:
-                    clean_text, sfx_source = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
+                    clean_text, sfx_source, sfx_overrides = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
                     direction_type = classify_direction(clean_text)
                     if direction_type is None:
                         logger.debug(f"  Skipping unrecognized direction: [{clean_text}]")
@@ -915,6 +988,8 @@ def parse_script(
                     }
                     if sfx_source:
                         entry["sfx_source"] = sfx_source
+                    if sfx_overrides:
+                        entry["sfx_overrides"] = sfx_overrides
                     entries.append(entry)
                     debug_line_map.append((i + 1, lines[i], len(entries) - 1))
                 continue
@@ -996,7 +1071,7 @@ def parse_script(
             # Extract embedded bracketed directions (e.g. [AMBIENCE: ...])
             brackets = re.findall(r"\[([^\]]+)\]", line)
             for bracket_text in brackets:
-                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
+                clean_text, sfx_source, sfx_overrides = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
                 direction_type = classify_direction(clean_text)
                 if direction_type is None:
                     # Acting note in square brackets (e.g. [drawn out]) — not a technical cue
@@ -1015,6 +1090,8 @@ def parse_script(
                 }
                 if sfx_source:
                     entry["sfx_source"] = sfx_source
+                if sfx_overrides:
+                    entry["sfx_overrides"] = sfx_overrides
                 entries.append(entry)
                 debug_line_map.append((i + 1, lines[i], len(entries) - 1))
 
@@ -1027,7 +1104,7 @@ def parse_script(
             # Extract all bracketed sections
             brackets = re.findall(r"\[([^\]]+)\]", line)
             for bracket_text in brackets:
-                clean_text, sfx_source = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
+                clean_text, sfx_source, sfx_overrides = _parse_direction_hint(bracket_text.strip(), slug=_script_slug)
                 direction_type = classify_direction(clean_text)
                 if direction_type is None:
                     # Acting note in square brackets (e.g. [drawn out]) — not a technical cue
@@ -1046,6 +1123,8 @@ def parse_script(
                 }
                 if sfx_source:
                     entry["sfx_source"] = sfx_source
+                if sfx_overrides:
+                    entry["sfx_overrides"] = sfx_overrides
                 entries.append(entry)
                 debug_line_map.append((i + 1, lines[i], len(entries) - 1))
             last_dialogue_idx = None
@@ -1338,6 +1417,7 @@ def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = 
             continue
 
         sfx_source = entry.get("sfx_source")
+        sfx_overrides = entry.get("sfx_overrides") or {}
 
         if text == "BEAT":
             effects[text] = {"type": "silence", "duration_seconds": 1.0}
@@ -1375,6 +1455,11 @@ def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = 
         else:
             effects[text] = {"prompt": text, "duration_seconds": 5.0}
             sfx_count += 1
+
+        # Attribute hints (play_volume_pct=…) apply to any audible cue, generated
+        # or source-backed.  Silence entries have no level to set.
+        if sfx_overrides and effects[text].get("type") != "silence":
+            effects[text].update(sfx_overrides)
 
     config = {
         "_docs": {
@@ -1445,7 +1530,11 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
     3. **Key absent entirely** — adds a new entry with ``source`` and sensible
        defaults (``loop: True`` for AMBIENCE, appropriate ``duration_seconds``).
 
-    Entries that already have a ``source`` field are never touched.
+    Entries that already have a ``source`` field keep it — a source hint never
+    replaces one.  Attribute hints (``sfx_overrides``, e.g. ``play_volume_pct``)
+    behave the other way round: the **script is the source of truth**, so they
+    overwrite whatever the config currently holds, and a cue carrying only an
+    attribute hint (no filename) is still updated.
 
     Args:
         parsed: Parsed script dict (after hint stripping).
@@ -1459,7 +1548,7 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
     # Build a lookup from piped-key → clean-key for stale entries already in config
     stale_key_map: dict[str, str] = {}
     for existing_key in list(effects.keys()):
-        clean, hint = _parse_direction_hint(existing_key)
+        clean, hint, _ = _parse_direction_hint(existing_key)
         if hint and clean != existing_key:
             stale_key_map[existing_key] = clean
 
@@ -1469,7 +1558,8 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
         if entry["type"] != "direction":
             continue
         sfx_source = entry.get("sfx_source")
-        if not sfx_source:
+        sfx_overrides = entry.get("sfx_overrides") or {}
+        if not sfx_source and not sfx_overrides:
             continue
         text = entry["text"]  # clean key
         if text in seen_clean:
@@ -1478,7 +1568,7 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
 
         if text in effects:
             # Case 1: clean key present — add source if missing
-            if "source" not in effects[text]:
+            if sfx_source and "source" not in effects[text]:
                 effects[text]["source"] = sfx_source
                 if effects[text].get("prompt") == text:
                     del effects[text]["prompt"]
@@ -1488,23 +1578,35 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str) -> None:
             stale_key = next((k for k, v in stale_key_map.items() if v == text), None)
             if stale_key and stale_key in effects:
                 old_entry = effects.pop(stale_key)
-                old_entry["source"] = sfx_source
-                old_entry.pop("prompt", None)
+                if sfx_source:
+                    old_entry["source"] = sfx_source
+                    old_entry.pop("prompt", None)
                 effects[text] = old_entry
                 updated += 1
             else:
                 # Case 3: key absent entirely — create it
                 dur = 30.0 if text.startswith("AMBIENCE:") else (15.0 if text.startswith("MUSIC:") else 5.0)
-                new_entry: dict = {"source": sfx_source, "duration_seconds": dur}
+                new_entry: dict = {"duration_seconds": dur}
+                # A volume-only hint on an unknown cue still needs a generation
+                # prompt — the same stub create_sfx_config would have written.
+                new_entry["source" if sfx_source else "prompt"] = sfx_source or text
                 if text.startswith("AMBIENCE:"):
                     new_entry["loop"] = True
                 effects[text] = new_entry
                 updated += 1
 
+        # The script wins for attribute hints: overwrite whatever is there.
+        effect = effects[text]
+        if sfx_overrides and effect.get("type") != "silence":
+            changed = {k: v for k, v in sfx_overrides.items() if effect.get(k) != v}
+            if changed:
+                effect.update(changed)
+                updated += 1
+
     if updated:
         with open(sfx_path, "w", encoding="utf-8") as f:
             json.dump(sfx_data, f, indent=2, ensure_ascii=False)
-        logger.info("Backfilled %d source hint(s) in %s", updated, sfx_path)
+        logger.info("Backfilled %d script hint(s) in %s", updated, sfx_path)
 
 
 def get_parser() -> argparse.ArgumentParser:

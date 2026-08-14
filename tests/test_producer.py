@@ -989,3 +989,100 @@ class TestAtomicStemWrites:
             producer.generate_voices(_ATOMIC_CONFIG, [_atomic_entry()], str(tmp_path), backend="gtts")
         assert not stem.exists()
         assert list(tmp_path.glob("*.tmp")) == []
+
+
+# ─── Tests: Chatterbox worker protocol tolerance (regression) ───
+
+class _FakeProc:
+    """Minimal stand-in for the worker subprocess: canned stdout, captured stdin."""
+
+    def __init__(self, stdout_lines):
+        self._lines = list(stdout_lines)
+        self.stdin = unittest.mock.MagicMock()
+        self.stdout = unittest.mock.MagicMock()
+        self.stdout.readline.side_effect = lambda: self._lines.pop(0) if self._lines else ""
+
+
+class TestChatterboxClientProtocol:
+    """Turbo's s3gen prints progress to stdout mid-generation; a bare
+    json.loads on the first line crashed the whole run (JSONDecodeError)."""
+
+    def _client(self, stdout_lines, tmp_path):
+        client = producer._ChatterboxClient(
+            python_path="/nonexistent/python",
+            voice_refs_dir=str(tmp_path),
+        )
+        client._proc = _FakeProc(stdout_lines)
+        return client
+
+    def test_generate_skips_non_json_progress_lines(self, tmp_path):
+        client = self._client(
+            ["S3 Token -> Mel Inference...\n", '{"done": true}\n'], tmp_path
+        )
+        client.generate("hello", str(tmp_path / "out.mp3"), "narrator")  # must not raise
+
+    def test_generate_surfaces_worker_error_after_noise(self, tmp_path):
+        client = self._client(
+            ["loaded PerthNet (Implicit)\n", '{"error": "boom"}\n'], tmp_path
+        )
+        with pytest.raises(RuntimeError, match="boom"):
+            client.generate("hello", str(tmp_path / "out.mp3"), "narrator")
+
+    def test_generate_raises_when_pipe_closes(self, tmp_path):
+        client = self._client(["noise with no json\n"], tmp_path)
+        with pytest.raises(RuntimeError, match="closed pipe"):
+            client.generate("hello", str(tmp_path / "out.mp3"), "narrator")
+
+
+class TestChatterboxAliasRemoval:
+    """Classic Chatterbox was removed in #62; `chatterbox` aliases to Turbo.
+
+    The alias must resolve *before* anything reads args.backend. `backend` is
+    part of the stem manifest's dedup key, so writing "chatterbox" onto a new
+    stem would record a value that can never be requested again — the stem
+    could never be matched or reused.
+    """
+
+    def test_chatterbox_is_still_an_accepted_choice(self):
+        """argparse must accept it, or the alias never gets a chance to run."""
+        args = producer.get_parser().parse_args(["--episode", "S01E01", "--backend", "chatterbox"])
+        assert args.backend == "chatterbox"
+
+    def test_classic_only_flags_are_gone(self):
+        parser = producer.get_parser()
+        opts = {a for action in parser._actions for a in action.option_strings}
+        for dead in ("--exaggeration", "--cfg-weight",
+                     "--audioldm2-python", "--audioldm2-guidance",
+                     "--stableaudio-python", "--stableaudio-seed"):
+            assert dead not in opts, f"{dead} should have been removed"
+
+    def test_sfx_backend_never_offers_the_removed_backends(self):
+        """The removed trials must not reappear as choices.
+
+        Pinning an exact list was wrong — mmaudio was added in #64. The durable
+        invariant is that audioldm2/stableaudio stay gone while elevenlabs stays.
+        """
+        parser = producer.get_parser()
+        action = next(a for a in parser._actions if "--sfx-backend" in a.option_strings)
+        assert "elevenlabs" in action.choices
+        assert "audioldm2" not in action.choices
+        assert "stableaudio" not in action.choices
+
+    def test_backend_choices_drop_classic_chatterbox_but_keep_the_alias(self):
+        parser = producer.get_parser()
+        action = next(a for a in parser._actions if "--backend" in a.option_strings)
+        assert "chatterbox-turbo" in action.choices
+        assert "chatterbox" in action.choices, "alias must remain parseable"
+
+    def test_client_targets_the_turbo_worker(self):
+        """Only the Turbo worker ships now."""
+        assert producer._ChatterboxClient._WORKER.endswith("chatterbox_turbo_worker.py")
+
+    def test_conditionals_keep_the_turbo_suffix(self):
+        """Turbo conds are NOT interchangeable with classic ones.
+
+        Plain .conds.pt files from the old backend are still on disk; collapsing
+        the suffix would make Turbo load incompatible caches.
+        """
+        client = producer._ChatterboxClient(python_path="/x/python3", voice_refs_dir="voice_refs")
+        assert client._cond_for("adam").endswith("adam.turbo.conds.pt")

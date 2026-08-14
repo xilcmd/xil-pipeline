@@ -234,6 +234,61 @@ class TestScanScriptDirections:
         assert "[SFX: PHONE RINGING]" not in unrecognized_texts
 
 
+# ─── Tests: scan_paralinguistic_tags ───
+
+class TestScanParalinguisticTags:
+    def test_exact_turbo_tags_not_flagged(self):
+        lines = ["[laugh] that's funny", "[clear throat] as I was saying", "[sarcastic] lovely"]
+        assert scanner.scan_paralinguistic_tags(lines) == []
+
+    def test_case_insensitive_exact_match_not_flagged(self):
+        assert scanner.scan_paralinguistic_tags(["[LAUGH] ha", "[Angry] no"]) == []
+
+    def test_plural_form_flagged_with_suggestion(self):
+        found = scanner.scan_paralinguistic_tags(["he [laughs] loudly"])
+        assert len(found) == 1
+        assert found[0]["text"] == "laughs"
+        assert found[0]["suggestion"] == "laugh"
+        assert found[0]["lines"] == [1]
+
+    def test_clear_throat_variants_flagged(self):
+        for variant in ("clears throat", "throat clearing", "clearing throat"):
+            found = scanner.scan_paralinguistic_tags([f"[{variant}] ahem"])
+            assert [f["suggestion"] for f in found] == ["clear throat"], variant
+
+    def test_elevenlabs_only_tags_not_flagged(self):
+        # These are legitimate under --backend elevenlabs and are silently
+        # stripped by Turbo; they must not produce near-miss noise.
+        lines = ["I'm so [exhausted]", "wait [pause] for it", "[curious] hmm", "[french accent] bonjour"]
+        assert scanner.scan_paralinguistic_tags(lines) == []
+
+    def test_stage_directions_ignored(self):
+        lines = ["[SFX: PHONE RINGING]", "[BEAT]", "[LONG BEAT]", "[AMBIENCE: DINER]",
+                 "[VINTAGE FILTER ENGAGES]", "[END OF EPISODE]"]
+        assert scanner.scan_paralinguistic_tags(lines) == []
+
+    def test_tag_at_start_of_dialogue_line_is_scanned(self):
+        # is_stage_direction() would treat this whole line as a direction, so
+        # the scan must filter per token or it misses the most common placement.
+        found = scanner.scan_paralinguistic_tags(["[laughs] Oh, that's rich."])
+        assert [f["suggestion"] for f in found] == ["laugh"]
+
+    def test_repeat_occurrences_collapse_to_one_entry(self):
+        found = scanner.scan_paralinguistic_tags(["he [laughs]", "filler", "she [laughs] too"])
+        assert len(found) == 1
+        assert found[0]["lines"] == [1, 3]
+
+    def test_report_flags_near_miss_but_stays_non_fatal(self, tmp_path):
+        result = _scan(SIMPLE_SCRIPT, tmp_path)
+        result["paralinguistic_near_misses"] = [
+            {"text": "laughs", "suggestion": "laugh", "lines": [12]}
+        ]
+        report = scanner.format_report(result, {})
+        assert "laughs" in report and "laugh]" in report
+        # Near-misses are advisory — they must not flip the verdict.
+        assert "safe to run XILP001" in report
+
+
 # ─── Tests: format_report ───
 
 class TestFormatReport:

@@ -1,6 +1,9 @@
 # Python
 venv/
 venv-chatterbox/
+venv-docs/
+venv-mmaudio/
+MMAudio/
 logs/
 __pycache__/
 *.pyc

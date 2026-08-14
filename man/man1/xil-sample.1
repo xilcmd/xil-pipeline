@@ -1,9 +1,9 @@
-.TH XIL\-SAMPLE "1" "2026\-07\-09" "xil\-pipeline 0.3.1" "User Commands"
+.TH XIL\-SAMPLE "1" "2026\-08\-04" "xil\-pipeline 0.3.2" "User Commands"
 .SH NAME
 xil\-sample
 .SH SYNOPSIS
 .B xil\-sample
-[-h] (--episode TAG | --cast PATH) [--show SHOW] [--backend {elevenlabs,gtts,chatterbox}] [--chatterbox-python PATH] [--voice-refs DIR] [--exaggeration FLOAT] [--sample-text TEXT] [--dry-run] [--force]
+[-h] (--episode TAG | --cast PATH) [--show SHOW] [--backend {elevenlabs,gtts,chatterbox,chatterbox-turbo}] [--chatterbox-python PATH] [--voice-refs DIR] [--sample-text TEXT] [--dry-run] [--force]
 .SH DESCRIPTION
 Generate a voice sample MP3 for each cast member via the chosen TTS backend.
 
@@ -21,29 +21,30 @@ Explicit path to cast JSON file
 Show name override (default: from project.json)
 
 .TP
-\fB\-\-backend\fR \fI\,{elevenlabs,gtts,chatterbox}\/\fR
+\fB\-\-backend\fR \fI\,{elevenlabs,gtts,chatterbox,chatterbox\-turbo}\/\fR
 TTS backend for sample generation. 'elevenlabs' (default) calls the ElevenLabs
 API and uses the voice_id from the cast config. 'gtts' generates a flat\-voice
 draft via Google Translate TTS at no cost (ignores voice_id). 'chatterbox'
 uses local GPU TTS with zero\-shot voice cloning from voice_refs/<key>.wav
-clips. Output lands in voice_samples/<TAG>/<backend>/ for side\-by\-side
-comparison.
+clips ('chatterbox' is a deprecated alias that warns and uses Turbo).
+'chatterbox\-turbo' uses the Chatterbox Turbo model in the same venv\-chatterbox
+— it renders 19 native paralinguistic tags ([angry] [fear] [surprised] [happy]
+[crying] [sarcastic] [whispering] [dramatic] [narration] [advertisement]
+[laugh] [chuckle] [sigh] [gasp] [groan] [cough] [sniff] [shush] [clear
+throat]; exact spelling, no plurals), strips all other tags and needs
+reference clips >5s. Put a tag in \-\-sample\-text to audition a cue. Output
+lands in voice_samples/<TAG>/<backend>/ for side\-by\-side comparison.
 
 .TP
 \fB\-\-chatterbox\-python\fR \fI\,PATH\/\fR
 Path to the chatterbox venv Python (default: auto\-detect ./venv\-
-chatterbox/bin/python3). Used only with \-\-backend chatterbox.
+chatterbox/bin/python3). Used with \-\-backend chatterbox or chatterbox\-turbo.
 
 .TP
 \fB\-\-voice\-refs\fR \fI\,DIR\/\fR
 Directory containing <speaker_key>.wav reference clips for Chatterbox zero\-
-shot voice cloning (default: voice_refs/). Used only with \-\-backend
-chatterbox.
-
-.TP
-\fB\-\-exaggeration\fR \fI\,FLOAT\/\fR
-Chatterbox emotion exaggeration level: 0.0 = flat, 1.0 = dramatic (default:
-0.5). Used only with \-\-backend chatterbox.
+shot voice cloning (default: voice_refs/). Used with \-\-backend chatterbox or
+chatterbox\-turbo.
 
 .TP
 \fB\-\-sample\-text\fR \fI\,TEXT\/\fR
@@ -85,6 +86,7 @@ Regenerate samples even if files already exist on disk
 .BR xil-remove-episode (1),
 .BR xil-status (1),
 .BR xil-sfx-restore (1),
+.BR xil-sfx-impact (1),
 .BR xil-db-profile (1),
 .BR xil-sfx-csv (1),
 .BR xil-parsed-csv (1),

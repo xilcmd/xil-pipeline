@@ -653,8 +653,9 @@ def generate_voices(
             if backend == "gtts":
                 logger.info(" > [%03d] %s via gTTS (%d chars)...", entry['seq'], speaker, len(text))
                 _gtts_generate(text, tmp_path)
-            elif backend == "chatterbox":
-                logger.info(" > [%03d] %s via Chatterbox (%d chars)...", entry['seq'], speaker, len(text))
+            elif backend in ("chatterbox", "chatterbox-turbo"):
+                label = "Chatterbox Turbo" if backend == "chatterbox-turbo" else "Chatterbox"
+                logger.info(" > [%03d] %s via %s (%d chars)...", entry['seq'], speaker, label, len(text))
                 assert chatterbox_client is not None
                 chatterbox_client.generate(text, tmp_path, speaker)
             else:
@@ -752,11 +753,13 @@ def _gtts_generate(text: str, out_path: str) -> None:
 
 
 class _ChatterboxClient:
-    """Persistent subprocess bridge to the Chatterbox TTS worker.
+    """Persistent subprocess bridge to the Chatterbox Turbo TTS worker.
 
-    The worker script (``chatterbox_worker.py``) runs under the chatterbox
-    venv Python and keeps the model loaded across all generation requests.
-    Communication uses newline-delimited JSON on stdin/stdout.
+    The worker script runs under the chatterbox venv Python and keeps the model
+    loaded across all generation requests.  Communication uses newline-delimited
+    JSON on stdin/stdout.  Classic Chatterbox was removed in #62; only
+    ``chatterbox_turbo_worker.py`` (``ChatterboxTurboTTS``, native paralinguistic
+    tags) remains, still in ``venv-chatterbox``.
 
     Args:
         python_path: Path to the chatterbox venv Python executable.
@@ -764,32 +767,32 @@ class _ChatterboxClient:
             clips for zero-shot voice cloning.  Missing refs fall back to
             Chatterbox's default voice.
         device: ``"cuda"`` (default) or ``"cpu"``.
-        exaggeration: Emotion exaggeration level (0.0 = flat, 1.0 = dramatic).
-        cfg_weight: CFG weight controlling pacing/delivery (~0.3–0.5 typical).
     """
 
-    _WORKER = os.path.join(os.path.dirname(__file__), "chatterbox_worker.py")
+    _WORKER = os.path.join(os.path.dirname(__file__), "chatterbox_turbo_worker.py")
+    _LABEL = "Chatterbox Turbo"
 
     def __init__(
         self,
         python_path: str,
         voice_refs_dir: str = "voice_refs",
         device: str = "cuda",
-        exaggeration: float = 0.5,
-        cfg_weight: float = 0.5,
     ) -> None:
         self._python = python_path
         self._voice_refs_dir = voice_refs_dir
         self._device = device
-        self._exaggeration = exaggeration
-        self._cfg_weight = cfg_weight
         self._proc: subprocess.Popen | None = None
 
+    @property
+    def _label(self) -> str:
+        return self._LABEL
+
     def _start(self) -> None:
-        """Spawn the Chatterbox worker subprocess and wait for its ready signal."""
-        logger.info("Starting Chatterbox worker (%s, %s)…", self._python, self._device)
+        """Spawn the Chatterbox Turbo worker subprocess and wait for its ready signal."""
+        worker = self._WORKER
+        logger.info("Starting %s worker (%s, %s)…", self._label, self._python, self._device)
         self._proc = subprocess.Popen(
-            [self._python, self._WORKER, self._device],
+            [self._python, worker, self._device],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=sys.stderr,
@@ -802,7 +805,7 @@ class _ChatterboxClient:
             raw = self._proc.stdout.readline()
             if not raw:
                 raise RuntimeError(
-                    "Chatterbox worker exited before sending ready signal. "
+                    f"{self._label} worker exited before sending ready signal. "
                     "Check that venv-chatterbox is correctly set up and the model is downloaded."
                 )
             raw = raw.strip()
@@ -811,12 +814,12 @@ class _ChatterboxClient:
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
-                logger.debug("Chatterbox worker startup: %s", raw)
+                logger.debug("%s worker startup: %s", self._label, raw)
                 continue
             if msg.get("ready"):
                 break
-            logger.debug("Chatterbox worker startup: %s", raw)
-        logger.info("Chatterbox worker ready (sample_rate=%d)", msg["sr"])
+            logger.debug("%s worker startup: %s", self._label, raw)
+        logger.info("%s worker ready (sample_rate=%d)", self._label, msg["sr"])
 
     def _ref_for(self, speaker_key: str) -> str | None:
         """Return the voice reference file path for *speaker_key*, or None if absent."""
@@ -827,8 +830,14 @@ class _ChatterboxClient:
         return None
 
     def _cond_for(self, speaker_key: str) -> str:
-        """Return the Chatterbox conditioning tensor path for *speaker_key*."""
-        return os.path.join(self._voice_refs_dir, f"{speaker_key}.conds.pt")
+        """Return the conditioning tensor path for *speaker_key*.
+
+        Keeps the ``.turbo.conds.pt`` suffix even though classic Chatterbox is
+        gone: Turbo conditionals are NOT interchangeable with classic ones, and
+        plain ``.conds.pt`` files from the old backend are still on disk.
+        Collapsing the suffix would make Turbo load incompatible caches.
+        """
+        return os.path.join(self._voice_refs_dir, f"{speaker_key}.turbo.conds.pt")
 
     def generate(self, text: str, out_path: str, speaker_key: str) -> None:
         if self._proc is None:
@@ -841,18 +850,35 @@ class _ChatterboxClient:
             "out_path": out_path,
             "ref_audio": ref,
             "cond_path": self._cond_for(speaker_key),
-            "exaggeration": self._exaggeration,
-            "cfg_weight": self._cfg_weight,
         }
         assert self._proc is not None
         self._proc.stdin.write(json.dumps(req) + "\n")
         self._proc.stdin.flush()
-        raw = self._proc.stdout.readline()
-        if not raw:
-            raise RuntimeError("Chatterbox worker closed pipe unexpectedly.")
-        resp = json.loads(raw)
+        resp = self._read_response()
         if "error" in resp:
-            raise RuntimeError(f"Chatterbox: {resp['error']}")
+            raise RuntimeError(f"{self._label}: {resp['error']}")
+
+    def _read_response(self) -> dict:
+        """Read worker stdout until a JSON protocol line arrives.
+
+        Model libraries can print progress to stdout mid-generation (Turbo's
+        s3gen emits "S3 Token -> Mel Inference…"). The worker reroutes that to
+        stderr, but tolerate it here too so a stale worker — or any future
+        library that writes straight to fd 1 — degrades to a log line instead
+        of a JSONDecodeError mid-episode.
+        """
+        assert self._proc is not None
+        while True:
+            raw = self._proc.stdout.readline()
+            if not raw:
+                raise RuntimeError(f"{self._label} worker closed pipe unexpectedly.")
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                logger.debug("%s worker: %s", self._label, raw)
 
     def close(self) -> None:
         if self._proc is not None:
@@ -876,8 +902,8 @@ def _tts_segment(text: str, out_path: str, voice_id: str, speed: float | None,
     if backend == "gtts":
         _gtts_generate(text, out_path)
         return
-    if backend == "chatterbox":
-        assert chatterbox_client is not None, "chatterbox_client required for backend='chatterbox'"
+    if backend in ("chatterbox", "chatterbox-turbo"):
+        assert chatterbox_client is not None, f"chatterbox_client required for backend={backend!r}"
         chatterbox_client.generate(text, out_path, speaker_key or "")
         return
     tmp_fd, tmp_path = tempfile.mkstemp(
@@ -1078,24 +1104,32 @@ def get_parser() -> argparse.ArgumentParser:
                         help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
     parser.add_argument("--local-only", action="store_true",
                         help="Only place stems for effects already present in SFX/; skip API generation")
-    parser.add_argument("--backend", choices=["elevenlabs", "gtts", "chatterbox"],
+    parser.add_argument("--backend", choices=["elevenlabs", "gtts", "chatterbox", "chatterbox-turbo"],
                         default="elevenlabs", metavar="BACKEND",
                         help=(
                             "TTS backend for dialogue voice stems. 'elevenlabs' (default) calls "
                             "the ElevenLabs API. 'gtts' generates a flat-voice draft via Google "
                             "Translate TTS at no cost — all characters sound the same, useful for "
                             "checking episode duration before spending API credits. "
-                            "'chatterbox' uses local Chatterbox TTS with per-character voice "
-                            "cloning from voice_refs/<key>.wav reference clips — near-production "
-                            "quality, free, GPU-accelerated. "
+                            "'chatterbox-turbo' uses the local Chatterbox Turbo model in "
+                            "venv-chatterbox with per-character voice cloning from "
+                            "voice_refs/<key>.wav reference clips: it natively renders 19 "
+                            "paralinguistic tags — "
+                            "[angry] [fear] [surprised] [happy] [crying] [sarcastic] [whispering] "
+                            "[dramatic] [narration] [advertisement] [laugh] [chuckle] [sigh] "
+                            "[gasp] [groan] [cough] [sniff] [shush] [clear throat] — and strips "
+                            "every other bracketed tag. Spelling is exact: there are no plural "
+                            "forms ([laugh], not [laughs]). Requires reference clips >5s. "
+                            "'chatterbox' is a deprecated alias for 'chatterbox-turbo' — it warns "
+                            "and generates with Turbo; classic Chatterbox was removed. "
                             "Requires: pip install xil-pipeline[tts-alt] (gtts) or "
-                            "a configured venv-chatterbox (chatterbox)."
+                            "a configured venv-chatterbox (chatterbox-turbo)."
                         ))
     parser.add_argument("--chatterbox-python", default=None, metavar="PATH",
                         help=(
                             "Path to the Python executable in the chatterbox venv "
                             "(default: auto-detect ./venv-chatterbox/bin/python3). "
-                            "Used only with --backend chatterbox."
+                            "Used with --backend chatterbox or chatterbox-turbo."
                         ))
     parser.add_argument("--voice-refs", default=None, metavar="DIR",
                         help=(
@@ -1103,50 +1137,46 @@ def get_parser() -> argparse.ArgumentParser:
                             "zero-shot voice cloning (default: <workspace>/voice_refs/). "
                             "Missing refs fall back to Chatterbox's default voice."
                         ))
-    parser.add_argument("--exaggeration", type=float, default=0.5, metavar="FLOAT",
-                        help=(
-                            "Chatterbox emotion exaggeration level: 0.0 = flat/monotone, "
-                            "1.0 = dramatically expressive (default: 0.5). "
-                            "Used only with --backend chatterbox."
-                        ))
-    parser.add_argument("--cfg-weight", type=float, default=0.5, metavar="FLOAT",
-                        help=(
-                            "Chatterbox CFG weight controlling pacing/delivery: lower values "
-                            "(e.g. 0.3) produce slower, more deliberate speech and help "
-                            "compensate for acceleration at high exaggeration (default: 0.5). "
-                            "Used only with --backend chatterbox."
-                        ))
-    parser.add_argument("--sfx-backend", choices=["elevenlabs", "audioldm2"],
+    parser.add_argument("--sfx-backend", choices=["elevenlabs", "mmaudio"],
                         default="elevenlabs", metavar="BACKEND",
                         help=(
                             "Backend for SFX/music/ambience generation, independent of the "
                             "dialogue --backend. 'elevenlabs' (default) calls the ElevenLabs "
-                            "Sound Effects API. 'audioldm2' uses a local AudioLDM 2 Large "
-                            "diffusion model (venv-audioldm2) — free, GPU-accelerated, writes "
-                            "backend-tagged assets to SFX/<slug>.audioldm2.mp3."
+                            "Sound Effects API. 'mmaudio' runs MMAudio locally in "
+                            "venv-mmaudio — free and GPU-accelerated, writes backend-tagged "
+                            "assets to SFX/<slug>.mmaudio.mp3. MMAudio's weights are "
+                            "CC BY-NC 4.0 (non-commercial only) and require "
+                            "--mmaudio-accept-noncommercial."
                         ))
-    parser.add_argument("--audioldm2-python", default=None, metavar="PATH",
+    parser.add_argument("--mmaudio-python", default=None, metavar="PATH",
                         help=(
-                            "Path to the Python executable in the AudioLDM 2 venv "
-                            "(default: auto-detect ./venv-audioldm2/bin/python3). "
-                            "Used only with --sfx-backend audioldm2."
+                            "Path to the Python executable in the MMAudio venv "
+                            "(default: auto-detect ./venv-mmaudio/bin/python3). "
+                            "Used only with --sfx-backend mmaudio."
                         ))
-    parser.add_argument("--audioldm2-guidance", type=float, default=3.5, metavar="FLOAT",
+    parser.add_argument("--mmaudio-duration", type=float, default=8.0, metavar="FLOAT",
                         help=(
-                            "AudioLDM 2 guidance scale — how closely generation follows the "
-                            "prompt (default: 3.5). Used only with --sfx-backend audioldm2."
+                            "Generation length in seconds before trimming (default: 8.0, "
+                            "MMAudio's training duration). The result is trimmed to each "
+                            "cue's duration_seconds; generating at the native length and "
+                            "trimming gives better audio than asking for a short clip."
                         ))
-    parser.add_argument("--audioldm2-steps", type=int, default=200, metavar="INT",
+    parser.add_argument("--mmaudio-cfg", type=float, default=4.5, metavar="FLOAT",
+                        help="MMAudio classifier-free guidance strength (default: 4.5).")
+    parser.add_argument("--mmaudio-steps", type=int, default=25, metavar="INT",
+                        help="MMAudio flow-matching sampling steps (default: 25).")
+    parser.add_argument("--mmaudio-negative-prompt", default="", metavar="STR",
+                        help="Optional MMAudio negative prompt (default: none).")
+    parser.add_argument("--mmaudio-seed", type=int, default=None, metavar="INT",
+                        help="MMAudio reproducibility seed (default: nondeterministic).")
+    parser.add_argument("--mmaudio-accept-noncommercial", action="store_true",
                         help=(
-                            "AudioLDM 2 diffusion inference steps — higher is slower but "
-                            "cleaner (default: 200). Used only with --sfx-backend audioldm2."
+                            "Acknowledge that MMAudio's weights are CC BY-NC 4.0 "
+                            "(NON-COMMERCIAL USE ONLY) and that generated audio must not "
+                            "appear in a monetised production. Required for "
+                            "--sfx-backend mmaudio."
                         ))
-    parser.add_argument("--audioldm2-negative-prompt", default="low quality, noise",
-                        metavar="STR",
-                        help=(
-                            "AudioLDM 2 negative prompt (default: 'low quality, noise'). "
-                            "Used only with --sfx-backend audioldm2."
-                        ))
+
     return parser
 
 
@@ -1162,8 +1192,21 @@ def main() -> None:
     with run_banner():
         args = get_parser().parse_args()
 
+        # Classic Chatterbox was removed in #62; Chatterbox Turbo replaces it.
+        # Resolve the alias HERE, before anything reads args.backend, so the
+        # manifest entry, the log line and the ID3 tag all record the backend
+        # that actually generated the audio.  Tagging a new stem "chatterbox"
+        # would put a value in the manifest dedup key that can never be
+        # requested again, so the stem could never be matched or reused.
+        if args.backend == "chatterbox":
+            logger.warning(
+                "--backend chatterbox was removed; using chatterbox-turbo instead. "
+                "Stems will be recorded as chatterbox-turbo."
+            )
+            args.backend = "chatterbox-turbo"
+
         # ElevenLabs key is needed when dialogue uses elevenlabs, or when SFX
-        # generation is requested with the elevenlabs sfx backend (audioldm2 is local).
+        # generation is requested.
         _sfx_gen_requested = args.gen_sfx or args.gen_music or args.gen_ambience or args.sfx_music
         _needs_el_key = args.backend == "elevenlabs" or (
             args.sfx_backend == "elevenlabs" and _sfx_gen_requested
@@ -1234,7 +1277,7 @@ def main() -> None:
         if args.voice_refs is None:
             args.voice_refs = str(get_workspace_root() / "voice_refs")
 
-        if args.backend == "chatterbox":
+        if args.backend in ("chatterbox", "chatterbox-turbo"):
             _print_voice_refs_table(config, args.voice_refs)
 
         if args.reconcile:
@@ -1270,9 +1313,9 @@ def main() -> None:
                         logger.error(_msg)
                     sys.exit(1)
 
-            # --- Chatterbox client (backend=chatterbox only) ---
+            # --- Chatterbox client (backend=chatterbox or chatterbox-turbo) ---
             chatterbox_client: _ChatterboxClient | None = None
-            if args.backend == "chatterbox":
+            if args.backend == "chatterbox-turbo":
                 # Resolution: --chatterbox-python → $XIL_CODEROOT/venv-chatterbox
                 # (exclusive when set) → auto-detect (workspace root, then repo root).
                 cb_python = resolve_venv_python("venv-chatterbox", args.chatterbox_python)
@@ -1286,8 +1329,6 @@ def main() -> None:
                 chatterbox_client = _ChatterboxClient(
                     python_path=cb_python,
                     voice_refs_dir=args.voice_refs,
-                    exaggeration=args.exaggeration,
-                    cfg_weight=args.cfg_weight,
                 )
 
             # --- SFX backend (built only when SFX generation is requested) ---
@@ -1296,10 +1337,13 @@ def main() -> None:
                 sfx_backend = make_sfx_backend(
                     args.sfx_backend,
                     client=client,
-                    audioldm2_python=args.audioldm2_python,
-                    guidance=args.audioldm2_guidance,
-                    steps=args.audioldm2_steps,
-                    negative_prompt=args.audioldm2_negative_prompt,
+                    mmaudio_python=args.mmaudio_python,
+                    mmaudio_cfg=args.mmaudio_cfg,
+                    mmaudio_steps=args.mmaudio_steps,
+                    mmaudio_negative_prompt=args.mmaudio_negative_prompt,
+                    mmaudio_seed=args.mmaudio_seed,
+                    mmaudio_duration=args.mmaudio_duration,
+                    accept_noncommercial=args.mmaudio_accept_noncommercial,
                 )
 
             try:

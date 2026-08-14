@@ -132,29 +132,35 @@ def _gtts_generate(text: str, out_path: str) -> None:
 
 
 class _ChatterboxClient:
-    """Persistent subprocess bridge to the Chatterbox TTS worker."""
+    """Persistent subprocess bridge to the Chatterbox Turbo TTS worker.
 
-    _WORKER = os.path.join(os.path.dirname(__file__), "chatterbox_worker.py")
+    Classic Chatterbox was removed in #62; only ``chatterbox_turbo_worker.py``
+    (``ChatterboxTurboTTS``, native paralinguistic tags) remains, in
+    ``venv-chatterbox``.
+    """
+
+    _WORKER = os.path.join(os.path.dirname(__file__), "chatterbox_turbo_worker.py")
 
     def __init__(
         self,
         python_path: str,
         voice_refs_dir: str = "voice_refs",
         device: str = "cuda",
-        exaggeration: float = 0.5,
-        cfg_weight: float = 0.5,
     ) -> None:
         self._python = python_path
         self._voice_refs_dir = voice_refs_dir
         self._device = device
-        self._exaggeration = exaggeration
-        self._cfg_weight = cfg_weight
         self._proc: subprocess.Popen | None = None
 
+    @property
+    def _label(self) -> str:
+        return "Chatterbox Turbo"
+
     def _start(self) -> None:
-        logger.info("Starting Chatterbox worker (%s, %s)…", self._python, self._device)
+        worker = self._WORKER
+        logger.info("Starting %s worker (%s, %s)…", self._label, self._python, self._device)
         self._proc = subprocess.Popen(
-            [self._python, self._WORKER, self._device],
+            [self._python, worker, self._device],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=sys.stderr,
@@ -164,19 +170,19 @@ class _ChatterboxClient:
         while True:
             raw = self._proc.stdout.readline()
             if not raw:
-                raise RuntimeError("Chatterbox worker exited before sending ready signal.")
+                raise RuntimeError(f"{self._label} worker exited before sending ready signal.")
             raw = raw.strip()
             if not raw:
                 continue
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
-                logger.debug("Chatterbox worker startup: %s", raw)
+                logger.debug("%s worker startup: %s", self._label, raw)
                 continue
             if msg.get("ready"):
                 break
-            logger.debug("Chatterbox worker startup: %s", raw)
-        logger.info("Chatterbox worker ready (sample_rate=%d)", msg["sr"])
+            logger.debug("%s worker startup: %s", self._label, raw)
+        logger.info("%s worker ready (sample_rate=%d)", self._label, msg["sr"])
 
     def _ref_for(self, speaker_key: str) -> str | None:
         for ext in (".wav", ".mp3"):
@@ -186,7 +192,10 @@ class _ChatterboxClient:
         return None
 
     def _cond_for(self, speaker_key: str) -> str:
-        return os.path.join(self._voice_refs_dir, f"{speaker_key}.conds.pt")
+        # Turbo conds are NOT interchangeable with the classic .conds.pt files
+        # still on disk, so the suffix stays distinct.
+        suffix = ".turbo.conds.pt"
+        return os.path.join(self._voice_refs_dir, f"{speaker_key}{suffix}")
 
     def generate(self, text: str, out_path: str, speaker_key: str) -> None:
         if self._proc is None:
@@ -199,18 +208,16 @@ class _ChatterboxClient:
             "out_path": out_path,
             "ref_audio": ref,
             "cond_path": self._cond_for(speaker_key),
-            "exaggeration": self._exaggeration,
-            "cfg_weight": self._cfg_weight,
         }
         assert self._proc is not None
         self._proc.stdin.write(json.dumps(req) + "\n")
         self._proc.stdin.flush()
         raw = self._proc.stdout.readline()
         if not raw:
-            raise RuntimeError("Chatterbox worker closed pipe unexpectedly.")
+            raise RuntimeError(f"{self._label} worker closed pipe unexpectedly.")
         resp = json.loads(raw)
         if "error" in resp:
-            raise RuntimeError(f"Chatterbox: {resp['error']}")
+            raise RuntimeError(f"{self._label}: {resp['error']}")
 
     def close(self) -> None:
         if self._proc is not None:
@@ -239,30 +246,32 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--show", default=None, help="Show name override (default: from project.json)")
     parser.add_argument(
-        "--backend", choices=["elevenlabs", "gtts", "chatterbox"], default="elevenlabs",
+        "--backend", choices=["elevenlabs", "gtts", "chatterbox", "chatterbox-turbo"], default="elevenlabs",
         help=(
             "TTS backend for sample generation. 'elevenlabs' (default) calls the ElevenLabs API "
             "and uses the voice_id from the cast config. 'gtts' generates a flat-voice draft via "
             "Google Translate TTS at no cost (ignores voice_id). 'chatterbox' uses local GPU TTS "
-            "with zero-shot voice cloning from voice_refs/<key>.wav clips. "
+            "with zero-shot voice cloning from voice_refs/<key>.wav clips ('chatterbox' is a "
+            "deprecated alias that warns and uses Turbo). 'chatterbox-turbo' uses "
+            "the Chatterbox Turbo model in the same venv-chatterbox — it renders 19 native "
+            "paralinguistic tags ([angry] [fear] [surprised] [happy] [crying] [sarcastic] "
+            "[whispering] [dramatic] [narration] [advertisement] [laugh] [chuckle] [sigh] [gasp] "
+            "[groan] [cough] [sniff] [shush] [clear throat]; exact spelling, no plurals), strips "
+            "all other tags and needs reference clips >5s. Put a tag in "
+            "--sample-text to audition a cue. "
             "Output lands in voice_samples/<TAG>/<backend>/ for side-by-side comparison."
         ),
     )
     parser.add_argument(
         "--chatterbox-python", default=None, metavar="PATH",
         help="Path to the chatterbox venv Python (default: auto-detect ./venv-chatterbox/bin/python3). "
-             "Used only with --backend chatterbox.",
+             "Used with --backend chatterbox or chatterbox-turbo.",
     )
     parser.add_argument(
         "--voice-refs", default="voice_refs", metavar="DIR",
         help="Directory containing <speaker_key>.wav reference clips for Chatterbox "
              "zero-shot voice cloning (default: voice_refs/). "
-             "Used only with --backend chatterbox.",
-    )
-    parser.add_argument(
-        "--exaggeration", type=float, default=0.5, metavar="FLOAT",
-        help="Chatterbox emotion exaggeration level: 0.0 = flat, 1.0 = dramatic (default: 0.5). "
-             "Used only with --backend chatterbox.",
+             "Used with --backend chatterbox or chatterbox-turbo.",
     )
     parser.add_argument(
         "--sample-text", default=None, metavar="TEXT",
@@ -290,6 +299,12 @@ def main() -> None:
         args = get_parser().parse_args()
 
         backend = args.backend
+        # Classic Chatterbox was removed in #62; resolve the alias before use.
+        if backend == "chatterbox":
+            logger.warning(
+                "--backend chatterbox was removed; using chatterbox-turbo instead."
+            )
+            backend = "chatterbox-turbo"
 
         if not args.dry_run and backend == "elevenlabs" and not os.environ.get("ELEVENLABS_API_KEY"):
             sys.exit("Error: ELEVENLABS_API_KEY environment variable is not set.")
@@ -327,7 +342,7 @@ def main() -> None:
 
         # Resolve chatterbox python path
         chatterbox_client: _ChatterboxClient | None = None
-        if backend == "chatterbox" and not args.dry_run:
+        if backend in ("chatterbox", "chatterbox-turbo") and not args.dry_run:
             python_path = args.chatterbox_python or os.path.join("venv-chatterbox", "bin", "python3")
             if not os.path.exists(python_path):
                 sys.exit(f"Error: Chatterbox Python not found at {python_path}. "
@@ -335,7 +350,7 @@ def main() -> None:
             chatterbox_client = _ChatterboxClient(
                 python_path=python_path,
                 voice_refs_dir=args.voice_refs,
-                exaggeration=args.exaggeration,
+
             )
 
         generated = 0
@@ -361,7 +376,7 @@ def main() -> None:
 
                 if args.dry_run:
                     ref_note = ""
-                    if backend == "chatterbox":
+                    if backend in ("chatterbox", "chatterbox-turbo"):
                         ref = os.path.join(args.voice_refs, f"{key}.wav")
                         ref_note = f"  ref={'✓' if os.path.exists(ref) else '✗ (default voice)'}"
                     logger.info(f"  [DRY RUN] {key:12s}  ({member.full_name})  →  {out_path}{ref_note}")
@@ -378,10 +393,10 @@ def main() -> None:
                     _gtts_generate(text, out_path)
                     tts_comment = "gtts"
 
-                elif backend == "chatterbox":
+                elif backend in ("chatterbox", "chatterbox-turbo"):
                     assert chatterbox_client is not None
                     chatterbox_client.generate(text, out_path, speaker_key=key)
-                    tts_comment = "chatterbox"
+                    tts_comment = backend
 
                 else:  # elevenlabs
                     current_model = get_best_model_for_budget()
