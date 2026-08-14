@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 # failed while GitHub Actions (which checks out into .../xil-pipeline/) passed.
 GENERATED_DOCS_DIRNAME = "xil-pipeline"
 
+# Upstream source trees vendored into the repo root by an optional-backend setup.
+# They are gitignored, but this script walks the filesystem rather than git, so
+# without this the MMAudio clone gets scanned and --strict aborts on its broken
+# relative links and unimportable CUDA extension modules.
+VENDORED_DIRS = {"MMAudio"}
+
 # Repo-root markdown -> the docs/ subfolder its symlink is placed in.
 #
 # Without this, every root-level .md lands flat in docs/ and mkdocs-awesome-pages
@@ -117,7 +123,7 @@ def should_document_file(file: Path, code_root: Path) -> bool:
 
     # Skip specific problematic directories
     skip_dirs = {'data', 'output', '.ruff_cache', '.venv', 'venv', '.git', 'tests', 'docs',
-                 'site'}
+                 'site'} | VENDORED_DIRS
     if any(part in skip_dirs or part.endswith('_files') or part.startswith('venv')
            for part in relative_parts):
         return False
@@ -166,7 +172,7 @@ def should_copy_markdown_file(file: Path, code_root: Path | None = None) -> bool
     # 'docs' is excluded to prevent re-copying generated output back into docs/docs/
     # '.pytest_cache' excluded to prevent copying pytest internals
     skip_dirs = {'data', 'output', '.ruff_cache', '.venv', 'venv', '.git', 'site',
-                 'docs', '.pytest_cache', 'scripts'}
+                 'docs', '.pytest_cache', 'scripts'} | VENDORED_DIRS
     parent_parts = relative_parts[:-1]          # directories only, not the filename
     if any(part in skip_dirs or part.endswith('_files') or part.startswith('venv')
            for part in parent_parts):

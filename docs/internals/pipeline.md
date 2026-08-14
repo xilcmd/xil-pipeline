@@ -2177,7 +2177,106 @@ flowchart TD
 
 ---
 
-## 28. Data Model Reference
+## 28. XILU022 — SFX Library Reconciliation
+
+Finds existing library assets for cues whose declared `source` is not on disk — the
+cues that make `xil produce` refuse to start and that `xil sfx-impact` grades
+`MISSING`.
+
+```bash
+xil sfx-match --show deadair                        # report only
+xil sfx-match --show deadair --emit-hints           # paste-ready script block
+xil sfx-match --show deadair --apply --dry-run      # inspect every write
+xil sfx-match --show deadair --apply                # EXACT + STRONG
+xil sfx-match --show deadair --apply --accept-review
+```
+
+### Why it exists
+
+A missing source is usually not a missing sound — it is a misnamed reference. Two
+forces pull a reference away from its file:
+
+- the scriptwriter writes loose, near-duplicate direction text across iterations, and
+  when it cannot find a cheatsheet line it invents a `"NEW STEM NEEDED: <slug>.mp3"`
+  placeholder; and
+- the creative edits direction text after generation, before the pipeline sees it.
+
+`xil discover-sfx --export-kit` publishes the `[TITLE | file.mp3]` cheatsheet so a
+human can consolidate those duplicates going forward, and `xil sfx-hydrate` writes
+the hints the scriptwriter did pick. Nothing went back and asked whether the sound
+already existed under another name. This does.
+
+### What it matches on
+
+Assets written by `tag_mp3()` carry their **originating cue text in ID3 `TIT2`**,
+which makes the library self-describing. That title is far better evidence than a
+filename — in practice the two have drifted apart, and an asset titled
+`SFX: CHAIR SCRAPING — ELENA STANDING` sits in a file called
+`SFX-_CHAIRS_—_SOFT_SCRAPING,_SITTING_DOWN.mp3`. Match text per asset is **title →
+generation prompt (`USLT`) → filename**, and the report shows the title, because a
+filename alone makes a correct match look wrong.
+
+### Scoring
+
+| Term | Definition | Role |
+|------|-----------|------|
+| coverage | `|cue ∩ candidate| / |cue|` | leads the ranking |
+| jaccard | `|cue ∩ candidate| / |cue ∪ candidate|` | breaks ties, penalises off-topic candidates |
+
+Coverage leads because library titles are much more verbose than cue text; a
+symmetric measure punishes the right answers for their extra words. On real data
+jaccard alone found 5 of 30 recoverable cues, coverage found 21.
+
+| Tier | Rule | `--apply` |
+|------|------|-----------|
+| `EXACT` | `slugify_effect_key(cue).mp3` is in the library | yes |
+| `STRONG` | coverage ≥ 0.8, jaccard ≥ 0.4, **and** ≥ 0.15 score margin over the runner-up | yes |
+| `REVIEW` | coverage ≥ 0.5 | only with `--accept-review` |
+| `NONE` | below the floor — needs generation | never |
+
+Two guards stop a plausible-looking wrong answer from being applied automatically:
+
+- a **category gate** — `classify_placement()` must agree between cue and candidate,
+  so an `AMBIENCE:` cue is never answered by a `MUSIC` asset; and
+- a **margin rule** — a leader with no daylight over its runner-up is a review case.
+  `SFX: FOOTSTEPS APPROACHING` really does have three distinct candidates at coverage
+  1.00, and only a human can choose. Without the margin term one would be picked
+  arbitrarily.
+
+The regression that motivated both: `SFX: COFFEE CUP BEING SET DOWN` ranks
+`bag_being_set_down.mp3` **above** the correct coffee-mug asset on raw token count.
+
+### The exact index
+
+Exact-slug lookup runs against **every** asset, not the deduplicated pool. Dedupe
+collapses copies by `(match text, duration)` — and the copy it discards may be the
+one carrying the slug name the cue resolves to. `SFX: PHONE SCREEN TAP` has an exact
+`sfx_phone-screen-tap.mp3` on disk, but it shares a title with
+`SFX-_PHONE_SCREEN_TAP,_SEND_TONE.mp3` in a more preferred scope and loses the group;
+searching the pool alone reported `REVIEW` for a cue the library answers exactly.
+
+### What `--apply` does
+
+1. **Copies** the matched asset into the show's own pool at
+   `shared_sfx_path(sfx_dir(show), cue)` — named for the **cue**, not the source asset.
+2. **Retitles** the copy's `TIT2` to the cue text and records provenance in `COMM`.
+   Only those two frames are touched, so the album, artist, generation prompt and
+   grade frame survive the copy.
+3. **Journals** the new `source` via `append_sfx_edit`, so the assignment survives a
+   rebuild from a fresh script `.md` — the drift being repaired.
+
+Naming the copy after the cue is what makes the repair permanent. Afterwards the
+exact-slug rule holds, so a re-run reports `EXACT`, and the next
+`xil discover-sfx --export-kit` lists the asset under the cue text — the scriptwriter
+finds it unaided instead of inventing another placeholder.
+
+> **The library scan is deferred.** Reading ID3 and MP3 headers across a
+> workspace-sized library takes minutes over a network mount, so it happens only once,
+> and only after a cue with an unresolvable source is actually found.
+
+---
+
+## 29. Data Model Reference
 
 All data classes used across the pipeline, grouped by layer. Pydantic `BaseModel` subclasses (all in `models.py`) carry validation and are serialized to/from JSON. `@dataclass` instances are in-memory runtime state only.
 

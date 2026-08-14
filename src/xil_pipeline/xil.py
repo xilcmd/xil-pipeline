@@ -147,6 +147,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(before changing clip durations)",
     ),
+    "sfx-match": CommandSpec(
+        "xil_pipeline.XILU022_sfx_match",
+        "find existing library assets for cues whose source file is missing",
+        _UTILITY,
+        "(when produce reports missing SFX sources)",
+    ),
     "episode-summary": CommandSpec(
         "xil_pipeline.XILU014_episode_summary",
         "write one-row-per-episode summary CSV (lines, words, TTS chars)",

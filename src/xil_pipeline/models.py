@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Literal
 
@@ -400,7 +401,9 @@ class ScriptEntry(_DocModel):
     text: str = Field(...)
     """The spoken text, header text, or stage direction content."""
 
-    direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER"] | None = Field(default=None)
+    direction_type: Literal[
+        "SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO"
+    ] | None = Field(default=None)
     """Subtype for direction entries indicating sound category."""
 
     sfx_source: str | None = Field(default=None)
@@ -496,9 +499,15 @@ class CastMember(_DocModel):
     """Stereo pan position from -1.0 (full left) to 1.0 (full right)."""
 
     filter: str | bool | None = Field(...)
-    """Audio filter chain. ``False``/``None`` = none; ``True``/``"phone"`` = phone
-    filter; ``"vintage"`` = vintage filter; ``"vintage,phone"`` = both filters applied
-    in listed order."""
+    """Audio filter chain. ``False``/``None`` = no treatment. Accepted names:
+
+    - ``"phone"`` (or legacy ``True``) — band-limited 300 Hz-3 kHz landline.
+    - ``"vintage"`` — mono, dark and mid-forward; aged tape/record player.
+    - ``"film"`` — warm, reflective 1990s indie film print with faint grain.
+    - ``"speakerphone"`` — narrow-band with hard AGC, crunch and a room slap.
+
+    Comma-separated values chain left to right (e.g. ``"vintage,phone"``).
+    Unknown names are ignored with a warning."""
 
     role: str = Field(...)
     """Character role description (e.g., ``"Host/Narrator"``)."""
@@ -770,6 +779,31 @@ class SfxConfiguration(_DocModel):
 
     effects: dict[str, SfxEntry] = Field(...)
     """Mapping of direction text to SFX entry configurations."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_unicode(cls, data: object) -> object:
+        """NFC-normalize effect keys and source paths on load.
+
+        An accented character can be encoded two ways that render identically —
+        ``Í`` as one codepoint (NFC) or ``I`` plus a combining acute (NFD) — and
+        editors differ on which they emit.  Left alone, the two forms are
+        different dict keys and different file paths, so a cue silently fails to
+        match its config or its asset on disk.  Normalizing here means every
+        lookup site downstream compares like with like.
+        """
+        if not isinstance(data, dict):
+            return data
+        effects = data.get("effects")
+        if not isinstance(effects, dict):
+            return data
+        normalized: dict = {}
+        for key, entry in effects.items():
+            nkey = unicodedata.normalize("NFC", key) if isinstance(key, str) else key
+            if isinstance(entry, dict) and isinstance(entry.get("source"), str):
+                entry = {**entry, "source": unicodedata.normalize("NFC", entry["source"])}
+            normalized[nkey] = entry
+        return {**data, "effects": normalized}
 
     vintage_scenes: list[str] = Field(default_factory=list)
     """Scene labels whose dialogue receives the vintage audio filter
