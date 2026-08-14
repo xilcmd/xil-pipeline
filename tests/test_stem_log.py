@@ -56,6 +56,31 @@ CHATTERBOX_TURBO_LOG = """\
 """
 
 
+# v2 structured log: same events, but every line carries "ts|LEVEL|host|stage|" and
+# the run boundary is run_banner's RUN BEGIN record instead of "--- Phase 1".
+V2_LOG = """\
+2026-04-01T09:00:00-0400|RUN|hibirdy|produce|BEGIN argv="xil produce --episode S03E03" pid=123 ver=0.3.1 cwd=/ws
+2026-04-01T09:00:01-0400|INFO|hibirdy|produce|--- Phase 1: Generating ---
+2026-04-01T09:00:02-0400|INFO|hibirdy|produce|  > [006] adam with eleven_v3 (282 chars)...
+2026-04-01T09:00:05-0400|INFO|hibirdy|produce|  Saved: stems/the413/S03E03/006_cold-open_adam.mp3
+2026-04-01T09:00:05-0400|INFO|hibirdy|produce|  SHA256: abc123def456
+2026-04-01T09:00:06-0400|INFO|hibirdy|produce|  > [007] sarah with eleven_v3 (150 chars)...
+2026-04-01T09:00:09-0400|INFO|hibirdy|produce|  Saved: stems/the413/S03E03/007_cold-open_sarah.mp3
+2026-04-01T09:00:09-0400|INFO|hibirdy|produce|  SHA256: 789abcdef012
+2026-04-01T09:00:10-0400|RUN|hibirdy|produce|END elapsed=10.0s
+"""
+
+# A v1 table line legitimately contains pipes — it must NOT be mistaken for a
+# v2 prefix and mangled.
+V1_WITH_PIPES_LOG = """\
+--- Phase 1: Generating ---
+  003 | preamble         | tina
+  > [003] tina via Chatterbox Turbo (80 chars)...
+  Saved: stems/the413/S03E03/003_cold-open_tina.mp3
+  SHA256: cbcbcbcbcbcbcbcb
+"""
+
+
 def _write_log(tmp_path: Path, name: str, content: str) -> Path:
     p = tmp_path / name
     p.write_text(content, encoding="utf-8")
@@ -215,3 +240,32 @@ def test_missing_logs_dir_exits_nonzero(tmp_path):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code != 0
+
+
+class TestV2StructuredLogs:
+    """v2 logs (ts|LEVEL|stage|msg) parse identically to their v1 equivalents."""
+
+    def test_v2_parses_same_records_as_v1(self, tmp_path):
+        v1 = _parse_log(_write_log(tmp_path, "xil_v1_2026-04-01.log", ELEVEN_LOG))
+        v2 = _parse_log(_write_log(tmp_path, "xil_v2_2026-04-01.log", V2_LOG))
+        fields = ("seq", "speaker", "backend", "char_count", "stem_filename", "sha256")
+        assert [{f: r[f] for f in fields} for r in v1] == [{f: r[f] for f in fields} for r in v2]
+
+    def test_v2_run_boundary_counted_once(self, tmp_path):
+        """RUN BEGIN is the boundary; the Phase 1 line must not double-count it."""
+        records = _parse_log(_write_log(tmp_path, "xil_v2_2026-04-01.log", V2_LOG))
+        assert {r["run_index"] for r in records} == {1}
+
+    def test_v1_line_containing_pipes_is_not_stripped(self, tmp_path):
+        """A v1 table row with '|' must not be mistaken for a v2 prefix."""
+        records = _parse_log(
+            _write_log(tmp_path, "xil_v1_2026-04-02.log", V1_WITH_PIPES_LOG)
+        )
+        assert len(records) == 1
+        assert records[0]["speaker"] == "tina"
+        assert records[0]["backend"] == "chatterbox-turbo"
+
+    def test_versioned_filenames_still_yield_dates(self, tmp_path):
+        for name in ("xil_v1_2026-04-01.log", "xil_v2_2026-04-01.log"):
+            records = _parse_log(_write_log(tmp_path, name, V2_LOG if "v2" in name else ELEVEN_LOG))
+            assert records and records[0]["log_date"] == "2026-04-01"

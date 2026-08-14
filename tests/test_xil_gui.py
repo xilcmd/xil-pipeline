@@ -5,6 +5,7 @@
 """Tests for xil_gui helper functions (no Gradio dependency required)."""
 
 import json
+import logging
 import os
 
 import pytest
@@ -902,6 +903,48 @@ class TestSfxRoutes:
             "slug": "ghostshow", "tag": "S09E99", "key": "X"})
         assert r.status_code == 404
 
+    def test_get_returns_natural_s_for_source_cue(self, tmp_path, monkeypatch):
+        """The modal previews play_duration as a % of the SOURCE FILE.
+
+        Without the file's true length the preview falls back to duration_seconds
+        and under-reports every cue that duration_seconds is clipping — setting
+        "Play Duration % = 100" appears to do nothing on exactly the cues it fixes.
+        """
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "myshow"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "sfx_S01E01.json").write_text(json.dumps({
+            "defaults": {},
+            "effects": {
+                "OUTRO MUSIC": {"source": "SFX/outro.mp3", "duration_seconds": 5.0},
+                "MUSIC: STING": {"prompt": "a sting", "duration_seconds": 15.0},
+                "SFX: GONE": {"source": "SFX/absent.mp3", "duration_seconds": 5.0},
+            },
+        }))
+        monkeypatch.chdir(tmp_path)
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from xil_pipeline import xil_gui
+        # 65 s file — far longer than the 5 s duration_seconds clipping it.
+        monkeypatch.setattr("xil_pipeline.mix_common._mp3_duration_ms",
+                            lambda path: 65_000 if path.endswith("outro.mp3")
+                            else (_ for _ in ()).throw(FileNotFoundError(path)))
+        app = FastAPI()
+        xil_gui._register_sfx_routes(app)
+        client = TestClient(app)
+
+        def natural(key):
+            r = client.get("/xil/get-sfx", params={
+                "slug": "myshow", "tag": "S01E01", "key": key})
+            assert r.status_code == 200
+            return r.json()["natural_s"]
+
+        assert natural("OUTRO MUSIC") == 65.0        # the value the preview needs
+        assert natural("MUSIC: STING") is None       # generated cue — no source
+        assert natural("SFX: GONE") is None          # unreadable — must not 500
+
     def test_post_updates_and_clears_fields(self, client, tmp_path):
         r = client.post("/xil/update-sfx", json={
             "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
@@ -1075,5 +1118,189 @@ class TestSfxRouteJournaling:
     def test_rejected_save_journals_nothing(self, client, tmp_path):
         client.post("/xil/update-sfx", json={
             "slug": "../../etc", "tag": "S01E01", "key": "X",
+            "volume_percentage": 10})
+        assert not self._journal(tmp_path).exists()
+
+
+class TestSfxRouteVerboseLogging:
+    """--verbose (DEBUG level) surfaces per-request detail for the Timeline
+    audio-properties dialog; the INFO/WARNING summary lines stay visible at
+    the default level too. See xil_gui.logger / configure_logging in main()."""
+
+    @pytest.fixture
+    def client(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "myshow"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "sfx_S01E01.json").write_text(json.dumps({
+            "defaults": {}, "effects": {"MUSIC: THEME": {}}}))
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from xil_pipeline.xil_gui import _register_sfx_routes
+        app = FastAPI()
+        _register_sfx_routes(app)
+        return TestClient(app)
+
+    def test_get_sfx_logs_debug_on_success(self, client, caplog):
+        with caplog.at_level(logging.DEBUG, logger="xil_pipeline.xil_gui"):
+            r = client.get("/xil/get-sfx", params={
+                "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME"})
+        assert r.status_code == 200
+        assert any(
+            "MUSIC: THEME" in rec.message and rec.levelno == logging.DEBUG
+            for rec in caplog.records
+        )
+
+    def test_get_sfx_logs_warning_on_invalid_slug(self, client, caplog):
+        with caplog.at_level(logging.DEBUG, logger="xil_pipeline.xil_gui"):
+            r = client.get("/xil/get-sfx", params={
+                "slug": "../../etc", "tag": "S01E01", "key": "X"})
+        assert r.status_code == 400
+        assert any(rec.levelno == logging.WARNING for rec in caplog.records)
+
+    def test_update_sfx_logs_debug_body_on_success(self, client, caplog):
+        with caplog.at_level(logging.DEBUG, logger="xil_pipeline.xil_gui"):
+            r = client.post("/xil/update-sfx", json={
+                "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
+                "volume_percentage": 42})
+        assert r.status_code == 200
+        assert any(
+            "volume_percentage" in rec.message and rec.levelno == logging.DEBUG
+            for rec in caplog.records
+        )
+
+    def test_update_sfx_logs_info_on_success(self, client, caplog):
+        # INFO level only — the summary line must be visible without --verbose.
+        with caplog.at_level(logging.INFO, logger="xil_pipeline.xil_gui"):
+            r = client.post("/xil/update-sfx", json={
+                "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
+                "volume_percentage": 42})
+        assert r.status_code == 200
+        assert any(
+            "MUSIC: THEME" in rec.message and rec.levelno == logging.INFO
+            for rec in caplog.records
+        )
+        # No DEBUG-only records leaked through at the INFO threshold.
+        assert not any(rec.levelno == logging.DEBUG for rec in caplog.records)
+
+    def test_update_sfx_logs_warning_on_journal_failure(self, client, monkeypatch, caplog):
+        def _boom(*args, **kwargs):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr("xil_pipeline.sfx_common.append_sfx_edit", _boom)
+        with caplog.at_level(logging.DEBUG, logger="xil_pipeline.xil_gui"):
+            r = client.post("/xil/update-sfx", json={
+                "slug": "myshow", "tag": "S01E01", "key": "MUSIC: THEME",
+                "volume_percentage": 42})
+        # The save itself must still succeed even though the journal failed.
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+        assert any(
+            "journal write failed" in rec.message and rec.levelno == logging.WARNING
+            for rec in caplog.records
+        )
+
+
+class TestSfxDefaultsRoute:
+    """POST /xil/update-sfx-defaults — edits the config's category defaults
+    (e.g. music_volume_percentage), the counterpart to the per-cue
+    /xil/update-sfx route. Same validate-before-path-build pattern; same
+    journal mechanism via append_sfx_defaults_edit (scope: "defaults")."""
+
+    @pytest.fixture
+    def client(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        cfg_dir = tmp_path / "configs" / "myshow"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "sfx_S01E01.json").write_text(json.dumps({
+            "defaults": {"volume_percentage": 20, "music_volume_percentage": 80},
+            "effects": {"MUSIC: THEME": {}},
+        }))
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from xil_pipeline.xil_gui import _register_sfx_routes
+        app = FastAPI()
+        _register_sfx_routes(app)
+        return TestClient(app)
+
+    def _journal(self, tmp_path):
+        return tmp_path / "configs" / "myshow" / "sfx_S01E01_edits.jsonl"
+
+    def test_sets_prefixed_key(self, client, tmp_path):
+        r = client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "music",
+            "volume_percentage": 42})
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert on_disk["defaults"]["music_volume_percentage"] == 42
+
+    def test_null_pops_prefixed_key(self, client, tmp_path):
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "music",
+            "volume_percentage": None})
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert "music_volume_percentage" not in on_disk["defaults"]
+
+    def test_unprefixed_global_default_untouched(self, client, tmp_path):
+        # A layer save must only ever write its own prefixed key — never the
+        # un-prefixed global fallback, even though one already exists.
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "music",
+            "volume_percentage": 42})
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert on_disk["defaults"]["volume_percentage"] == 20
+
+    def test_other_layers_defaults_untouched(self, client, tmp_path):
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "ambience",
+            "volume_percentage": 15})
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert on_disk["defaults"]["music_volume_percentage"] == 80
+        assert on_disk["defaults"]["ambience_volume_percentage"] == 15
+
+    def test_rejects_unsafe_slug(self, client):
+        r = client.post("/xil/update-sfx-defaults", json={
+            "slug": "../../etc", "tag": "S01E01", "layer": "music",
+            "volume_percentage": 10})
+        assert r.status_code == 400
+
+    def test_rejects_bad_layer(self, client, tmp_path):
+        r = client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "dialogue",
+            "volume_percentage": 10})
+        assert r.status_code == 400
+        # Rejected request must not touch disk.
+        on_disk = json.loads(
+            (tmp_path / "configs" / "myshow" / "sfx_S01E01.json").read_text())
+        assert "dialogue_volume_percentage" not in on_disk["defaults"]
+
+    def test_missing_config_404s(self, client):
+        r = client.post("/xil/update-sfx-defaults", json={
+            "slug": "ghostshow", "tag": "S09E99", "layer": "music",
+            "volume_percentage": 10})
+        assert r.status_code == 404
+
+    def test_journals_defaults_scope_record(self, client, tmp_path):
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "myshow", "tag": "S01E01", "layer": "music",
+            "volume_percentage": 42, "ramp_in_seconds": 1.5})
+        lines = self._journal(tmp_path).read_text().splitlines()
+        assert len(lines) == 1
+        rec = json.loads(lines[0])
+        assert rec["scope"] == "defaults"
+        assert "key" not in rec
+        assert rec["fields"]["music_volume_percentage"] == 42
+        assert rec["fields"]["music_ramp_in_seconds"] == 1.5
+
+    def test_rejected_request_journals_nothing(self, client, tmp_path):
+        client.post("/xil/update-sfx-defaults", json={
+            "slug": "../../etc", "tag": "S01E01", "layer": "music",
             "volume_percentage": 10})
         assert not self._journal(tmp_path).exists()

@@ -44,6 +44,7 @@ import textwrap
 
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.mix_common import (
+    StemPlan,
     build_ambience_layer,
     build_dialogue_layer,
     build_foreground,
@@ -57,6 +58,7 @@ from xil_pipeline.mix_common import (
     compute_music_labels,
     compute_sfx_labels,
     compute_vintage_filter_labels,
+    derive_structure_bands,
     load_entries_index,
 )
 from xil_pipeline.models import (
@@ -358,11 +360,11 @@ def _make_audacity_script(
 
 def dry_run_daw(
     tag: str,
-    stem_plans,
+    stem_plans: list[StemPlan],
     entries_index: dict,
     output_dir: str,
     stems_dir: str = "",
-    sfx_config=None,
+    sfx_config: SfxConfiguration | None = None,
     cast_config: dict | None = None,
     vintage_scenes: list[str] | None = None,
 ) -> None:
@@ -644,6 +646,8 @@ def export_daw_layers(
     td = build_timeline_data(
         tag, total_ms / 1000.0,
         dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
+        section_bands=derive_structure_bands(entries_index, cue_timeline, total_ms, "section"),
+        scene_bands=derive_structure_bands(entries_index, cue_timeline, total_ms, "scene"),
     )
     txt_path = render_text_timeline_map(
         td, os.path.join(output_dir, f"{tag}_timeline.txt"), slug=slug,
@@ -795,6 +799,8 @@ def main() -> None:
             td = build_timeline_data(
                 tag, total_ms / 1000.0,
                 dlg_labels, amb_labels, mus_labels, sfx_labels, vf_labels,
+                section_bands=derive_structure_bands(entries_index, timeline, total_ms, "section"),
+                scene_bands=derive_structure_bands(entries_index, timeline, total_ms, "scene"),
             )
             txt_path = render_text_timeline_map(
                 td, os.path.join(output_dir, f"{tag}_timeline.txt"), slug=slug,

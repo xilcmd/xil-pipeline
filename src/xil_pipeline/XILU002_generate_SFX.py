@@ -124,67 +124,46 @@ def get_parser() -> argparse.ArgumentParser:
                         help="(deprecated) shorthand for --gen-sfx --gen-music --gen-ambience")
     parser.add_argument("--local-only", action="store_true",
                         help="Only place stems for effects already present in SFX/; skip API generation")
-    parser.add_argument("--sfx-backend", choices=["elevenlabs", "audioldm2", "stableaudio"],
+    parser.add_argument("--sfx-backend", choices=["elevenlabs", "mmaudio"],
                         default="elevenlabs", metavar="BACKEND",
                         help=(
-                            "Backend for SFX/music/ambience generation. 'elevenlabs' (default) "
-                            "calls the ElevenLabs Sound Effects API. 'audioldm2' uses a local "
-                            "AudioLDM 2 Large diffusion model (venv-audioldm2) — free, "
-                            "GPU-accelerated, writes SFX/<slug>.audioldm2.mp3. 'stableaudio' "
-                            "uses a local Stable Audio Open 1.0 model (shares venv-audioldm2; "
-                            "44.1 kHz stereo, up to 47s per clip; HF license-gated weights) and "
-                            "writes SFX/<slug>.stableaudio.mp3."
+                            "Backend for SFX/music/ambience generation, independent of the "
+                            "dialogue --backend. 'elevenlabs' (default) calls the ElevenLabs "
+                            "Sound Effects API. 'mmaudio' runs MMAudio locally in "
+                            "venv-mmaudio — free and GPU-accelerated, writes backend-tagged "
+                            "assets to SFX/<slug>.mmaudio.mp3. MMAudio's weights are "
+                            "CC BY-NC 4.0 (non-commercial only) and require "
+                            "--mmaudio-accept-noncommercial."
                         ))
-    parser.add_argument("--audioldm2-python", default=None, metavar="PATH",
+    parser.add_argument("--mmaudio-python", default=None, metavar="PATH",
                         help=(
-                            "Path to the Python executable in the AudioLDM 2 venv "
-                            "(default: auto-detect ./venv-audioldm2/bin/python3). "
-                            "Used only with --sfx-backend audioldm2."
+                            "Path to the Python executable in the MMAudio venv "
+                            "(default: auto-detect ./venv-mmaudio/bin/python3). "
+                            "Used only with --sfx-backend mmaudio."
                         ))
-    parser.add_argument("--audioldm2-guidance", type=float, default=3.5, metavar="FLOAT",
+    parser.add_argument("--mmaudio-duration", type=float, default=8.0, metavar="FLOAT",
                         help=(
-                            "AudioLDM 2 guidance scale — how closely generation follows the "
-                            "prompt (default: 3.5). Used only with --sfx-backend audioldm2."
+                            "Generation length in seconds before trimming (default: 8.0, "
+                            "MMAudio's training duration). The result is trimmed to each "
+                            "cue's duration_seconds; generating at the native length and "
+                            "trimming gives better audio than asking for a short clip."
                         ))
-    parser.add_argument("--audioldm2-steps", type=int, default=200, metavar="INT",
+    parser.add_argument("--mmaudio-cfg", type=float, default=4.5, metavar="FLOAT",
+                        help="MMAudio classifier-free guidance strength (default: 4.5).")
+    parser.add_argument("--mmaudio-steps", type=int, default=25, metavar="INT",
+                        help="MMAudio flow-matching sampling steps (default: 25).")
+    parser.add_argument("--mmaudio-negative-prompt", default="", metavar="STR",
+                        help="Optional MMAudio negative prompt (default: none).")
+    parser.add_argument("--mmaudio-seed", type=int, default=None, metavar="INT",
+                        help="MMAudio reproducibility seed (default: nondeterministic).")
+    parser.add_argument("--mmaudio-accept-noncommercial", action="store_true",
                         help=(
-                            "AudioLDM 2 diffusion inference steps — higher is slower but "
-                            "cleaner (default: 200). Used only with --sfx-backend audioldm2."
+                            "Acknowledge that MMAudio's weights are CC BY-NC 4.0 "
+                            "(NON-COMMERCIAL USE ONLY) and that generated audio must not "
+                            "appear in a monetised production. Required for "
+                            "--sfx-backend mmaudio."
                         ))
-    parser.add_argument("--audioldm2-negative-prompt", default="low quality, noise",
-                        metavar="STR",
-                        help=(
-                            "AudioLDM 2 negative prompt (default: 'low quality, noise'). "
-                            "Used only with --sfx-backend audioldm2."
-                        ))
-    parser.add_argument("--stableaudio-python", default=None, metavar="PATH",
-                        help=(
-                            "Path to the Python executable for the Stable Audio backend "
-                            "(default: auto-detect the shared venv-audioldm2 Python — "
-                            "StableAudioPipeline ships in the same diffusers install). "
-                            "Used only with --sfx-backend stableaudio."
-                        ))
-    parser.add_argument("--stableaudio-guidance", type=float, default=7.0, metavar="FLOAT",
-                        help=(
-                            "Stable Audio guidance scale — how closely generation follows the "
-                            "prompt (default: 7.0). Used only with --sfx-backend stableaudio."
-                        ))
-    parser.add_argument("--stableaudio-steps", type=int, default=100, metavar="INT",
-                        help=(
-                            "Stable Audio diffusion inference steps — higher is slower but "
-                            "cleaner (default: 100). Used only with --sfx-backend stableaudio."
-                        ))
-    parser.add_argument("--stableaudio-negative-prompt", default="low quality, average quality",
-                        metavar="STR",
-                        help=(
-                            "Stable Audio negative prompt (default: 'low quality, average "
-                            "quality'). Used only with --sfx-backend stableaudio."
-                        ))
-    parser.add_argument("--stableaudio-seed", type=int, default=None, metavar="INT",
-                        help=(
-                            "Reproducibility seed for Stable Audio generation (default: "
-                            "nondeterministic). Used only with --sfx-backend stableaudio."
-                        ))
+
     return parser
 
 
@@ -238,25 +217,17 @@ def main() -> None:
         if args.dry_run:
             dry_run_sfx(entries, sfx_config_data, stems_dir, backend_name=args.sfx_backend)
         else:
-            if args.sfx_backend == "stableaudio":
-                sfx_backend = make_sfx_backend(
-                    "stableaudio",
-                    client=client,
-                    stableaudio_python=args.stableaudio_python,
-                    guidance=args.stableaudio_guidance,
-                    steps=args.stableaudio_steps,
-                    negative_prompt=args.stableaudio_negative_prompt,
-                    seed=args.stableaudio_seed,
-                )
-            else:
-                sfx_backend = make_sfx_backend(
-                    args.sfx_backend,
-                    client=client,
-                    audioldm2_python=args.audioldm2_python,
-                    guidance=args.audioldm2_guidance,
-                    steps=args.audioldm2_steps,
-                    negative_prompt=args.audioldm2_negative_prompt,
-                )
+            sfx_backend = make_sfx_backend(
+                args.sfx_backend,
+                client=client,
+                mmaudio_python=args.mmaudio_python,
+                mmaudio_cfg=args.mmaudio_cfg,
+                mmaudio_steps=args.mmaudio_steps,
+                mmaudio_negative_prompt=args.mmaudio_negative_prompt,
+                mmaudio_seed=args.mmaudio_seed,
+                mmaudio_duration=args.mmaudio_duration,
+                accept_noncommercial=args.mmaudio_accept_noncommercial,
+            )
             try:
                 generate_sfx(
                     entries, sfx_config_data, stems_dir, client=client,

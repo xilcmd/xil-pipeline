@@ -4,24 +4,20 @@
 
 """Pluggable backends for SFX / music / ambience asset generation.
 
-The pipeline historically generated every non-silence sound effect through the
-ElevenLabs Sound Effects API.  This module introduces a thin :class:`SfxBackend`
-adapter so the shared generation path in :mod:`xil_pipeline.sfx_common` no longer
-talks to the ElevenLabs client directly.  Three backends are provided:
+The pipeline generates every non-silence sound effect through the ElevenLabs
+Sound Effects API.  This module keeps a thin :class:`SfxBackend` adapter so the
+shared generation path in :mod:`xil_pipeline.sfx_common` does not talk to the
+ElevenLabs client directly:
 
 * :class:`ElevenLabsSfxBackend` — wraps ``client.text_to_sound_effects.convert``
   with stream-to-temp, atomic rename, and 429 / 5xx / network retry handling.
-* :class:`AudioLDM2SfxBackend` — drives a local AudioLDM 2 Large diffusion model
-  via a persistent worker subprocess (:mod:`xil_pipeline.audioldm2_worker`) in a
-  dedicated ``venv-audioldm2`` virtualenv.  Free, GPU-accelerated, no API credits.
-* :class:`StableAudioSfxBackend` — drives a local Stable Audio Open 1.0 model
-  (:mod:`xil_pipeline.stableaudio_worker`); 44.1 kHz stereo output, ≤47.55 s per
-  clip.  Shares ``venv-audioldm2`` (``StableAudioPipeline`` ships in the same
-  diffusers install).  Weights are license-gated on HuggingFace — accept the
-  license at the model page and authenticate via ``HF_TOKEN`` or
-  ``huggingface-cli login`` once.
 
-All expose the same minimal contract::
+Two local diffusion backends (AudioLDM 2, Stable Audio Open) were removed in #62
+after both trials produced unusable audio.  The adapter and factory survive them
+deliberately — they are the seam a future backend plugs into, and collapsing them
+into a direct ElevenLabs call would have to be undone to add one.
+
+The contract is::
 
     backend.generate_to(out_path, prompt, duration_seconds, prompt_influence)
     backend.close()
@@ -41,10 +37,10 @@ import time
 from typing import Protocol, runtime_checkable
 
 import httpx
+from elevenlabs.client import ElevenLabs
 from elevenlabs.core.api_error import ApiError
 
 from xil_pipeline.log_config import get_logger
-from xil_pipeline.models import resolve_venv_python
 
 logger = get_logger(__name__)
 
@@ -98,7 +94,7 @@ class ElevenLabsSfxBackend:
         if self._client is None:
             raise ValueError(
                 "ElevenLabs client is required to generate SFX "
-                "(set ELEVENLABS_API_KEY or use --sfx-backend audioldm2)."
+                "(set ELEVENLABS_API_KEY)."
             )
         logger.info("   [api] text-to-sound-effects → %r (%.1fs)", prompt, duration_seconds)
         tmp_path = None
@@ -160,11 +156,11 @@ class ElevenLabsSfxBackend:
         return
 
 
-# ── Local diffusion workers ───────────────────────────────────────────────────
+# ── Local model workers ───────────────────────────────────────────────────────
 
 
-class _DiffusionWorkerClient:
-    """Persistent subprocess bridge to a local diffusion worker script.
+class _WorkerClient:
+    """Persistent subprocess bridge to a local model worker script.
 
     Subclasses set the class attributes ``_WORKER`` (worker script path,
     monkeypatched to a stub in tests), ``_LABEL`` (log/error prefix), and
@@ -175,6 +171,10 @@ class _DiffusionWorkerClient:
     across all generation requests.  Communication uses newline-delimited JSON
     on stdin/stdout, mirroring
     :class:`xil_pipeline.XILP002_producer._ChatterboxClient`.
+
+    Originally written for the audioldm2/stableaudio trials removed in #62 and
+    restored for MMAudio in #64; the name is model-agnostic because MMAudio is
+    flow-matching rather than diffusion.
     """
 
     _WORKER: str
@@ -268,125 +268,142 @@ class _DiffusionWorkerClient:
             self._proc = None
 
 
-class _AudioLDM2Client(_DiffusionWorkerClient):
-    """Subprocess bridge to the AudioLDM 2 worker (:mod:`xil_pipeline.audioldm2_worker`)."""
 
-    _WORKER = os.path.join(os.path.dirname(__file__), "audioldm2_worker.py")
-    _LABEL = "AudioLDM 2"
+class _MMAudioClient(_WorkerClient):
+    """Worker bridge for MMAudio text-to-audio generation."""
+
+    _WORKER = os.path.join(os.path.dirname(__file__), "mmaudio_worker.py")
+    _LABEL = "MMAudio"
     _READY_HINT = (
-        "Check that venv-audioldm2 is set up (diffusers, transformers, "
-        "torch, scipy, soundfile, pydub) and the model is downloaded."
+        "Check that venv-mmaudio is set up (git clone hkchengrex/MMAudio, then "
+        "pip install -e .) and the weights have downloaded."
     )
 
-
-class _StableAudioClient(_DiffusionWorkerClient):
-    """Subprocess bridge to the Stable Audio Open worker (:mod:`xil_pipeline.stableaudio_worker`)."""
-
-    _WORKER = os.path.join(os.path.dirname(__file__), "stableaudio_worker.py")
-    _LABEL = "Stable Audio"
-    _READY_HINT = (
-        "Check that venv-audioldm2 is set up (the stableaudio backend shares it) "
-        "and that the license-gated weights are accessible: accept the license at "
-        "https://huggingface.co/stabilityai/stable-audio-open-1.0 and set HF_TOKEN "
-        "or run `huggingface-cli login`."
-    )
-
-    def __init__(
-        self,
-        python_path: str,
-        device: str = "cuda",
-        guidance: float = 7.0,
-        steps: int = 100,
-        negative_prompt: str = "low quality, average quality",
-        seed: int | None = None,
-    ) -> None:
-        super().__init__(
-            python_path,
-            device=device,
-            guidance=guidance,
-            steps=steps,
-            negative_prompt=negative_prompt,
-        )
+    def __init__(self, python_path: str, device: str = "cuda",
+                 guidance: float = 4.5, steps: int = 25,
+                 negative_prompt: str = "", seed: int | None = None) -> None:
+        super().__init__(python_path, device, guidance, steps, negative_prompt)
         self._seed = seed
 
     def _request_extras(self) -> dict:
-        """Add the reproducibility seed to every request (``None`` = nondeterministic)."""
         return {"seed": self._seed}
 
 
-class AudioLDM2SfxBackend:
-    """SFX backend backed by a local AudioLDM 2 Large diffusion model.
+class MMAudioSfxBackend:
+    """Local SFX backend backed by MMAudio (text-to-audio mode).
 
-    Adherence to the prompt is governed by ``guidance``/``steps`` (configured
-    at construction), so the ElevenLabs-specific ``prompt_influence`` argument
-    is accepted for interface compatibility but ignored.
+    **The model weights are CC BY-NC 4.0 — non-commercial use only.**  The code
+    is MIT, the checkpoints are not.  Audio produced here must not end up in a
+    monetised episode.  Construction therefore requires an explicit
+    ``accept_noncommercial=True``, every session logs the constraint, and
+    generated assets carry it in their ID3 comment (:attr:`asset_comment`) on
+    top of the ``.mmaudio`` filename infix that
+    :func:`xil_pipeline.sfx_common.shared_sfx_path` already applies.  Between
+    the two, an asset stays identifiable even if it is renamed.
+
+    Duration handling is the interesting part.  MMAudio is trained at 8 seconds
+    and the project warns that a large deviation degrades quality, but SFX cues
+    here are typically shorter.  So generation always runs at the native
+    duration and the result is **trimmed afterwards** to the caller's
+    ``duration_seconds``.  The trim cannot be left to the mixer: for a
+    prompt-generated cue ``duration_seconds`` is the *requested generation
+    length* and there is no mix-time clip (that only applies to ``source=``
+    cues), so an untrimmed asset would simply play long.
     """
 
-    name = "audioldm2"
+    name = "mmaudio"
 
-    def __init__(self, client: _AudioLDM2Client) -> None:
+    #: Written into every generated asset's ID3 comment.
+    asset_comment = (
+        "Generated by MMAudio (hkchengrex/MMAudio). Model weights are "
+        "CC BY-NC 4.0 — NON-COMMERCIAL USE ONLY."
+    )
+
+    #: MMAudio's training duration. Generating here and trimming beats asking
+    #: the model for a short clip directly.
+    NATIVE_DURATION_S = 8.0
+
+    def __init__(self, client: _MMAudioClient, *,
+                 accept_noncommercial: bool = False,
+                 native_duration: float = NATIVE_DURATION_S) -> None:
+        if not accept_noncommercial:
+            raise ValueError(
+                "MMAudio weights are CC BY-NC 4.0 (non-commercial only). Pass "
+                "--mmaudio-accept-noncommercial to acknowledge that generated "
+                "audio must not be used in a monetised production."
+            )
         self._client = client
+        self._native_duration = native_duration
+        logger.warning(
+            "MMAudio weights are CC BY-NC 4.0 — NON-COMMERCIAL USE ONLY. "
+            "Generated assets are tagged .mmaudio and carry the notice in ID3."
+        )
 
     def generate_to(
         self,
         out_path: str,
         prompt: str,
         duration_seconds: float,
-        prompt_influence: float,  # noqa: ARG002 — AudioLDM 2 uses guidance_scale instead
+        prompt_influence: float,
     ) -> None:
-        logger.info("   [audioldm2] generating → %r (%.1fs)", prompt, duration_seconds)
-        self._client.generate(prompt, out_path, duration_seconds)
-        logger.info("   [audioldm2] saved %s", os.path.basename(out_path))
+        """Generate at MMAudio's native duration, then trim to *duration_seconds*.
+
+        ``prompt_influence`` has no direct MMAudio analogue; it is not silently
+        dropped — the client's ``cfg_strength`` plays the equivalent role and is
+        set from ``--mmaudio-cfg``.
+        """
+        target = max(0.0, float(duration_seconds or 0.0))
+        gen_seconds = max(self._native_duration, target)
+        logger.info(
+            "   [mmaudio] %r — generating %.1fs (native), trimming to %.1fs",
+            prompt, gen_seconds, target or gen_seconds,
+        )
+        self._client.generate(prompt, out_path, gen_seconds)
+        if target and target < gen_seconds:
+            _trim_audio_file(out_path, target)
 
     def close(self) -> None:
         self._client.close()
 
 
-class StableAudioSfxBackend:
-    """SFX backend backed by a local Stable Audio Open 1.0 model.
+def _trim_audio_file(path: str, seconds: float) -> None:
+    """Trim *path* in place to the first *seconds*, atomically."""
+    from pydub import AudioSegment
 
-    Adherence to the prompt is governed by ``guidance``/``steps`` (configured
-    at construction), so the ElevenLabs-specific ``prompt_influence`` argument
-    is accepted for interface compatibility but ignored.
-    """
-
-    name = "stableaudio"
-
-    def __init__(self, client: _StableAudioClient) -> None:
-        self._client = client
-
-    def generate_to(
-        self,
-        out_path: str,
-        prompt: str,
-        duration_seconds: float,
-        prompt_influence: float,  # noqa: ARG002 — Stable Audio uses guidance_scale instead
-    ) -> None:
-        logger.info("   [stableaudio] generating → %r (%.1fs)", prompt, duration_seconds)
-        self._client.generate(prompt, out_path, duration_seconds)
-        logger.info("   [stableaudio] saved %s", os.path.basename(out_path))
-
-    def close(self) -> None:
-        self._client.close()
+    clip = AudioSegment.from_file(path)
+    target_ms = int(seconds * 1000)
+    if len(clip) <= target_ms:
+        return
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".mp3")
+    os.close(tmp_fd)
+    try:
+        clip[:target_ms].export(tmp_path, format="mp3")
+        os.replace(tmp_path, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp_path)
+        raise
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 
-def _find_audioldm2_python(explicit: str | None, flag: str = "--audioldm2-python") -> str:
-    """Resolve the venv-audioldm2 Python via :func:`resolve_venv_python`.
+def _find_mmaudio_python(explicit: str | None) -> str:
+    """Resolve the venv-mmaudio Python via :func:`resolve_venv_python`.
 
-    Resolution: explicit path → ``$XIL_CODEROOT/venv-audioldm2`` (exclusive when set)
-    → auto-detect at workspace root, then repo root.  Exits with an actionable error
-    (naming *flag*) if none is found.  The stableaudio backend shares this venv.
+    Exits with an actionable error when it cannot be found — MMAudio installs
+    from a git clone rather than PyPI, so the message names that step.
     """
-    py = resolve_venv_python("venv-audioldm2", explicit)
+    from xil_pipeline.models import resolve_venv_python
+
+    py = resolve_venv_python("venv-mmaudio", explicit)
     if py is None:
         logger.error(
-            "Cannot find the venv-audioldm2 Python. Pass %s PATH, "
-            "set XIL_CODEROOT to the directory containing venv-audioldm2/, "
-            "or create venv-audioldm2/ in the workspace or repo root.",
-            flag,
+            "Cannot find the venv-mmaudio Python. Pass --mmaudio-python PATH, "
+            "set XIL_CODEROOT to the directory containing venv-mmaudio/, or "
+            "create it: python -m venv venv-mmaudio && "
+            "git clone https://github.com/hkchengrex/MMAudio && "
+            "venv-mmaudio/bin/pip install -e MMAudio"
         )
         sys.exit(1)
     return py
@@ -394,56 +411,71 @@ def _find_audioldm2_python(explicit: str | None, flag: str = "--audioldm2-python
 
 def make_sfx_backend(
     name: str,
-    client=None,
+    client: ElevenLabs | None = None,
     *,
-    audioldm2_python: str | None = None,
-    stableaudio_python: str | None = None,
+    mmaudio_python: str | None = None,
     device: str = "cuda",
-    guidance: float = 3.5,
-    steps: int = 200,
-    negative_prompt: str = "low quality, noise",
-    seed: int | None = None,
+    mmaudio_cfg: float = 4.5,
+    mmaudio_steps: int = 25,
+    mmaudio_negative_prompt: str = "",
+    mmaudio_seed: int | None = None,
+    mmaudio_duration: float = MMAudioSfxBackend.NATIVE_DURATION_S,
+    accept_noncommercial: bool = False,
 ) -> SfxBackend:
     """Construct an :class:`SfxBackend` for the given backend *name*.
 
+    ``"elevenlabs"`` calls the Sound Effects API; ``"mmaudio"`` runs MMAudio
+    locally in ``venv-mmaudio`` (**CC BY-NC 4.0 weights — non-commercial only**,
+    hence ``accept_noncommercial``).
+
+    The factory is kept rather than inlined because it is the seam a backend
+    plugs into — the audioldm2/stableaudio trials were removed through it in #62
+    and MMAudio was added through it in #64 without touching call sites.
+
     Args:
-        name: ``"elevenlabs"``, ``"audioldm2"``, or ``"stableaudio"``.
+        name: ``"elevenlabs"`` or ``"mmaudio"``.
         client: ElevenLabs client (used only for ``"elevenlabs"``).
-        audioldm2_python: Explicit path to the venv-audioldm2 Python; auto-detected
-            when ``None``.
-        stableaudio_python: Explicit Python for the stableaudio backend; defaults
-            to the same venv-audioldm2 resolution (shared venv).
-        device: ``"cuda"`` (default) or ``"cpu"`` for the local backends.
-        guidance: ``guidance_scale`` for the local backends (callers pass the
-            backend-appropriate value; defaults reflect audioldm2).
-        steps: ``num_inference_steps`` for the local backends.
-        negative_prompt: Negative prompt for the local backends.
-        seed: Reproducibility seed (stableaudio only; ``None`` = nondeterministic).
+        mmaudio_python: Explicit venv-mmaudio interpreter; auto-detected when ``None``.
+        device: ``"cuda"`` (default) or ``"cpu"`` for the local backend.
+        mmaudio_cfg: Classifier-free guidance strength.
+        mmaudio_steps: Flow-matching sampling steps.
+        mmaudio_negative_prompt: Optional negative prompt.
+        mmaudio_seed: Reproducibility seed (``None`` = nondeterministic).
+        mmaudio_duration: Generation length before trimming (default: the 8 s
+            training duration).
+        accept_noncommercial: Required acknowledgement of the CC BY-NC weights.
 
     Returns:
         A ready-to-use backend instance.
+
+    Raises:
+        ValueError: For an unknown name, or for ``"mmaudio"`` without
+            ``accept_noncommercial`` — a stale script must fail loudly rather
+            than quietly producing audio that cannot be used commercially.
     """
     if name == "elevenlabs":
         return ElevenLabsSfxBackend(client)
-    if name == "audioldm2":
-        py = _find_audioldm2_python(audioldm2_python)
-        worker_client = _AudioLDM2Client(
-            python_path=py,
+    if name == "mmaudio":
+        # Check the licence acknowledgement BEFORE resolving the venv: someone
+        # who has not accepted the CC BY-NC terms should be told that, not sent
+        # off to install a venv they may then be unable to use.
+        if not accept_noncommercial:
+            raise ValueError(
+                "MMAudio weights are CC BY-NC 4.0 (non-commercial only). Pass "
+                "--mmaudio-accept-noncommercial to acknowledge that generated "
+                "audio must not be used in a monetised production."
+            )
+        worker = _MMAudioClient(
+            python_path=_find_mmaudio_python(mmaudio_python),
             device=device,
-            guidance=guidance,
-            steps=steps,
-            negative_prompt=negative_prompt,
+            guidance=mmaudio_cfg,
+            steps=mmaudio_steps,
+            negative_prompt=mmaudio_negative_prompt,
+            seed=mmaudio_seed,
         )
-        return AudioLDM2SfxBackend(worker_client)
-    if name == "stableaudio":
-        py = _find_audioldm2_python(stableaudio_python, flag="--stableaudio-python")
-        sa_client = _StableAudioClient(
-            python_path=py,
-            device=device,
-            guidance=guidance,
-            steps=steps,
-            negative_prompt=negative_prompt,
-            seed=seed,
+        return MMAudioSfxBackend(
+            worker,
+            accept_noncommercial=accept_noncommercial,
+            native_duration=mmaudio_duration,
         )
-        return StableAudioSfxBackend(sa_client)
     raise ValueError(f"Unknown sfx backend: {name!r}")

@@ -13,17 +13,16 @@ import json
 import os
 import sys
 import textwrap
+import unittest.mock
 
 import pytest
 from pydub import AudioSegment
 
 from xil_pipeline.sfx_backends import (
-    AudioLDM2SfxBackend,
     ElevenLabsSfxBackend,
+    MMAudioSfxBackend,
     SfxBackend,
-    StableAudioSfxBackend,
-    _AudioLDM2Client,
-    _StableAudioClient,
+    _MMAudioClient,
     make_sfx_backend,
 )
 from xil_pipeline.sfx_common import generate_sfx, shared_sfx_path
@@ -61,50 +60,23 @@ class TestMakeSfxBackend:
         assert isinstance(backend, ElevenLabsSfxBackend)
         assert backend.name == "elevenlabs"
 
-    def test_audioldm2_backend_explicit_python(self):
-        # Explicit python path skips venv auto-detection (no sys.exit).
-        backend = make_sfx_backend("audioldm2", audioldm2_python=sys.executable)
-        assert isinstance(backend, AudioLDM2SfxBackend)
-        assert backend.name == "audioldm2"
-
-    def test_audioldm2_forwards_params(self):
-        backend = make_sfx_backend(
-            "audioldm2", audioldm2_python=sys.executable,
-            guidance=5.0, steps=42, negative_prompt="hiss",
-        )
-        client = backend._client
-        assert client._guidance == 5.0
-        assert client._steps == 42
-        assert client._negative_prompt == "hiss"
-
-    def test_stableaudio_backend_explicit_python(self):
-        backend = make_sfx_backend("stableaudio", stableaudio_python=sys.executable)
-        assert isinstance(backend, StableAudioSfxBackend)
-        assert backend.name == "stableaudio"
-
-    def test_stableaudio_forwards_params(self):
-        backend = make_sfx_backend(
-            "stableaudio", stableaudio_python=sys.executable,
-            guidance=6.5, steps=80, negative_prompt="hum", seed=42,
-        )
-        client = backend._client
-        assert client._python == sys.executable
-        assert client._guidance == 6.5
-        assert client._steps == 80
-        assert client._negative_prompt == "hum"
-        assert client._seed == 42
-
     def test_unknown_backend_raises(self):
         with pytest.raises(ValueError, match="Unknown sfx backend"):
             make_sfx_backend("nope")
 
-    def test_backends_satisfy_protocol(self):
-        el = make_sfx_backend("elevenlabs", client=object())
-        a2 = make_sfx_backend("audioldm2", audioldm2_python=sys.executable)
-        sa = make_sfx_backend("stableaudio", stableaudio_python=sys.executable)
-        assert isinstance(el, SfxBackend)
-        assert isinstance(a2, SfxBackend)
-        assert isinstance(sa, SfxBackend)
+    @pytest.mark.parametrize("removed", ["audioldm2", "stableaudio"])
+    def test_removed_backends_raise(self, removed):
+        """The local diffusion backends were removed in #62.
+
+        They must raise rather than silently falling back to ElevenLabs — a
+        stale script asking for a free local model should not quietly start
+        spending API credits.
+        """
+        with pytest.raises(ValueError, match="Unknown sfx backend"):
+            make_sfx_backend(removed, client=object())
+
+    def test_backend_satisfies_protocol(self):
+        assert isinstance(make_sfx_backend("elevenlabs", client=object()), SfxBackend)
 
 
 # ── ElevenLabsSfxBackend ─────────────────────────────────────────────────────
@@ -141,125 +113,6 @@ class TestElevenLabsSfxBackend:
         assert client.calls[0]["text"] == "a door opening"
         assert client.calls[0]["duration_seconds"] == 2.0
         assert client.calls[0]["prompt_influence"] == 0.3
-
-
-# ── AudioLDM2 client subprocess framing (stub worker) ────────────────────────
-
-
-_STUB_WORKER_OK = textwrap.dedent(
-    """
-    import json, os, sys
-    print(json.dumps({"ready": True, "sr": 16000, "device": "cpu"}), flush=True)
-    for raw in sys.stdin:
-        raw = raw.strip()
-        if not raw:
-            continue
-        req = json.loads(raw)
-        out = req["out_path"]
-        os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
-        with open(out, "w", encoding="utf-8") as f:
-            json.dump(req, f)
-        print(json.dumps({"done": True}), flush=True)
-    """
-)
-
-_STUB_WORKER_ERR = textwrap.dedent(
-    """
-    import json, sys
-    print(json.dumps({"ready": True, "sr": 16000}), flush=True)
-    for raw in sys.stdin:
-        if raw.strip():
-            print(json.dumps({"error": "boom"}), flush=True)
-    """
-)
-
-
-def _write_stub(tmp_path, body):
-    stub = tmp_path / "stub_worker.py"
-    stub.write_text(body, encoding="utf-8")
-    return str(stub)
-
-
-class TestAudioLDM2Client:
-    def test_request_framing_and_response(self, tmp_path):
-        client = _AudioLDM2Client(
-            python_path=sys.executable, device="cpu",
-            guidance=4.0, steps=10, negative_prompt="hiss",
-        )
-        client._WORKER = _write_stub(tmp_path, _STUB_WORKER_OK)
-        out = tmp_path / "out" / "asset.mp3"
-        client.generate("dog barking", str(out), 3.0)
-        try:
-            assert out.exists()
-            sent = json.loads(out.read_text(encoding="utf-8"))
-            assert sent["prompt"] == "dog barking"
-            assert sent["duration_seconds"] == 3.0
-            assert sent["guidance_scale"] == 4.0
-            assert sent["num_inference_steps"] == 10
-            assert sent["negative_prompt"] == "hiss"
-        finally:
-            client.close()
-
-    def test_worker_error_raises(self, tmp_path):
-        client = _AudioLDM2Client(python_path=sys.executable, device="cpu")
-        client._WORKER = _write_stub(tmp_path, _STUB_WORKER_ERR)
-        try:
-            with pytest.raises(RuntimeError, match="AudioLDM 2: boom"):
-                client.generate("anything", str(tmp_path / "x.mp3"), 1.0)
-        finally:
-            client.close()
-
-    def test_close_is_idempotent(self, tmp_path):
-        client = _AudioLDM2Client(python_path=sys.executable, device="cpu")
-        client.close()  # never started — no-op
-        client.close()
-
-
-# ── StableAudio client subprocess framing (stub worker) ──────────────────────
-
-
-class TestStableAudioClient:
-    def test_request_framing_includes_seed(self, tmp_path):
-        client = _StableAudioClient(
-            python_path=sys.executable, device="cpu",
-            guidance=6.0, steps=50, negative_prompt="hum", seed=7,
-        )
-        client._WORKER = _write_stub(tmp_path, _STUB_WORKER_OK)
-        out = tmp_path / "out" / "asset.mp3"
-        client.generate("rain on a tin roof", str(out), 4.0)
-        try:
-            assert out.exists()
-            sent = json.loads(out.read_text(encoding="utf-8"))
-            assert sent["prompt"] == "rain on a tin roof"
-            assert sent["duration_seconds"] == 4.0
-            assert sent["guidance_scale"] == 6.0
-            assert sent["num_inference_steps"] == 50
-            assert sent["negative_prompt"] == "hum"
-            assert sent["seed"] == 7
-        finally:
-            client.close()
-
-    def test_worker_error_raises_with_label(self, tmp_path):
-        client = _StableAudioClient(python_path=sys.executable, device="cpu")
-        client._WORKER = _write_stub(tmp_path, _STUB_WORKER_ERR)
-        try:
-            with pytest.raises(RuntimeError, match="Stable Audio: boom"):
-                client.generate("anything", str(tmp_path / "x.mp3"), 1.0)
-        finally:
-            client.close()
-
-    def test_close_is_idempotent(self, tmp_path):
-        client = _StableAudioClient(python_path=sys.executable, device="cpu")
-        client.close()  # never started — no-op
-        client.close()
-
-    def test_worker_override_does_not_leak_to_audioldm2(self, tmp_path, monkeypatch):
-        # Regression for the _DiffusionWorkerClient base-class refactor:
-        # patching the stableaudio worker path must not redirect audioldm2.
-        monkeypatch.setattr(
-            _StableAudioClient, "_WORKER", _write_stub(tmp_path, _STUB_WORKER_OK)
-        )
-        assert _AudioLDM2Client._WORKER.endswith("audioldm2_worker.py")
 
 
 # ── generate_sfx end-to-end with a fake local backend ────────────────────────
@@ -349,3 +202,180 @@ class TestGenerateSfxWithBackend:
 
         assert (tmp_path / "SFX" / "sfx_test-tone.mp3").exists()
         assert not (tmp_path / "SFX" / "sfx_test-tone.audioldm2.mp3").exists()
+
+
+# ── MMAudio ──────────────────────────────────────────────────────────────────
+
+_STUB_WORKER_OK = textwrap.dedent(
+    """
+    import json, os, sys
+    print(json.dumps({"ready": True, "sr": 44100, "device": "cpu"}), flush=True)
+    for raw in sys.stdin:
+        raw = raw.strip()
+        if not raw:
+            continue
+        req = json.loads(raw)
+        out = req["out_path"]
+        os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(req, f)
+        print(json.dumps({"done": True}), flush=True)
+    """
+)
+
+_STUB_WORKER_ERR = textwrap.dedent(
+    """
+    import json, sys
+    print(json.dumps({"ready": True, "sr": 44100}), flush=True)
+    for raw in sys.stdin:
+        if raw.strip():
+            print(json.dumps({"error": "boom"}), flush=True)
+    """
+)
+
+
+def _write_stub(tmp_path, body):
+    stub = tmp_path / "stub_worker.py"
+    stub.write_text(body, encoding="utf-8")
+    return str(stub)
+
+
+class TestMMAudioLicenceGate:
+    """MMAudio's weights are CC BY-NC 4.0 — construction must be deliberate.
+
+    Audio that cannot legally appear in a monetised episode must not be
+    generatable by accident.
+    """
+
+    def test_refuses_without_acknowledgement(self):
+        with pytest.raises(ValueError, match="CC BY-NC 4.0"):
+            MMAudioSfxBackend(object())
+
+    def test_builds_with_acknowledgement(self):
+        backend = MMAudioSfxBackend(object(), accept_noncommercial=True)
+        assert backend.name == "mmaudio"
+
+    def test_factory_refuses_without_acknowledgement(self):
+        with unittest.mock.patch(
+            "xil_pipeline.sfx_backends._find_mmaudio_python", return_value=sys.executable
+        ), pytest.raises(ValueError, match="CC BY-NC 4.0"):
+            make_sfx_backend("mmaudio")
+
+    def test_asset_comment_carries_the_licence(self):
+        backend = MMAudioSfxBackend(object(), accept_noncommercial=True)
+        assert "NON-COMMERCIAL" in backend.asset_comment.upper()
+        assert "CC BY-NC" in backend.asset_comment
+
+    def test_satisfies_the_backend_protocol(self):
+        assert isinstance(MMAudioSfxBackend(object(), accept_noncommercial=True), SfxBackend)
+
+
+class TestMMAudioDuration:
+    """Generate at the training duration, then trim.
+
+    MMAudio is trained at 8 s and warns that deviation degrades quality, but
+    the trim cannot be left to the mixer: for a prompt-generated cue
+    duration_seconds is the *generation length* and there is no mix-time clip
+    (that only applies to source= cues). An untrimmed asset would play long.
+    """
+
+    class _RecordingClient:
+        def __init__(self):
+            self.requested = None
+
+        def generate(self, prompt, out_path, duration_seconds):
+            self.requested = duration_seconds
+            AudioSegment.silent(duration=int(duration_seconds * 1000)).export(
+                out_path, format="mp3"
+            )
+
+        def close(self):
+            pass
+
+    def test_requests_native_duration_not_the_cue_length(self, tmp_path):
+        client = self._RecordingClient()
+        backend = MMAudioSfxBackend(client, accept_noncommercial=True)
+        out = str(tmp_path / "cue.mp3")
+
+        backend.generate_to(out, "a door slam", 5.0, 0.3)
+
+        assert client.requested == 8.0, "should generate at the training duration"
+
+    def test_result_is_trimmed_to_the_cue_length(self, tmp_path):
+        backend = MMAudioSfxBackend(self._RecordingClient(), accept_noncommercial=True)
+        out = str(tmp_path / "cue.mp3")
+
+        backend.generate_to(out, "a door slam", 5.0, 0.3)
+
+        length_s = len(AudioSegment.from_file(out)) / 1000.0
+        assert 4.5 < length_s < 5.5, f"expected ~5s after trim, got {length_s:.2f}s"
+
+    def test_longer_cue_than_native_is_not_truncated(self, tmp_path):
+        """A 12s cue must generate 12s, not be clipped back to 8s."""
+        client = self._RecordingClient()
+        backend = MMAudioSfxBackend(client, accept_noncommercial=True)
+        out = str(tmp_path / "cue.mp3")
+
+        backend.generate_to(out, "long rain", 12.0, 0.3)
+
+        assert client.requested == 12.0
+        assert len(AudioSegment.from_file(out)) / 1000.0 > 11.0
+
+
+class TestMMAudioClientFraming:
+    """Worker subprocess protocol, against a stub script."""
+
+    def _client(self, tmp_path, body):
+        client = _MMAudioClient(python_path=sys.executable, device="cpu", seed=7)
+        client._WORKER = _write_stub(tmp_path, body)
+        return client
+
+    def test_request_reaches_the_worker(self, tmp_path):
+        client = self._client(tmp_path, _STUB_WORKER_OK)
+        out = tmp_path / "out.bin"
+        try:
+            client.generate("a bell", str(out), 8.0)
+        finally:
+            client.close()
+        sent = json.loads(out.read_text(encoding="utf-8"))
+        assert sent["prompt"] == "a bell"
+        assert sent["duration_seconds"] == 8.0
+        assert sent["seed"] == 7, "seed must ride along via _request_extras"
+
+    def test_worker_error_is_raised(self, tmp_path):
+        client = self._client(tmp_path, _STUB_WORKER_ERR)
+        try:
+            with pytest.raises(RuntimeError, match="boom"):
+                client.generate("a bell", str(tmp_path / "x.bin"), 8.0)
+        finally:
+            client.close()
+
+    def test_close_is_idempotent(self, tmp_path):
+        client = self._client(tmp_path, _STUB_WORKER_OK)
+        client.generate("a bell", str(tmp_path / "y.bin"), 8.0)
+        client.close()
+        client.close()
+
+    def test_worker_script_ships_with_the_package(self):
+        assert _MMAudioClient._WORKER.endswith("mmaudio_worker.py")
+        assert os.path.exists(_MMAudioClient._WORKER)
+
+
+class TestMMAudioAssetTagging:
+    def test_shared_path_gets_the_backend_infix(self, tmp_path):
+        """The filename infix is how an MMAudio asset stays identifiable."""
+        path = shared_sfx_path(str(tmp_path), "SFX: DOOR SLAM", backend="mmaudio")
+        assert path.endswith(".mmaudio.mp3")
+
+    def test_licence_is_checked_before_venv_resolution(self):
+        """Ordering matters for the error the user actually sees.
+
+        Resolving venv-mmaudio first meant someone without the acknowledgement
+        got "cannot find venv-mmaudio" and was sent off to install a multi-GB
+        environment they might then be barred from using.
+        """
+        with unittest.mock.patch(
+            "xil_pipeline.sfx_backends._find_mmaudio_python",
+            side_effect=AssertionError("venv must not be resolved before the licence check"),
+        ), pytest.raises(ValueError, match="CC BY-NC 4.0"):
+            make_sfx_backend("mmaudio")

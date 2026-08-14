@@ -1,9 +1,9 @@
-.TH XIL\-SFX "1" "2026\-07\-18" "xil\-pipeline 0.3.1" "User Commands"
+.TH XIL\-SFX "1" "2026\-08\-06" "xil\-pipeline 0.3.2" "User Commands"
 .SH NAME
 xil\-sfx
 .SH SYNOPSIS
 .B xil\-sfx
-[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--max-duration MAX_DURATION] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--sfx-backend BACKEND] [--audioldm2-python PATH] [--audioldm2-guidance FLOAT] [--audioldm2-steps INT] [--audioldm2-negative-prompt STR] [--stableaudio-python PATH] [--stableaudio-guidance FLOAT] [--stableaudio-steps INT] [--stableaudio-negative-prompt STR] [--stableaudio-seed INT]
+[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--max-duration MAX_DURATION] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--sfx-backend BACKEND] [--mmaudio-python PATH] [--mmaudio-duration FLOAT] [--mmaudio-cfg FLOAT] [--mmaudio-steps INT] [--mmaudio-negative-prompt STR] [--mmaudio-seed INT] [--mmaudio-accept-noncommercial]
 .SH DESCRIPTION
 Generate SFX stems from an SFX config (standalone utility)
 
@@ -54,58 +54,45 @@ Only place stems for effects already present in SFX/; skip API generation
 
 .TP
 \fB\-\-sfx\-backend\fR \fI\,BACKEND\/\fR
-Backend for SFX/music/ambience generation. 'elevenlabs' (default) calls the
-ElevenLabs Sound Effects API. 'audioldm2' uses a local AudioLDM 2 Large
-diffusion model (venv\-audioldm2) — free, GPU\-accelerated, writes
-SFX/<slug>.audioldm2.mp3. 'stableaudio' uses a local Stable Audio Open 1.0
-model (shares venv\-audioldm2; 44.1 kHz stereo, up to 47s per clip; HF license\-
-gated weights) and writes SFX/<slug>.stableaudio.mp3.
+Backend for SFX/music/ambience generation, independent of the dialogue
+\-\-backend. 'elevenlabs' (default) calls the ElevenLabs Sound Effects API.
+'mmaudio' runs MMAudio locally in venv\-mmaudio — free and GPU\-accelerated,
+writes backend\-tagged assets to SFX/<slug>.mmaudio.mp3. MMAudio's weights are
+CC BY\-NC 4.0 (non\-commercial only) and require \-\-mmaudio\-accept\-noncommercial.
 
 .TP
-\fB\-\-audioldm2\-python\fR \fI\,PATH\/\fR
-Path to the Python executable in the AudioLDM 2 venv (default: auto\-detect
-./venv\-audioldm2/bin/python3). Used only with \-\-sfx\-backend audioldm2.
+\fB\-\-mmaudio\-python\fR \fI\,PATH\/\fR
+Path to the Python executable in the MMAudio venv (default: auto\-detect
+./venv\-mmaudio/bin/python3). Used only with \-\-sfx\-backend mmaudio.
 
 .TP
-\fB\-\-audioldm2\-guidance\fR \fI\,FLOAT\/\fR
-AudioLDM 2 guidance scale — how closely generation follows the prompt
-(default: 3.5). Used only with \-\-sfx\-backend audioldm2.
+\fB\-\-mmaudio\-duration\fR \fI\,FLOAT\/\fR
+Generation length in seconds before trimming (default: 8.0, MMAudio's training
+duration). The result is trimmed to each cue's duration_seconds; generating at
+the native length and trimming gives better audio than asking for a short
+clip.
 
 .TP
-\fB\-\-audioldm2\-steps\fR \fI\,INT\/\fR
-AudioLDM 2 diffusion inference steps — higher is slower but cleaner (default:
-200). Used only with \-\-sfx\-backend audioldm2.
+\fB\-\-mmaudio\-cfg\fR \fI\,FLOAT\/\fR
+MMAudio classifier\-free guidance strength (default: 4.5).
 
 .TP
-\fB\-\-audioldm2\-negative\-prompt\fR \fI\,STR\/\fR
-AudioLDM 2 negative prompt (default: 'low quality, noise'). Used only with
-\-\-sfx\-backend audioldm2.
+\fB\-\-mmaudio\-steps\fR \fI\,INT\/\fR
+MMAudio flow\-matching sampling steps (default: 25).
 
 .TP
-\fB\-\-stableaudio\-python\fR \fI\,PATH\/\fR
-Path to the Python executable for the Stable Audio backend (default: auto\-
-detect the shared venv\-audioldm2 Python — StableAudioPipeline ships in the
-same diffusers install). Used only with \-\-sfx\-backend stableaudio.
+\fB\-\-mmaudio\-negative\-prompt\fR \fI\,STR\/\fR
+Optional MMAudio negative prompt (default: none).
 
 .TP
-\fB\-\-stableaudio\-guidance\fR \fI\,FLOAT\/\fR
-Stable Audio guidance scale — how closely generation follows the prompt
-(default: 7.0). Used only with \-\-sfx\-backend stableaudio.
+\fB\-\-mmaudio\-seed\fR \fI\,INT\/\fR
+MMAudio reproducibility seed (default: nondeterministic).
 
 .TP
-\fB\-\-stableaudio\-steps\fR \fI\,INT\/\fR
-Stable Audio diffusion inference steps — higher is slower but cleaner
-(default: 100). Used only with \-\-sfx\-backend stableaudio.
-
-.TP
-\fB\-\-stableaudio\-negative\-prompt\fR \fI\,STR\/\fR
-Stable Audio negative prompt (default: 'low quality, average quality'). Used
-only with \-\-sfx\-backend stableaudio.
-
-.TP
-\fB\-\-stableaudio\-seed\fR \fI\,INT\/\fR
-Reproducibility seed for Stable Audio generation (default: nondeterministic).
-Used only with \-\-sfx\-backend stableaudio.
+\fB\-\-mmaudio\-accept\-noncommercial\fR
+Acknowledge that MMAudio's weights are CC BY\-NC 4.0 (NON\-COMMERCIAL USE ONLY)
+and that generated audio must not appear in a monetised production. Required
+for \-\-sfx\-backend mmaudio.
 
 .SH SEE ALSO
 .BR xil (1),
@@ -134,6 +121,7 @@ Used only with \-\-sfx\-backend stableaudio.
 .BR xil-remove-episode (1),
 .BR xil-status (1),
 .BR xil-sfx-restore (1),
+.BR xil-sfx-impact (1),
 .BR xil-db-profile (1),
 .BR xil-sfx-csv (1),
 .BR xil-parsed-csv (1),

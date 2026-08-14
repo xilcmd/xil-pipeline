@@ -1,6 +1,6 @@
-# Chatterbox Worker
+# Conftest
 
-::: src.xil_pipeline.chatterbox_worker
+::: conftest
     options:
       show_root_heading: true
       show_source: true

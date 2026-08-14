@@ -61,11 +61,16 @@ class TimelineData:
         tag: Episode tag (e.g. ``"S02E03"``).
         total_duration_s: Total episode duration in seconds.
         layers: Mapping of layer name to list of :class:`LayerSpan` instances.
+        sections: Script-section bands (cold-open, act1, …) for the structure
+            ruler.  Kept out of ``layers`` so they are not counted as assets.
+        scenes: Script-scene bands (scene-1, scene-2, …) for the structure ruler.
     """
 
     tag: str
     total_duration_s: float
     layers: dict[str, list[LayerSpan]] = field(default_factory=dict)
+    sections: list[LayerSpan] = field(default_factory=list)
+    scenes: list[LayerSpan] = field(default_factory=list)
 
 
 def build_timeline_data(
@@ -76,6 +81,9 @@ def build_timeline_data(
     mus_labels: list,
     sfx_labels: list,
     vf_labels: list | None = None,
+    *,
+    section_bands: list | None = None,
+    scene_bands: list | None = None,
 ) -> TimelineData:
     """Wrap the layer label lists into a :class:`TimelineData` object.
 
@@ -92,6 +100,9 @@ def build_timeline_data(
         mus_labels: Music label tuples (may carry ramp data).
         sfx_labels: SFX label tuples.
         vf_labels: Vintage filter label tuples (may carry ramp data).
+        section_bands: Script-section ``(start_s, end_s, label)`` tuples from
+            :func:`mix_common.derive_structure_bands`, for the structure ruler.
+        scene_bands: Script-scene ``(start_s, end_s, label)`` tuples.
 
     Returns:
         A populated :class:`TimelineData` instance.
@@ -117,7 +128,13 @@ def build_timeline_data(
         "sfx":            to_spans(sfx_labels),
         "vintage_filter": to_spans(vf_labels or []),
     }
-    return TimelineData(tag=tag, total_duration_s=total_s, layers=layers)
+    return TimelineData(
+        tag=tag,
+        total_duration_s=total_s,
+        layers=layers,
+        sections=to_spans(section_bands or []),
+        scenes=to_spans(scene_bands or []),
+    )
 
 
 def _format_time(seconds: float) -> str:
@@ -276,6 +293,10 @@ _MODAL_CSS = """\
   .sfx-modal-btns button[disabled] { opacity:0.45; cursor:not-allowed; }
   #sfx-modal-save { background:#1a3a1a; border-color:#4caf50; color:#8fca8f; }
   #sfx-modal-save:hover:not([disabled]) { background:#1e481e; }
+  #sfx-defaults-section { margin-top:10px; border-top:1px solid #444; padding-top:8px; }
+  #sfx-defaults-section summary { cursor:pointer; font-size:11px; color:#b0b0ff;
+    text-transform:uppercase; letter-spacing:0.04em; }
+  #sfx-defaults-warning { margin:6px 0 8px; }
 """
 
 _MODAL_HTML = """\
@@ -283,6 +304,11 @@ _MODAL_HTML = """\
   <div id="sfx-modal">
     <h3 id="sfx-modal-title"></h3>
     <div id="sfx-modal-fields"></div>
+    <details id="sfx-defaults-section">
+      <summary id="sfx-defaults-summary">Category defaults</summary>
+      <div class="sfx-help" id="sfx-defaults-warning"></div>
+      <div id="sfx-defaults-fields"></div>
+    </details>
     <div id="sfx-modal-status"></div>
     <div class="sfx-modal-btns">
       <button id="sfx-modal-save">Save</button>
@@ -307,10 +333,27 @@ function _sfxField(id, label, min, max, step, val, pfx, defs, help, disabled) {
     '<div class="sfx-help">' + help + '</div></div>';
 }
 
-let _sfxModalCtx = null;  // {key, layer, effect, defaults} of the open editor
+// Category-defaults fields (ids sfxd-*): unlike _sfxField's per-cue fields
+// (where the category default is only a placeholder for inherited values),
+// here the category default IS the value being edited -- pre-filled from
+// defaults[layer_id] when set, falling back to the un-prefixed global
+// default as placeholder text when it isn't.
+function _sfxDefaultsField(id, label, min, max, step, layer, defaults, help) {
+  const val = defaults[layer + '_' + id];
+  const glob = defaults[id];
+  const ph = glob != null ? 'global default: ' + glob : 'no default set';
+  const va = (val != null) ? ' value="' + val + '"' : '';
+  return '<div class="sfx-field-wrap"><label>' + label + '</label>' +
+    '<input type="number" id="sfxd-' + id + '" min="' + min + '" max="' + max +
+    '" step="' + step + '"' + va + ' placeholder="' + ph + '">' +
+    '<div class="sfx-help">' + help + '</div></div>';
+}
 
-function _showSfxModal(key, layer, effect, defaults) {
-  _sfxModalCtx = {key: key, layer: layer, effect: effect, defaults: defaults};
+let _sfxModalCtx = null;  // {key, layer, effect, defaults, naturalS} of the open editor
+
+function _showSfxModal(key, layer, effect, defaults, naturalS) {
+  _sfxModalCtx = {key: key, layer: layer, effect: effect, defaults: defaults,
+                  naturalS: (naturalS != null ? naturalS : null)};
   const isAmb = layer === 'ambience';
   const pfx = layer + '_';
   document.getElementById('sfx-modal-title').textContent = key;
@@ -327,6 +370,13 @@ function _showSfxModal(key, layer, effect, defaults) {
     _sfxField('play_duration', 'Play Duration %', 0, 100, 1,
       effect.play_duration ?? null, pfx, defaults,
       'Percentage of clip to play (0–100). Not applicable to AMBIENCE.', isAmb);
+  document.getElementById('sfx-defaults-summary').textContent = 'Category defaults (' + layer + ')';
+  const defHelp = 'Applies to every ' + layer.toUpperCase() + ' cue without its own override.';
+  document.getElementById('sfx-defaults-warning').textContent = defHelp;
+  document.getElementById('sfx-defaults-fields').innerHTML =
+    _sfxDefaultsField('volume_percentage', 'Volume %', 0, 200, 1, layer, defaults, defHelp) +
+    _sfxDefaultsField('ramp_in_seconds', 'Ramp In (s)', 0, 30, 0.1, layer, defaults, defHelp) +
+    _sfxDefaultsField('ramp_out_seconds', 'Ramp Out (s)', 0, 30, 0.1, layer, defaults, defHelp);
   const modal = document.getElementById('sfx-modal');
   modal.dataset.effectKey = key;
   modal.dataset.layer = layer;
@@ -348,7 +398,7 @@ document.addEventListener('dblclick', function(e) {
         '&tag=' + encodeURIComponent(XIL_TAG) +
         '&key=' + encodeURIComponent(key))
     .then(function(r) { return r.json(); })
-    .then(function(d) { _showSfxModal(key, layer, d.effect || {}, d.defaults || {}); })
+    .then(function(d) { _showSfxModal(key, layer, d.effect || {}, d.defaults || {}, d.natural_s); })
     .catch(function(err) { console.error('sfx-modal:', err); });
 });
 
@@ -371,16 +421,31 @@ function _applySfxEditToSpans(payload) {
   }
   const spans = (DATA.layers[layer] || []).filter(function(sp) { return sp.label === payload.key; });
   const durS = _sfxModalCtx.effect && _sfxModalCtx.effect.duration_seconds;
+  const natS = _sfxModalCtx.naturalS;
+  // Mirror mix_common.collect_stem_plans: play_duration wins over
+  // duration_seconds, and BOTH are relative to the source file's own length —
+  // not to duration_seconds.  Basing the preview on duration_seconds made
+  // "Play Duration % = 100" look like it changed nothing on exactly the cues
+  // that duration_seconds was clipping, inviting the user to undo a correct edit.
+  function _previewLength(pd) {
+    if (natS) {
+      if (pd != null) return natS * pd / 100;
+      if (durS) return Math.min(durS, natS);
+      return natS;
+    }
+    // No source file (generated cue) or unreadable — duration_seconds IS the
+    // rendered length, so the old arithmetic is the right fallback.
+    if (durS) return durS * (pd != null ? pd : 100) / 100;
+    return null;
+  }
   spans.forEach(function(sp) {
     sp.volume_pct = eff('volume_percentage');
     sp.ramp_in_s = eff('ramp_in_seconds');
     sp.ramp_out_s = eff('ramp_out_seconds');
     if (layer !== 'ambience') {
       sp.play_duration = payload.play_duration;
-      if (durS) {
-        const pd = payload.play_duration != null ? payload.play_duration : 100;
-        sp.end_s = sp.start_s + durS * pd / 100;
-      }
+      const len = _previewLength(payload.play_duration);
+      if (len != null) sp.end_s = sp.start_s + len;
     }
   });
 }
@@ -393,6 +458,21 @@ document.getElementById('sfx-modal-save').addEventListener('click', function() {
     const v = el.value.trim();
     return v === '' ? null : parseFloat(v);
   }
+  function getDefaultsVal(id) {
+    const el = document.getElementById('sfxd-' + id);
+    if (!el) return null;
+    const v = el.value.trim();
+    return v === '' ? null : parseFloat(v);
+  }
+  const layer = modal.dataset.layer;
+  const DEFAULTS_FIELDS = ['volume_percentage', 'ramp_in_seconds', 'ramp_out_seconds'];
+  const defaultsPayload = {slug: XIL_SLUG, tag: XIL_TAG, layer: layer};
+  DEFAULTS_FIELDS.forEach(function(f) { defaultsPayload[f] = getDefaultsVal(f); });
+  const loadedDefaults = (_sfxModalCtx && _sfxModalCtx.defaults) || {};
+  const defaultsChanged = DEFAULTS_FIELDS.some(function(f) {
+    const loaded = loadedDefaults[layer + '_' + f];
+    return defaultsPayload[f] !== (loaded == null ? null : loaded);
+  });
   const payload = {
     slug: XIL_SLUG, tag: XIL_TAG, key: modal.dataset.effectKey,
     volume_percentage: getVal('volume_percentage'),
@@ -405,13 +485,37 @@ document.getElementById('sfx-modal-save').addEventListener('click', function() {
   st.style.color = '#aaa';
   st.textContent = 'Saving…';
   btn.disabled = true;
-  fetch('/xil/update-sfx', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload),
+  function savePerCue() {
+    return fetch('/xil/update-sfx', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    }).then(function(r) { return r.json(); });
+  }
+  const defaultsStep = defaultsChanged
+    ? fetch('/xil/update-sfx-defaults', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(defaultsPayload),
+      }).then(function(r) { return r.json(); })
+    : Promise.resolve({ok: true});
+  defaultsStep
+  .then(function(dDef) {
+    if (!dDef.ok) {
+      st.style.color = '#ef5350';
+      st.textContent = 'Error: ' + (dDef.error || 'Defaults save failed.');
+      btn.disabled = false;
+      return null;
+    }
+    if (defaultsChanged) {
+      loadedDefaults[layer + '_volume_percentage'] = defaultsPayload.volume_percentage;
+      loadedDefaults[layer + '_ramp_in_seconds'] = defaultsPayload.ramp_in_seconds;
+      loadedDefaults[layer + '_ramp_out_seconds'] = defaultsPayload.ramp_out_seconds;
+    }
+    return savePerCue();
   })
-  .then(function(r) { return r.json(); })
   .then(function(d) {
+    if (!d) return;
     if (d.ok) {
       _applySfxEditToSpans(payload);
       st.style.color = '#4caf50';
@@ -437,9 +541,9 @@ document.getElementById('sfx-modal-save').addEventListener('click', function() {
 _TRANSPORT_CSS = """\
   #transport { display:flex; gap:14px; align-items:center; margin-bottom:10px;
     background:#222238; padding:6px 12px; border-radius:4px; }
-  #transport-play { background:#333; color:#eee; border:1px solid #666; width:34px; height:26px;
+  #transport-play, #transport-restart { background:#333; color:#eee; border:1px solid #666; width:34px; height:26px;
     border-radius:4px; cursor:pointer; font-size:13px; line-height:1; }
-  #transport-play:hover { background:#444; }
+  #transport-play:hover, #transport-restart:hover { background:#444; }
   #transport-time { font-size:12px; color:#b0b0ff; font-variant-numeric:tabular-nums; min-width:110px; }
   #transport-mutes { display:flex; gap:10px; }
   .mute-caption { font-size:11px; color:#777; text-transform:uppercase; letter-spacing:0.05em; align-self:center; }
@@ -456,7 +560,8 @@ _TRANSPORT_CSS = """\
 
 _TRANSPORT_HTML = """\
 <div id="transport">
-  <button id="transport-play" title="Play/pause full mix">&#9205;</button>
+  <button id="transport-restart" title="Return to start" aria-label="Return to start">&#9198;</button>
+  <button id="transport-play" title="Play/pause full mix" aria-label="Play/pause full mix">&#9205;</button>
   <span id="transport-time">0:00 / 0:00</span>
   <span id="transport-mutes">
     <span class="mute-caption">Mute:</span>
@@ -634,6 +739,21 @@ document.getElementById('transport-play').addEventListener('click', function() {
   if (mixPlaying) pauseMix(); else playMix();
 });
 
+// Return to start (accessibility): seekTo(0) preserves play/pause state —
+// keeps playing if playing, stays paused if paused.
+document.getElementById('transport-restart').addEventListener('click', function() {
+  seekTo(0);
+});
+
+document.addEventListener('keydown', function(e) {
+  // Home = return to start. Ignore while typing or when the SFX dialog is open.
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const modal = document.getElementById('sfx-modal-overlay');
+  if (modal && modal.style.display !== 'none' && modal.style.display !== '') return;
+  if (e.key === 'Home') { e.preventDefault(); seekTo(0); }
+});
+
 document.getElementById('ruler').addEventListener('click', function(e) {
   const rect = this.getBoundingClientRect();
   const x = e.clientX - rect.left - 90;
@@ -657,6 +777,7 @@ document.querySelectorAll('.mute-toggle input').forEach(function(cb) {
 });
 
 if (!Object.keys(LAYER_AUDIO).length) {
+  document.getElementById('transport-restart').style.display = 'none';
   document.getElementById('transport-play').style.display = 'none';
   document.getElementById('transport-time').style.display = 'none';
   document.getElementById('transport-mutes').style.display = 'none';
@@ -734,6 +855,13 @@ _HTML_TEMPLATE = """\
   .subtitle {{ color: #888; font-size: 0.9em; margin-bottom: 16px; }}
   .timeline-container {{ position: relative; overflow-x: auto; overflow-y: visible; padding-bottom: 20px; }}
   .timeline-inner {{ position: relative; min-width: 100%; }}
+  .structure-row {{ display: flex; align-items: center; height: 20px; margin-bottom: 2px; }}
+  .structure-track {{ position: relative; height: 18px; }}
+  .structure-block {{ position: absolute; top: 0; height: 100%; box-sizing: border-box;
+    border-right: 1px solid #1a1a2e; border-radius: 2px; font-size: 10px; line-height: 18px;
+    padding: 0 5px; color: #d8d8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  #sections-track .structure-block {{ background: #3a3a5c; }}
+  #scenes-track .structure-block {{ background: #2e2e46; color: #a8a8c8; }}
   .ruler {{ height: 30px; position: relative; border-bottom: 1px solid #444; margin-bottom: 4px; }}
   .ruler-tick {{ position: absolute; top: 0; height: 100%; border-left: 1px solid #555; }}
   .ruler-tick span {{ position: absolute; top: 2px; left: 4px; font-size: 11px; color: #999; white-space: nowrap; }}
@@ -787,6 +915,8 @@ _HTML_TEMPLATE = """\
 <div id="floattip"></div>
 <div class="timeline-container" id="tc">
   <div class="timeline-inner" id="ti">
+    <div class="structure-row"><div class="layer-label">Sections</div><div class="structure-track" id="sections-track"></div></div>
+    <div class="structure-row"><div class="layer-label">Scenes</div><div class="structure-track" id="scenes-track"></div></div>
     <div class="ruler" id="ruler"></div>
     <div id="layers"></div>
     <div id="playhead"></div>
@@ -802,6 +932,8 @@ const TOTAL = DATA.total_duration_s;
 const COLORS = {{dialogue:'c-dialogue', sfx:'c-sfx', music:'c-music', ambience:'c-ambience', vintage_filter:'c-vintage-filter'}};
 const LABELS = {{dialogue:'Dialogue', sfx:'SFX', music:'Music', ambience:'Ambience', vintage_filter:'Vtg Filter'}};
 function escAttr(s) {{ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }}
+// vintage_filter has its own category defaults too (mix_common's prefix_map),
+// but its spans carry no data-effect-key — deliberately excluded, not an oversight.
 const EDITABLE_LAYERS = {{'sfx':true,'music':true,'ambience':true}};
 let zoom = 1;
 const BASE_WIDTH = Math.max(document.getElementById('tc').clientWidth - 100, 400);
@@ -826,6 +958,20 @@ function render() {{
     rhtml += '<div class="ruler-tick" style="left:calc(90px + ' + (t/TOTAL*W) + 'px)"><span>' + fmtTime(t) + '</span></div>';
   }}
   document.getElementById('ruler').innerHTML = rhtml;
+  // Structure bands (sections / scenes) — same percent geometry as layer spans,
+  // so they stay aligned with the tracks below at every zoom level.
+  for (const band of [['sections-track', DATA.sections], ['scenes-track', DATA.scenes]]) {{
+    const track = document.getElementById(band[0]);
+    track.style.width = W + 'px';
+    let bhtml = '';
+    for (const b of (band[1] || [])) {{
+      const bleft = b.start_s / TOTAL * 100;
+      const bw = Math.max((b.end_s - b.start_s) / TOTAL * 100, 0.1);
+      const blabel = escAttr(b.label);
+      bhtml += '<div class="structure-block" style="left:' + bleft + '%;width:' + bw + '%" title="' + blabel + '">' + blabel + '</div>';
+    }}
+    track.innerHTML = bhtml;
+  }}
   // Layers
   let lhtml = '';
   let ti = 0;
@@ -1135,6 +1281,16 @@ def render_html_timeline(
             ]
             for key, spans in data.layers.items()
         },
+        # Structure bands are deliberately separate from "layers" so they are
+        # not counted as assets and don't need COLORS/LABELS entries.
+        "sections": [
+            {"start_s": sp.start_s, "end_s": sp.end_s, "label": sp.label}
+            for sp in data.sections
+        ],
+        "scenes": [
+            {"start_s": sp.start_s, "end_s": sp.end_s, "label": sp.label}
+            for sp in data.scenes
+        ],
     }
 
     span_count = sum(len(spans) for spans in data.layers.values())

@@ -1,6 +1,6 @@
-# Stableaudio Worker
+# Xil Sfx Mp3 Crosscheck
 
-::: src.xil_pipeline.stableaudio_worker
+::: tools.xil_sfx_mp3_crosscheck
     options:
       show_root_heading: true
       show_source: true

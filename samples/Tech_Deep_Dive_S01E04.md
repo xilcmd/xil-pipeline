@@ -1,4 +1,5 @@
-Tech Deep Dive Season 1: Episode 4: "The Rise of Open Source AI"
+Tech Deep Dive Season 1: Episode 4: "The Rise of Open Source AI" Arc: "The Architect"
+
 CAST:
 
 MAYA CHEN — host and tech journalist, skeptically optimistic
@@ -10,7 +11,7 @@ PREAMBLE
 
 MAYA  Welcome to Tech Deep Dive. Season 1, Episode 4: The Rise of Open Source A I.
 
-[INTRO MUSIC]
+[INTRO MUSIC | INTRO_MUSIC.mp3 | play_volume_pct=26%]
 
 ===
 
@@ -30,11 +31,18 @@ Then let's make it worth it.
 ===
 
 ACT TWO
+
 SCENE 6: PODCAST STUDIO
+
 [AMBIENCE: Quiet studio hum, occasional keyboard clicks in background]
+
+[MUSIC: SHOW INTRO — FPS - TECH and LOUNGE]
+
 MAYA
 So when Meta dropped LLaMA, that was kind of a watershed moment, right? Nobody really saw it coming.
+
 [BEAT]
+
 DARIUS
 Nobody in the closed-source world, maybe. The open community had been pushing for this for years. What changed was that the economics finally forced the conversation.
 MAYA
@@ -48,7 +56,9 @@ But there's a real tension here. Openness accelerates capability. And capability
 DARIUS
 (finishing the thought)
 ...is the thing everyone's quietly terrified about. Yeah.
-[BEAT — 3 SECONDS]
+
+[BEAT]
+
 MAYA
 We'll get into the safety implications right after the break.
 
@@ -56,7 +66,7 @@ We'll get into the safety implications right after the break.
 
 POSTAMBLE
 
-[OUTRO MUSIC]
+[OUTRO MUSIC | OUTRO_MUSIC.mp3 | play_volume_pct=13%]
 
 MAYA  That was Tech Deep Dive, Season 1, Episode 4: The Rise of Open Source A I.
 MAYA  Thanks for listening.

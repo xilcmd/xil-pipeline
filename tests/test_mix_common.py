@@ -971,3 +971,55 @@ class TestVfEngagedSeqs:
         ]
         engaged = _vf_engaged_seqs(plans)
         assert len(engaged) == 0  # no dialogue entries in span
+
+
+class TestDeriveStructureBands:
+    """Script-structure bands (sections/scenes) for the timeline ruler."""
+
+    ENTRIES = {
+        1: {"type": "section_header", "section": "cold-open", "scene": None},
+        2: {"type": "dialogue", "section": "cold-open", "scene": None},
+        3: {"type": "dialogue", "section": "cold-open", "scene": "scene-1"},
+        4: {"type": "section_header", "section": "act1", "scene": "scene-1"},
+        5: {"type": "dialogue", "section": "act1", "scene": "scene-2"},
+        6: {"type": "dialogue", "section": "act1", "scene": "scene-2"},
+    }
+    # Header entries (1, 4) carry no stem, so they never appear in the timeline.
+    TIMELINE = {2: 0, 3: 5000, 5: 10000, 6: 15000}
+    TOTAL_MS = 20000
+
+    def test_sections_are_contiguous_and_close_at_total(self):
+        bands = mix_common.derive_structure_bands(
+            self.ENTRIES, self.TIMELINE, self.TOTAL_MS, "section"
+        )
+        assert bands == [(0.0, 10.0, "cold-open"), (10.0, 20.0, "act1")]
+
+    def test_boundary_comes_from_first_placed_entry_not_header(self):
+        """act1's header is seq 4 (no stem); the band must start at seq 5's cue."""
+        bands = mix_common.derive_structure_bands(
+            self.ENTRIES, self.TIMELINE, self.TOTAL_MS, "section"
+        )
+        act1 = [b for b in bands if b[2] == "act1"][0]
+        assert act1[0] == 10.0  # timeline[5], not timeline-of-header
+
+    def test_none_value_produces_gap(self):
+        """seq 2 has scene=None, so the scene band starts later than the section band."""
+        bands = mix_common.derive_structure_bands(
+            self.ENTRIES, self.TIMELINE, self.TOTAL_MS, "scene"
+        )
+        assert bands == [(5.0, 10.0, "scene-1"), (10.0, 20.0, "scene-2")]
+        assert bands[0][0] > 0.0  # nothing covers 0–5s
+
+    def test_group_with_no_cue_points_is_dropped(self):
+        entries = {
+            1: {"section": "cold-open"},
+            2: {"section": "ghost"},      # never placed
+            3: {"section": "act1"},
+        }
+        bands = mix_common.derive_structure_bands(
+            entries, {1: 0, 3: 4000}, 8000, "section"
+        )
+        assert [b[2] for b in bands] == ["cold-open", "act1"]
+
+    def test_empty_inputs_return_empty(self):
+        assert mix_common.derive_structure_bands({}, {}, 1000, "section") == []

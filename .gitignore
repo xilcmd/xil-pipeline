@@ -3,6 +3,9 @@ venv/
 venv-chatterbox/
 venv-audioldm2/
 venv-whisper/
+venv-docs/
+venv-mmaudio/
+MMAudio/
 logs/
 __pycache__/
 *.pyc

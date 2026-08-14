@@ -23,6 +23,7 @@ import re
 import shutil
 import sys
 
+from elevenlabs.client import ElevenLabs
 from mutagen.id3 import APIC, COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, TXXX, USLT, ID3NoHeaderError, PictureType
 from mutagen.wave import WAVE
 from pydub import AudioSegment
@@ -63,17 +64,51 @@ def main():
     """
     name = script_name or os.path.basename(sys.argv[0])
     start = datetime.datetime.now()
-    print(f"\n{_BAR}")
-    print(f"  {name}  |  started {start.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"{_BAR}\n")
+
+    # Logged (not printed) so the banner reaches BOTH the console — where the
+    # text is unchanged, RUN renders bare like INFO — and the structured log
+    # file, where it becomes the per-invocation boundary that tools like
+    # xil-stem-log and xil_effort key off.  The BEGIN record carries the full
+    # invocation so a log block can always be traced back to its command.
+    from xil_pipeline.log_config import RUN, get_logger
+
+    _log = get_logger(__name__)
+    try:
+        from xil_pipeline import __version__ as _ver
+    except Exception:  # pragma: no cover - version should always import
+        _ver = "?"
+    argv = " ".join(sys.argv)
+
+    # Decorative bars stay console-only (unchanged terminal appearance); the
+    # BEGIN/END records are file-only (structured boundary, no terminal noise).
+    _console = {"file": False}
+    _file = {"console": False}
+
+    _log.log(RUN, "", extra=_console)
+    _log.log(RUN, _BAR, extra=_console)
+    _log.log(RUN, f"  {name}  |  started {start.strftime('%Y-%m-%d %H:%M:%S')}", extra=_console)
+    _log.log(RUN, _BAR, extra=_console)
+    _log.log(RUN, "", extra=_console)
+    _log.log(
+        RUN,
+        f'BEGIN argv="{argv}" pid={os.getpid()} ver={_ver} cwd={os.getcwd()}',
+        extra=_file,
+    )
     try:
         yield
     finally:
         end = datetime.datetime.now()
         elapsed = end - start
-        print(f"\n{_BAR}")
-        print(f"  {name}  |  finished {end.strftime('%Y-%m-%d %H:%M:%S')}  ({elapsed.total_seconds():.1f}s)")
-        print(f"{_BAR}\n")
+        _log.log(RUN, f"END elapsed={elapsed.total_seconds():.1f}s", extra=_file)
+        _log.log(RUN, "", extra=_console)
+        _log.log(RUN, _BAR, extra=_console)
+        _log.log(
+            RUN,
+            f"  {name}  |  finished {end.strftime('%Y-%m-%d %H:%M:%S')}  ({elapsed.total_seconds():.1f}s)",
+            extra=_console,
+        )
+        _log.log(RUN, _BAR, extra=_console)
+        _log.log(RUN, "", extra=_console)
 
 
 _MAX_SLUG_LEN = 180  # filesystem max is 255 bytes; leave room for .mp3 + collision suffix
@@ -201,11 +236,12 @@ def shared_sfx_path(sfx_dir: str, effect_key: str, backend: str = "elevenlabs") 
     Args:
         sfx_dir: Base directory for shared SFX assets.
         effect_key: Direction text key (e.g. ``'BEAT'``).
-        backend: Generating backend name (``'elevenlabs'`` or ``'audioldm2'``).
+        backend: Generating backend name.  Only ``'elevenlabs'`` is generatable
+            now; other names still resolve so trial-era assets stay reachable.
 
     Returns:
         Full path like ``SFX/beat.mp3`` (elevenlabs) or
-        ``SFX/sfx_door-opens.audioldm2.mp3`` (audioldm2).
+        ``SFX/sfx_door-opens.audioldm2.mp3`` (a removed trial backend).
     """
     slug = slugify_effect_key(effect_key)
     suffix = "" if backend == "elevenlabs" else f".{backend}"
@@ -349,6 +385,29 @@ def append_sfx_edit(sfx_path: str, key: str, fields: dict) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def append_sfx_defaults_edit(sfx_path: str, fields: dict) -> None:
+    """Append one category-defaults edit record to the journal beside *sfx_path*.
+
+    Same append mechanics as :func:`append_sfx_edit`, but the record carries
+    ``"scope": "defaults"`` and no ``"key"`` — :func:`replay_sfx_edits`
+    applies it to ``data["defaults"]`` instead of a single effect entry.
+
+    Args:
+        sfx_path: Path of the SFX config the edit was applied to.
+        fields: Prefixed defaults keys (e.g. ``music_volume_percentage``) to
+            set; ``None`` means "clear this default".
+    """
+    record = {
+        "ts": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+        "scope": "defaults",
+        "fields": dict(fields),
+    }
+    journal = sfx_edits_path(sfx_path)
+    os.makedirs(os.path.dirname(journal) or ".", exist_ok=True)
+    with open(journal, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def replay_sfx_edits(sfx_path: str, dry_run: bool = False) -> tuple[int, list[str]]:
     """Reapply journaled edits to the SFX config at *sfx_path*.
 
@@ -356,7 +415,11 @@ def replay_sfx_edits(sfx_path: str, dry_run: bool = False) -> tuple[int, list[st
     semantics as the timeline-editor save route: ``None`` removes the
     override, any other value sets it.  Keys absent from the current
     ``effects`` dict are still created (a renamed direction leaves a
-    harmless orphan) but reported so the caller can warn.
+    harmless orphan) but reported so the caller can warn. Records with
+    ``"scope": "defaults"`` (from :func:`append_sfx_defaults_edit`) are
+    applied to ``data["defaults"]`` instead and never produce orphans;
+    records without a ``"scope"`` field (all pre-existing journals) are
+    treated as per-cue edits, unchanged.
 
     Args:
         sfx_path: SFX config to update in place.
@@ -382,6 +445,16 @@ def replay_sfx_edits(sfx_path: str, dry_run: bool = False) -> tuple[int, list[st
                 continue
             try:
                 record = json.loads(line)
+                if record.get("scope") == "defaults":
+                    defaults_fields = record.get("fields", {})
+                    defaults_dict = data.setdefault("defaults", {})
+                    for dfield, dval in defaults_fields.items():
+                        if dval is None:
+                            defaults_dict.pop(dfield, None)
+                        else:
+                            defaults_dict[dfield] = dval
+                    applied += 1
+                    continue
                 key = record["key"]
                 fields = record["fields"]
             except (json.JSONDecodeError, KeyError, TypeError):
@@ -440,7 +513,7 @@ def ensure_shared_sfx(
     effect: SfxEntry,
     sfx_dir: str,
     defaults: dict,
-    client=None,
+    client: ElevenLabs | None = None,
     show: str = "Sample Show",
     backend: SfxBackend | None = None,
 ) -> str:
@@ -522,7 +595,8 @@ def ensure_shared_sfx(
             if prompt_influence is None:
                 prompt_influence = defaults.get("prompt_influence", 0.3)
             backend.generate_to(path, effect.prompt, effect.duration_seconds, prompt_influence)
-            tag_mp3(path, show=show, title=effect_key)
+            tag_mp3(path, show=show, title=effect_key,
+                    comments=getattr(backend, "asset_comment", None))
             return path
     elif effect.type == "silence":
         duration_ms = int(effect.duration_seconds * 1000)
@@ -534,7 +608,11 @@ def ensure_shared_sfx(
             prompt_influence = defaults.get("prompt_influence", 0.3)
         backend.generate_to(path, effect.prompt, effect.duration_seconds, prompt_influence)
 
-    tag_mp3(path, show=show, title=effect_key)
+    # A backend may attach a provenance/licence note (MMAudio's weights are
+    # CC BY-NC 4.0), so the constraint travels with the file rather than living
+    # only in the filename infix.
+    tag_mp3(path, show=show, title=effect_key,
+            comments=getattr(backend, "asset_comment", None) if backend else None)
 
     return path
 
@@ -642,7 +720,7 @@ def generate_sfx(
     sfx_config: dict,
     stems_dir: str,
     sfx_dir: str | None = None,
-    client=None,
+    client: ElevenLabs | None = None,
     start_from: int = 1,
     backend: SfxBackend | None = None,
 ) -> None:
@@ -774,7 +852,7 @@ def dry_run_sfx(
         sfx_config: Raw SFX config dict.
         stems_dir: Episode stems directory.
         sfx_dir: Shared SFX library directory.
-        backend_name: SFX backend (``'elevenlabs'`` or ``'audioldm2'``).  Model
+        backend_name: SFX backend (``'elevenlabs'``).  Model
             assets are matched against the backend-tagged filename, and local
             backends report generation as free instead of an API credit estimate.
     """

@@ -717,6 +717,20 @@ class TestHtmlEditorIntegrity:
         assert 'const XIL_SLUG = "myshow";' in html
         assert 'const XIL_TAG  = "S01E01";' in html
 
+    def test_category_defaults_section_present(self, tmp_path):
+        """The double-click modal's 'Category defaults' section — ids,
+        POST target, and the deliberate vintage_filter exclusion note."""
+        html = self._render(tmp_path)
+        assert 'id="sfx-defaults-section"' in html
+        assert 'id="sfx-defaults-summary"' in html
+        assert 'id="sfx-defaults-fields"' in html
+        assert 'id="sfxd-' in html
+        assert "_sfxDefaultsField('volume_percentage'" in html
+        assert "_sfxDefaultsField('ramp_in_seconds'" in html
+        assert "_sfxDefaultsField('ramp_out_seconds'" in html
+        assert "/xil/update-sfx-defaults" in html
+        assert "vintage_filter" in html.lower()
+
     def test_script_runs_clean_in_node(self, tmp_path):
         """Execute the generated script in node with a stub DOM: it must run
         without throwing and register the modal-button and play listeners."""
@@ -747,8 +761,8 @@ function el(id) {
 const ids = ['xil-player','player-label','audio-el','zoom-info','floattip','tc','ti',
              'ruler','layers','sfx-modal-overlay','sfx-modal','sfx-modal-title',
              'sfx-modal-fields','sfx-modal-status','sfx-modal-save','sfx-modal-cancel',
-             'transport','transport-play','transport-time','transport-mutes',
-             'transport-hint','playhead',
+             'transport','transport-restart','transport-play','transport-time','transport-mutes',
+             'transport-hint','playhead','sections-track','scenes-track',
              'mix-loading','mix-loading-text','mix-loading-layers','mix-loading-cancel'];
 const elements = {};
 ids.forEach(i => elements[i] = el(i));
@@ -851,10 +865,77 @@ class TestTransport:
         assert "seekTo" in html          # ruler-seek handler
         assert "requestAnimationFrame" in html
 
+    def test_return_to_start_button(self, tmp_path):
+        """Issue #41: accessible 'return to start' control alongside play/pause."""
+        ldir = tmp_path / "daw"
+        ldir.mkdir()
+        html = self._render(tmp_path, layers_dir=ldir, wav_keys=self.LAYER_KEYS)
+        # Button markup + accessible labelling
+        assert 'id="transport-restart"' in html
+        assert 'aria-label="Return to start"' in html
+        assert "&#9198;" in html                       # ⏮ skip-to-start glyph
+        assert 'aria-label="Play/pause full mix"' in html   # a11y parity on play button
+        # Click restarts via the existing state-preserving seek
+        assert "getElementById('transport-restart').addEventListener('click'" in html
+        assert "seekTo(0)" in html
+        # Keyboard accessibility: Home key returns to start
+        assert "e.key === 'Home'" in html
+        # Restart is hidden when there is no full mix to control
+        assert "getElementById('transport-restart').style.display = 'none'" in html
+
     def test_no_layers_dir_renders_empty_layer_audio(self, tmp_path):
         html = self._render(tmp_path, layers_dir=None)
         assert "const LAYER_AUDIO = {};" in html
         assert "run xil daw to enable full-mix playback" in html
+
+
+class TestStructureBands:
+    """Section/scene bands rendered above the minute ruler."""
+
+    def _render(self, tmp_path, **kwargs):
+        data = build_timeline_data(
+            total_s=20.0, tag="TEST",
+            dlg_labels=[(0.0, 5.0, "adam")],
+            amb_labels=[], mus_labels=[], sfx_labels=[],
+            **kwargs,
+        )
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(data, out)
+        return open(out, encoding="utf-8").read()
+
+    def test_band_markup_present(self, tmp_path):
+        html = self._render(tmp_path)
+        assert 'id="sections-track"' in html
+        assert 'id="scenes-track"' in html
+        assert "structure-block" in html          # CSS class
+        assert ">Sections<" in html and ">Scenes<" in html   # gutter labels
+
+    def test_bands_serialized_into_data(self, tmp_path):
+        html = self._render(
+            tmp_path,
+            section_bands=[(0.0, 10.0, "cold-open"), (10.0, 20.0, "act1")],
+            scene_bands=[(5.0, 20.0, "scene-1")],
+        )
+        assert '"sections": [' in html
+        assert '"label": "cold-open"' in html
+        assert '"label": "act1"' in html
+        assert '"label": "scene-1"' in html
+
+    def test_bands_default_to_empty(self, tmp_path):
+        html = self._render(tmp_path)
+        assert '"sections": []' in html
+        assert '"scenes": []' in html
+
+    def test_bands_not_counted_as_assets(self, tmp_path):
+        """Structure bands live outside DATA.layers, so the asset count is unchanged."""
+        plain = self._render(tmp_path)
+        with_bands = self._render(
+            tmp_path,
+            section_bands=[(0.0, 20.0, "act1")],
+            scene_bands=[(0.0, 20.0, "scene-1")],
+        )
+        assert "1 assets across 5 layers" in plain
+        assert "1 assets across 5 layers" in with_bands
 
 
 # ─── Tests: audio prefetch (NAS-aware loading feedback) ───
@@ -1065,3 +1146,66 @@ class TestTextTimelineMap:
         assert "myshow" in joined
         assert "3:40" in joined            # 220.0s duration
         assert "music/ambience omitted" in joined
+
+
+class TestPreviewLengthArithmetic:
+    """The modal's span preview must agree with what the mixer will render.
+
+    play_duration is a percentage of the SOURCE FILE, not of duration_seconds
+    (see mix_common.collect_stem_plans). Basing the preview on duration_seconds
+    made "Play Duration % = 100" look like a no-op on exactly the cues that
+    duration_seconds was clipping — inviting the user to undo a correct edit.
+    """
+
+    def _preview_length(self, tmp_path, dur_s, nat_s, pd):
+        """Run the real emitted _previewLength() in node and return its result."""
+        import json as _json
+        import shutil
+        import subprocess
+
+        if shutil.which("node") is None:
+            pytest.skip("node not available")
+
+        data = build_timeline_data(total_s=10.0, tag="TEST", dlg_labels=[],
+                                   amb_labels=[], mus_labels=[], sfx_labels=[])
+        out = str(tmp_path / "tl.html")
+        render_html_timeline(data, out)
+        html = open(out, encoding="utf-8").read()
+        script = html[html.index("<script>") + len("<script>"):html.index("</script>")]
+
+        # Lift just the preview helper out of _applySfxEditToSpans.
+        start = script.index("function _previewLength(pd) {")
+        end = script.index("\n  }", start) + len("\n  }")
+        body = script[start:end]
+
+        harness = tmp_path / "h.js"
+        harness.write_text(
+            f"const durS = {_json.dumps(dur_s)}, natS = {_json.dumps(nat_s)};\n"
+            f"{body}\n"
+            f"console.log(JSON.stringify(_previewLength({_json.dumps(pd)})));\n",
+            encoding="utf-8",
+        )
+        r = subprocess.run(["node", str(harness)], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return _json.loads(r.stdout.strip())
+
+    def test_full_play_uses_source_length_not_duration_seconds(self, tmp_path):
+        """The regression: a 65s file clipped to 5s, user sets 100%."""
+        assert self._preview_length(tmp_path, 5.0, 65.0, 100) == 65.0
+
+    def test_partial_play_is_a_percentage_of_the_source(self, tmp_path):
+        assert self._preview_length(tmp_path, 5.0, 65.0, 50) == 32.5
+
+    def test_cleared_play_duration_falls_back_to_clipping(self, tmp_path):
+        """No play_duration → duration_seconds clips, capped at the file length."""
+        assert self._preview_length(tmp_path, 5.0, 65.0, None) == 5.0
+        assert self._preview_length(tmp_path, 30.0, 10.0, None) == 10.0
+
+    def test_no_clipping_configured_plays_whole_file(self, tmp_path):
+        assert self._preview_length(tmp_path, 0, 65.0, None) == 65.0
+
+    def test_generated_cue_falls_back_to_duration_seconds(self, tmp_path):
+        """No source file to probe — duration_seconds IS the rendered length."""
+        assert self._preview_length(tmp_path, 15.0, None, 100) == 15.0
+        assert self._preview_length(tmp_path, 15.0, None, 50) == 7.5
+

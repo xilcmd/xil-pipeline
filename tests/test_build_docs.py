@@ -8,6 +8,8 @@ import importlib.util
 import os
 from pathlib import Path
 
+import pytest
+
 # Load the module
 spec = importlib.util.spec_from_file_location(
     "build_docs",
@@ -349,6 +351,163 @@ class TestGeneratedDocsSubdir:
 
         assert not generated.exists()
 
+    def test_generated_dirname_is_not_derived_from_checkout_dir(self, tmp_path):
+        """The output directory must NOT follow the checkout directory's name.
+
+        Read the Docs checks out into "latest"/"stable" while GitHub Actions uses
+        ".../xil-pipeline/". Deriving the name from the checkout meant RTD grew a
+        SECOND doc tree beside the committed docs/xil-pipeline/, duplicating every
+        mkdocstrings anchor — ~86 "Multiple primary URLs" warnings that aborted
+        --strict on RTD while CI stayed green.
+        """
+        # A checkout named the way Read the Docs names it.
+        project_root = tmp_path / "latest"
+        project_root.mkdir()
+        docs_base = project_root / "docs"
+        docs_base.mkdir()
+        # Literal, not the constant: this asserts real behaviour, so it fails
+        # on the old code-root-derived implementation rather than erroring out.
+        committed = docs_base / "xil-pipeline"
+        committed.mkdir()
+        (committed / "stale.md").write_text("# stale\n")
+
+        build_docs.clean_generated_docs(docs_base, project_root)
+
+        # The committed tree is what gets cleaned — not docs/latest/.
+        assert not committed.exists()
+        assert not (docs_base / "latest").exists(), (
+            "clean_generated_docs created or left a checkout-named tree; "
+            "a second tree beside docs/xil-pipeline/ duplicates every anchor"
+        )
+
+    def test_generated_dirname_constant_matches_committed_tree(self):
+        """The constant must match the tree that is actually committed."""
+        repo_root = Path(build_docs.__file__).resolve().parent.parent
+        assert (repo_root / "docs" / build_docs.GENERATED_DOCS_DIRNAME).is_dir()
+
+
+# ─── Tests: DOC_CATEGORIES navigation grouping ───
+
+class TestDocCategories:
+    """Root-level docs are filed into docs/<category>/ so the nav is grouped.
+
+    Without this the nav is ASCII filename order (CLAUDE.md and DIRECTION_TYPES
+    ahead of "About"), because mkdocs.yml has no `nav:` and awesome-pages falls
+    back to sorting by filename.
+    """
+
+    def _project(self, tmp_path):
+        project_root = tmp_path / "xil-pipeline"
+        (project_root / "docs").mkdir(parents=True)
+        return project_root, project_root / "docs"
+
+    def test_mapped_root_doc_lands_in_category(self, tmp_path):
+        project_root, docs_base = self._project(tmp_path)
+        name = next(iter(build_docs.DOC_CATEGORIES))
+        category = build_docs.DOC_CATEGORIES[name]
+        (project_root / name).write_text("# doc\n")
+
+        build_docs.link_markdown_files(project_root, docs_base, project_root)
+
+        assert (docs_base / category / name).is_symlink()
+        assert not (docs_base / name).exists(), "should not also land in docs/ root"
+
+    def test_unmapped_root_doc_still_lands_flat(self, tmp_path):
+        """Files outside the map keep mirroring the repo structure."""
+        project_root, docs_base = self._project(tmp_path)
+        (project_root / "about-something.md").write_text("# doc\n")
+
+        build_docs.link_markdown_files(project_root, docs_base, project_root)
+
+        assert (docs_base / "about-something.md").is_symlink()
+
+    def test_categories_are_relative_names(self):
+        """A category must be a plain folder name, not a path or absolute."""
+        for name, category in build_docs.DOC_CATEGORIES.items():
+            assert category and not category.startswith(("/", ".")), name
+            assert "/" not in category and "\\" not in category, name
+
+
+class TestCleanPreservesHandWrittenDocs:
+    """clean_generated_docs must never delete committed documentation."""
+
+    def test_removes_symlinks_but_keeps_real_files_in_categories(self, tmp_path):
+        """Category folders mix generated symlinks with committed pages.
+
+        rmtree here would silently delete hand-written documentation — the whole
+        reason the sweep is symlink-only.
+        """
+        project_root = tmp_path / "xil-pipeline"
+        docs_base = project_root / "docs"
+        category = next(iter(build_docs.DOC_CATEGORIES.values()))
+        category_dir = docs_base / category
+        category_dir.mkdir(parents=True)
+
+        real = category_dir / "hand-written.md"
+        real.write_text("# keep me\n")
+        pages = category_dir / ".pages"
+        pages.write_text("title: Configuration\n")
+        source = project_root / "generated-source.md"
+        source.write_text("# generated\n")
+        link = category_dir / "generated-source.md"
+        link.symlink_to(source)
+
+        build_docs.clean_generated_docs(docs_base, project_root)
+
+        assert real.exists(), "committed page was deleted"
+        assert pages.exists(), "committed .pages was deleted"
+        assert not link.is_symlink(), "stale symlink was not cleaned"
+
+    def test_removes_broken_symlink(self, tmp_path):
+        """A source that was deleted leaves a dangling link; clear it."""
+        project_root = tmp_path / "xil-pipeline"
+        docs_base = project_root / "docs"
+        category = next(iter(build_docs.DOC_CATEGORIES.values()))
+        category_dir = docs_base / category
+        category_dir.mkdir(parents=True)
+        broken = category_dir / "gone.md"
+        broken.symlink_to(project_root / "never-existed.md")
+
+        build_docs.clean_generated_docs(docs_base, project_root)
+
+        assert not broken.is_symlink()
+
+    def test_sweeps_stale_root_symlink_for_categorized_file(self, tmp_path):
+        """Newly categorizing a file must not leave its old docs/ root link.
+
+        MkDocs would resolve the page from docs/ root instead of the category
+        folder, and every relative link inside it would point at the wrong
+        neighbours — a --strict failure.
+        """
+        project_root = tmp_path / "xil-pipeline"
+        docs_base = project_root / "docs"
+        docs_base.mkdir(parents=True)
+        name = next(iter(build_docs.DOC_CATEGORIES))
+        source = project_root / name
+        source.write_text("# doc\n")
+        stale = docs_base / name
+        stale.symlink_to(source)
+
+        build_docs.clean_generated_docs(docs_base, project_root)
+
+        assert not stale.is_symlink()
+
+    def test_keeps_docs_pages_navigation_file(self, tmp_path):
+        """docs/.pages is committed navigation, not build output.
+
+        Deleting it was why no curated top-level nav could exist: RTD runs
+        build_docs.py as pre_build, so the file vanished before MkDocs ran.
+        """
+        project_root = tmp_path / "xil-pipeline"
+        docs_base = project_root / "docs"
+        docs_base.mkdir(parents=True)
+        pages = docs_base / ".pages"
+        pages.write_text("nav:\n  - README.md\n  - ...\n")
+
+        build_docs.clean_generated_docs(docs_base, project_root)
+
+        assert pages.exists(), "committed top-level nav was deleted"
+
 
 # ─── Tests: cross-drive symlink fallback ───
 
@@ -405,3 +564,61 @@ class TestCrossDriveSymlinkFallback:
             assert dest.resolve() == src.resolve()
         else:
             assert dest.read_bytes() == src.read_bytes()
+
+
+class TestMarkdownFilterIsRootRelative:
+    """should_copy_markdown_file must filter relative to code_root.
+
+    Read the Docs checks out into /home/docs/checkouts/... — that literal "docs"
+    component is in skip_dirs, so matching absolute path parts rejected EVERY
+    markdown file. RTD logged "Markdown files: 0" on every build; the site only
+    worked because the symlinks happened to be committed. should_document_file()
+    already carries this fix for .py files, which is why the same builds
+    documented 59 modules but 0 pages.
+    """
+
+    def _rtd_layout(self, tmp_path):
+        # Mirror RTD's real checkout path, "docs" component and all.
+        root = tmp_path / "home" / "docs" / "checkouts" / "user_builds" / "latest"
+        root.mkdir(parents=True)
+        return root
+
+    def test_accepts_root_doc_under_a_docs_ancestor(self, tmp_path):
+        code_root = self._rtd_layout(tmp_path)
+        md = code_root / "cast-config-reference.md"
+        md.write_text("# doc\n")
+
+        assert build_docs.should_copy_markdown_file(md, code_root) is True
+
+    def test_still_skips_the_projects_own_docs_dir(self, tmp_path):
+        """The real intent — never re-copy generated output into docs/docs/."""
+        code_root = self._rtd_layout(tmp_path)
+        inner = code_root / "docs"
+        inner.mkdir()
+        md = inner / "generated.md"
+        md.write_text("# doc\n")
+
+        assert build_docs.should_copy_markdown_file(md, code_root) is False
+
+    @pytest.mark.parametrize("subdir", ["site", "venv", ".git", "scripts"])
+    def test_still_skips_other_excluded_dirs(self, tmp_path, subdir):
+        code_root = self._rtd_layout(tmp_path)
+        d = code_root / subdir
+        d.mkdir()
+        md = d / "x.md"
+        md.write_text("# doc\n")
+
+        assert build_docs.should_copy_markdown_file(md, code_root) is False
+
+    def test_link_markdown_files_finds_docs_under_a_docs_ancestor(self, tmp_path):
+        """End to end: the count that read 0 on every RTD build."""
+        code_root = self._rtd_layout(tmp_path)
+        (code_root / "README.md").write_text("# readme\n")
+        (code_root / "guide.md").write_text("# guide\n")
+        docs_base = code_root / "docs"
+        docs_base.mkdir()
+
+        linked = build_docs.link_markdown_files(code_root, docs_base, code_root)
+
+        assert linked == 2, "markdown files were filtered out by an ancestor name"
+

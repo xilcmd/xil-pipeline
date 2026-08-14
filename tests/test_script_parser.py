@@ -1226,26 +1226,85 @@ class TestGenerateSfxConfig:
 
 class TestParseDirectionHint:
     def test_strips_mp3_hint(self):
-        clean, src = parser._parse_direction_hint(
+        clean, src, attrs = parser._parse_direction_hint(
             "SFX: RADIO STATIC — BRIEF TUNING | sfx_radio-static.mp3"
         )
         assert clean == "SFX: RADIO STATIC — BRIEF TUNING"
         assert src == "SFX/sfx_radio-static.mp3"
+        assert attrs == {}
 
     def test_strips_wav_hint(self):
-        clean, src = parser._parse_direction_hint("SFX: DOOR OPENS | door-opens.wav")
+        clean, src, attrs = parser._parse_direction_hint("SFX: DOOR OPENS | door-opens.wav")
         assert clean == "SFX: DOOR OPENS"
         assert src == "SFX/door-opens.wav"
+        assert attrs == {}
 
     def test_no_hint_returns_none(self):
-        clean, src = parser._parse_direction_hint("SFX: DOOR OPENS")
+        clean, src, attrs = parser._parse_direction_hint("SFX: DOOR OPENS")
         assert clean == "SFX: DOOR OPENS"
         assert src is None
+        assert attrs == {}
 
     def test_pipe_without_audio_extension_ignored(self):
-        clean, src = parser._parse_direction_hint("SFX: DOOR OPENS | some notes")
+        clean, src, attrs = parser._parse_direction_hint("SFX: DOOR OPENS | some notes")
         assert clean == "SFX: DOOR OPENS | some notes"
         assert src is None
+        assert attrs == {}
+
+
+class TestParseDirectionHintAttributes:
+    """Issue #48: a `play_volume_pct` segment becomes a per-cue volume override."""
+
+    def test_file_and_volume(self):
+        clean, src, attrs = parser._parse_direction_hint(
+            "OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20%", slug="the413"
+        )
+        assert clean == "OUTRO MUSIC"
+        assert src == "SFX/the413/sundy3M4_v3.mp3"
+        assert attrs == {"volume_percentage": 20.0}
+
+    def test_volume_without_file(self):
+        clean, src, attrs = parser._parse_direction_hint("MUSIC: STING | play_volume_pct=40%")
+        assert clean == "MUSIC: STING"
+        assert src is None
+        assert attrs == {"volume_percentage": 40.0}
+
+    def test_percent_sign_optional(self):
+        _, _, attrs = parser._parse_direction_hint("MUSIC: STING | play_volume_pct=40")
+        assert attrs == {"volume_percentage": 40.0}
+
+    def test_order_is_free(self):
+        clean, src, attrs = parser._parse_direction_hint(
+            "OUTRO MUSIC | play_volume_pct=20% | outro.mp3"
+        )
+        assert clean == "OUTRO MUSIC"
+        assert src == "SFX/outro.mp3"
+        assert attrs == {"volume_percentage": 20.0}
+
+    def test_unknown_key_left_on_the_text(self):
+        """An unrecognised segment is preserved, not silently swallowed."""
+        clean, src, attrs = parser._parse_direction_hint("SFX: BUZZ | reverb=big")
+        assert clean == "SFX: BUZZ | reverb=big"
+        assert src is None
+        assert attrs == {}
+
+    def test_non_numeric_value_ignored(self):
+        clean, _, attrs = parser._parse_direction_hint("SFX: BUZZ | play_volume_pct=loud")
+        assert attrs == {}
+        assert clean == "SFX: BUZZ | play_volume_pct=loud"
+
+    def test_out_of_range_value_ignored(self):
+        _, _, attrs = parser._parse_direction_hint("SFX: BUZZ | play_volume_pct=500%")
+        assert attrs == {}
+
+    def test_second_filename_not_consumed(self):
+        clean, src, _ = parser._parse_direction_hint("SFX: BUZZ | a.mp3 | b.mp3")
+        assert src == "SFX/a.mp3"
+        assert clean == "SFX: BUZZ | b.mp3"
+
+    def test_format_hint_attr_round_trips(self):
+        assert parser.format_hint_attr("volume_percentage", 20.0) == "play_volume_pct=20%"
+        assert parser.format_hint_attr("volume_percentage", 12.5) == "play_volume_pct=12.5%"
 
 
 # ─── Tests: generate_sfx_config with source hints ───
@@ -1294,6 +1353,58 @@ class TestGenerateSfxConfigWithHints:
         direction = next(e for e in parsed["entries"] if e["type"] == "direction")
         assert direction["text"] == "SFX: PHONE BUZZ"
         assert direction.get("sfx_source") == "SFX/the413/sfx_buzz.mp3"
+
+    def test_volume_hint_lands_in_config(self, tmp_path):
+        """Issue #48: play_volume_pct reaches the cue's volume_percentage."""
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20%]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        direction = next(e for e in parsed["entries"] if e["type"] == "direction")
+        assert direction["text"] == "OUTRO MUSIC"
+        assert direction["sfx_overrides"] == {"volume_percentage": 20.0}
+
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        effect = config["effects"]["OUTRO MUSIC"]
+        assert effect["volume_percentage"] == 20.0
+        assert effect["source"] == "SFX/the413/sundy3M4_v3.mp3"
+
+    def test_volume_hint_on_generated_cue(self, tmp_path):
+        """A volume hint needs no source file — it applies to prompt cues too."""
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[MUSIC: STING | play_volume_pct=40%]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        effect = config["effects"]["MUSIC: STING"]
+        assert effect["volume_percentage"] == 40.0
+        assert effect["prompt"] == "MUSIC: STING"
+
+    def test_silence_cue_ignores_volume_hint(self, tmp_path):
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[BEAT | play_volume_pct=40%]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert "volume_percentage" not in config["effects"]["BEAT"]
 
 
 # ─── Tests: backfill_sfx_sources ───
@@ -1385,6 +1496,50 @@ class TestBackfillSfxSources:
         with open(str(sfx_path), encoding="utf-8") as f:
             result = json.load(f)
         assert result["effects"]["SFX: NEW EFFECT"]["source"] == "SFX/sfx_new.mp3"
+
+
+class TestBackfillSfxOverrides:
+    """Attribute hints are authoritative — the script overwrites the config."""
+
+    def _run(self, tmp_path, parsed, sfx_data):
+        sfx_path = tmp_path / "sfx.json"
+        sfx_path.write_text(json.dumps(sfx_data), encoding="utf-8")
+        parser.backfill_sfx_sources(parsed, str(sfx_path))
+        with open(str(sfx_path), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_volume_only_hint_updates_existing_cue(self, tmp_path):
+        parsed = {"entries": [{"type": "direction", "text": "OUTRO MUSIC",
+                               "sfx_overrides": {"volume_percentage": 20.0}}]}
+        sfx_data = {"effects": {"OUTRO MUSIC": {"source": "SFX/outro.mp3",
+                                                "duration_seconds": 15.0}}}
+        result = self._run(tmp_path, parsed, sfx_data)
+        assert result["effects"]["OUTRO MUSIC"]["volume_percentage"] == 20.0
+        assert result["effects"]["OUTRO MUSIC"]["source"] == "SFX/outro.mp3"
+
+    def test_existing_volume_is_overwritten(self, tmp_path):
+        parsed = {"entries": [{"type": "direction", "text": "OUTRO MUSIC",
+                               "sfx_overrides": {"volume_percentage": 20.0}}]}
+        sfx_data = {"effects": {"OUTRO MUSIC": {"source": "SFX/outro.mp3",
+                                                "volume_percentage": 75.0}}}
+        result = self._run(tmp_path, parsed, sfx_data)
+        assert result["effects"]["OUTRO MUSIC"]["volume_percentage"] == 20.0
+
+    def test_volume_only_hint_creates_missing_cue_with_prompt(self, tmp_path):
+        parsed = {"entries": [{"type": "direction", "text": "MUSIC: STING",
+                               "sfx_overrides": {"volume_percentage": 40.0}}]}
+        result = self._run(tmp_path, parsed, {"effects": {}})
+        effect = result["effects"]["MUSIC: STING"]
+        assert effect["volume_percentage"] == 40.0
+        assert effect["prompt"] == "MUSIC: STING"      # still needs generating
+        assert "source" not in effect
+
+    def test_silence_cue_never_gets_a_volume(self, tmp_path):
+        parsed = {"entries": [{"type": "direction", "text": "BEAT",
+                               "sfx_overrides": {"volume_percentage": 20.0}}]}
+        sfx_data = {"effects": {"BEAT": {"type": "silence", "duration_seconds": 1.0}}}
+        result = self._run(tmp_path, parsed, sfx_data)
+        assert "volume_percentage" not in result["effects"]["BEAT"]
 
 
 # ─── Tests: strip_markdown_formatting ───

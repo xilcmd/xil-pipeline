@@ -1,7 +1,8 @@
 site_name: xil-pipeline SDK Documentation
 
-# Don't fail build on warnings
-strict: false
+# Fail the build on any griffe/mkdocstrings warning (e.g. missing type
+# annotations) so documentation regressions can't land silently.
+strict: true
 
 # Exclude non-documentation directories that live inside docs/
 exclude_docs: |

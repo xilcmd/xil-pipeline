@@ -1,0 +1,16 @@
+# Top-level navigation order for mkdocs-awesome-pages.
+#
+# Without this file the nav is ASCII filename order, which sorts CLAUDE.md and
+# DIRECTION_TYPES ahead of "About" for no reason a reader can see.
+#
+# The trailing "..." is load-bearing: it catches every page not named here, so a
+# new doc always appears in the nav even if nobody updates this file.
+nav:
+  - README.md
+  - configuration
+  - guides
+  - internals
+  - xil-pipeline
+  - samples
+  - about.md
+  - ...

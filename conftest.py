@@ -107,6 +107,30 @@ def app_page(page, gradio_server):
     return page
 
 
+@pytest.fixture
+def create_show_via_ui(page):
+    """Callable that drives the Setup tab's "Create show" flow to completion.
+
+    A fixture (not a plain importable function) because two conftest.py
+    files exist in this repo (this one and tests/conftest.py) — "conftest"
+    as a bare module name is ambiguous for direct imports, but pytest's own
+    fixture resolution has no such ambiguity. Shared by test_webapp_smoke.py
+    and test_gui_pipeline_lifecycle.py, both of which need a fresh show
+    scaffolded through the real UI before exercising later stages.
+    """
+    def _create(show_name: str) -> None:
+        page.locator("#init-show-name textarea").fill(show_name)
+        page.locator("#init-create-btn").click()
+        page.wait_for_function(
+            "document.querySelector('#init-log textarea').value.includes('[exit')",
+            timeout=30_000,
+        )
+        log = page.locator("#init-log textarea").input_value()
+        assert "[exit 0]" in log, f"show creation failed:\n{log}"
+
+    return _create
+
+
 @pytest.fixture(scope="session")
 def api_client(gradio_server):
     """gradio_client for API-level regression tests (fast path).
