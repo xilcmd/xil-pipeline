@@ -1122,6 +1122,43 @@ class TestSfxRouteJournaling:
         assert not self._journal(tmp_path).exists()
 
 
+# ── startup workspace banner ──────────────────────────────────────────────────
+
+class TestPrintWorkspaceBanner:
+    """A stale/misconfigured XIL_PROJECTROOT (wrong terminal, un-sourced
+    .bashrc, typo) must be impossible to miss at xil-gui startup — printed
+    to the terminal before the Gradio server even builds."""
+
+    def test_prints_resolved_workspace_path(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        from xil_pipeline.xil_gui import _print_workspace_banner
+        _print_workspace_banner()
+        out = capsys.readouterr().out
+        assert str(tmp_path) in out
+
+    def test_no_warning_when_directory_exists(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        from xil_pipeline.xil_gui import _print_workspace_banner
+        _print_workspace_banner()
+        out = capsys.readouterr().out
+        assert "WARNING" not in out
+
+    def test_warns_when_directory_missing(self, tmp_path, monkeypatch, capsys):
+        missing = tmp_path / "does-not-exist"
+        monkeypatch.setenv("XIL_PROJECTROOT", str(missing))
+        from xil_pipeline.xil_gui import _print_workspace_banner
+        _print_workspace_banner()
+        out = capsys.readouterr().out
+        assert "WARNING" in out
+        assert str(missing) in out
+
+    def test_returns_resolved_path(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
+        from xil_pipeline.xil_gui import _print_workspace_banner
+        result = _print_workspace_banner()
+        assert result == tmp_path.resolve()
+
+
 class TestSfxRouteVerboseLogging:
     """--verbose (DEBUG level) surfaces per-request detail for the Timeline
     audio-properties dialog; the INFO/WARNING summary lines stay visible at
