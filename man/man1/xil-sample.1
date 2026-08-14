@@ -1,9 +1,9 @@
-.TH XIL\-SAMPLE "1" "2026\-08\-09" "xil\-pipeline 0.3.2" "User Commands"
+.TH XIL\-SAMPLE "1" "2026\-08\-14" "xil\-pipeline 0.3.2" "User Commands"
 .SH NAME
 xil\-sample
 .SH SYNOPSIS
 .B xil\-sample
-[-h] (--episode TAG | --cast PATH) [--show SHOW] [--backend {elevenlabs,gtts,chatterbox,chatterbox-turbo}] [--chatterbox-python PATH] [--voice-refs DIR] [--sample-text TEXT] [--dry-run] [--force]
+[-h] (--episode TAG | --cast PATH) [--show SHOW] [--backend {elevenlabs,gtts,chatterbox,chatterbox-turbo}] [--chatterbox-python PATH] [--voice-refs DIR] [--device DEVICE] [--sample-text TEXT] [--dry-run] [--force]
 .SH DESCRIPTION
 Generate a voice sample MP3 for each cast member via the chosen TTS backend.
 
@@ -45,6 +45,13 @@ chatterbox/bin/python3). Used with \-\-backend chatterbox or chatterbox\-turbo.
 Directory containing <speaker_key>.wav reference clips for Chatterbox zero\-
 shot voice cloning (default: voice_refs/). Used with \-\-backend chatterbox or
 chatterbox\-turbo.
+
+.TP
+\fB\-\-device\fR \fI\,DEVICE\/\fR
+Device for \-\-backend chatterbox\-turbo (default: cuda). The worker auto\-falls
+back to cpu when cuda is requested but unavailable, so this rarely needs
+setting explicitly — pass 'cpu' to force it even when cuda would work. Slower
+on cpu, but functional.
 
 .TP
 \fB\-\-sample\-text\fR \fI\,TEXT\/\fR

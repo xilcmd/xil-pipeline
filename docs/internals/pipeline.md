@@ -336,6 +336,13 @@ sequenceDiagram
 > conditionals are **not** interchangeable with the classic `.conds.pt` files still on disk.
 > Historical stems and logs recording `backend: chatterbox` remain valid and are still parsed by
 > `xil-stem-log`.
+>
+> **CPU fallback:** `--device cuda|cpu` (default `cuda`) is rarely needed —
+> `chatterbox_turbo_worker.py` auto-detects a missing/broken CUDA install and falls back to `cpu`
+> on its own (slower, but functional), logging the fallback and reporting the actual device in its
+> ready signal. Pass `--device cpu` explicitly only to *force* CPU on a machine where a GPU **is**
+> available (e.g. it's busy with another job) — an explicit `cpu` request is never overridden back
+> to `cuda`.
 
 #### Chatterbox Turbo paralinguistic tags
 
