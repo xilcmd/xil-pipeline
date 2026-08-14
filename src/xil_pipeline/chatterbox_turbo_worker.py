@@ -8,13 +8,16 @@ Run with the chatterbox venv Python, not the main pipeline venv::
 
     venv-chatterbox/bin/python3 chatterbox_turbo_worker.py [cuda|cpu]
 
-This is the Turbo counterpart of :mod:`chatterbox_worker`. It loads
-``ChatterboxTurboTTS`` (HuggingFace repo ``ResembleAI/chatterbox-turbo``, shipped
-in the same ``chatterbox-tts`` package) instead of the classic ``ChatterboxTTS``.
+Loads ``ChatterboxTurboTTS`` (HuggingFace repo ``ResembleAI/chatterbox-turbo``).
+Classic Chatterbox (``chatterbox_worker.py``) was removed in #62.
+
+If ``cuda`` is requested but unavailable, the worker falls back to ``cpu``
+automatically (slower, but functional) rather than failing to load the model —
+see :func:`_resolve_device`.
 
 Protocol (newline-delimited JSON on stdin/stdout):
 
-  Startup:  worker prints  {"ready": true, "sr": <int>}
+  Startup:  worker prints  {"ready": true, "sr": <int>, "device": "cuda"|"cpu"}
   Request:  {"text": "...", "out_path": "...", "ref_audio": "<path>|null",
              "cond_path": "<path>|null"}
   Response: {"done": true} | {"done": true, "skipped": true} | {"error": "..."}
@@ -113,6 +116,17 @@ def _send(stream, msg: dict) -> None:
     stream.flush()
 
 
+def _resolve_device(requested: str, cuda_available: bool) -> str:
+    """Return "cpu" if *requested* is "cuda" but no CUDA device is available.
+
+    Passes through unchanged otherwise — an explicit "cpu" request is never
+    overridden, and "cuda" is kept when it's actually usable.
+    """
+    if requested == "cuda" and not cuda_available:
+        return "cpu"
+    return requested
+
+
 def main() -> None:
     """Load ChatterboxTurboTTS and serve generation requests via JSON protocol."""
     device = sys.argv[1] if len(sys.argv) > 1 else "cuda"
@@ -124,9 +138,16 @@ def main() -> None:
     import warnings
     warnings.filterwarnings("ignore", category=FutureWarning)
 
+    import torch  # type: ignore[import]
     import torchaudio  # type: ignore[import]
     from chatterbox.tts_turbo import ChatterboxTurboTTS  # type: ignore[import]
     from pydub import AudioSegment  # type: ignore[import]
+
+    resolved = _resolve_device(device, torch.cuda.is_available())
+    if resolved != device:
+        print(f"[chatterbox-turbo] CUDA requested but not available, "
+              f"falling back to {resolved}", file=sys.stderr, flush=True)
+    device = resolved
 
     model = ChatterboxTurboTTS.from_pretrained(device=device)
 
@@ -142,7 +163,7 @@ def main() -> None:
 
     model.norm_loudness = _norm_loudness_f32
 
-    _send(proto, {"ready": True, "sr": model.sr})
+    _send(proto, {"ready": True, "sr": model.sr, "device": device})
 
     for raw in sys.stdin:
         raw = raw.strip()

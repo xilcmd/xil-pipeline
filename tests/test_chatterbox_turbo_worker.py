@@ -2,14 +2,15 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Tests for the Chatterbox Turbo worker's paralinguistic-tag allowlist.
+"""Tests for the Chatterbox Turbo worker's pure-Python helpers.
 
-Only the pure-Python ``filter_tags`` helper is exercised here; the heavy
-model imports live inside ``main()`` and are not triggered by importing the
-module, so these run without the chatterbox venv.
+Only ``filter_tags`` (paralinguistic-tag allowlist) and ``_resolve_device``
+(CUDA/CPU fallback) are exercised here; the heavy model imports live inside
+``main()`` and are not triggered by importing the module, so these run
+without the chatterbox venv.
 """
 
-from xil_pipeline.chatterbox_turbo_worker import ALLOWED_TAGS, filter_tags
+from xil_pipeline.chatterbox_turbo_worker import ALLOWED_TAGS, _resolve_device, filter_tags
 
 
 def test_keeps_native_paralinguistic_tags():
@@ -58,3 +59,19 @@ def test_strips_plural_forms_that_have_no_token():
     # literal text through the tokenizer and get it read aloud.
     assert filter_tags("he [laughs] loudly").replace("  ", " ") == "he loudly"
     assert filter_tags("she [coughs]").strip() == "she"
+
+
+class TestResolveDevice:
+    """CUDA requested but unavailable must degrade to CPU rather than fail
+    to load the model — a real explicit "cpu" request must never be
+    overridden either way."""
+
+    def test_falls_back_to_cpu_when_cuda_unavailable(self):
+        assert _resolve_device("cuda", cuda_available=False) == "cpu"
+
+    def test_keeps_cuda_when_available(self):
+        assert _resolve_device("cuda", cuda_available=True) == "cuda"
+
+    def test_explicit_cpu_request_is_never_overridden(self):
+        assert _resolve_device("cpu", cuda_available=True) == "cpu"
+        assert _resolve_device("cpu", cuda_available=False) == "cpu"

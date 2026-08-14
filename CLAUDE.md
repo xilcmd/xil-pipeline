@@ -127,6 +127,7 @@ xil produce --episode S01E01 --dry-run
 - **Classic `chatterbox` was removed in #62** (Turbo supersedes it). `--backend chatterbox` is still accepted as a deprecated alias: it warns and generates with Turbo, and the stem is recorded as `chatterbox-turbo`. **Historical data still says `chatterbox`** — ~8,460 log records and ~1,559 stem-manifest entries — and is still parsed by `xil-stem-log`. Those values are correct history, not corruption; `backend` is part of the manifest dedup key, so old entries simply never match a new request
 - `--backend chatterbox-turbo` options: `--chatterbox-python PATH` (default: auto-detect `./venv-chatterbox/bin/python3`); `--voice-refs DIR` (default: `voice_refs/`) for per-speaker `.wav` reference clips; missing voice refs fall back to Chatterbox default voice
 - `--backend chatterbox-turbo` uses `--chatterbox-python`/`--voice-refs` and `venv-chatterbox`. Reference clips **must be >5 seconds** (Turbo asserts this); Turbo conditionals are cached as `voice_refs/<key>.turbo.conds.pt` — kept distinct because they are **not** interchangeable with the classic `.conds.pt` files still on disk. If the model repo is gated, set `HF_TOKEN` before first run
+- `--device cuda|cpu` (default: `cuda`) selects the Chatterbox Turbo device. Not usually needed: `chatterbox_turbo_worker.py` auto-falls back to `cpu` whenever `cuda` is requested but `torch.cuda.is_available()` is false (slower, but functional — no separate flag or setup needed for a CPU-only machine), logging the fallback and reporting the actual device in its ready signal, which the client surfaces as a warning if it differs from what was requested. `--device cpu` is for forcing CPU even when a GPU **is** available (e.g. it's busy with another job) — the worker never overrides an explicit `cpu` request back to `cuda`
 
 #### Chatterbox Turbo Paralinguistic Tags
 
@@ -543,7 +544,7 @@ xil sample --episode S02E03 --force
 - Default sample text: `"I am {name} not yo momma"`; override with `--sample-text` (use `{name}` placeholder)
 - Output: `voice_samples/{TAG}/{backend}/{actor}.mp3` — backend subdirectory enables side-by-side comparison
 - Skips members with `voice_id=TBD` (ElevenLabs only); `--force` regenerates existing samples
-- `--chatterbox-python PATH`, `--voice-refs DIR` — Chatterbox Turbo options (same as `xil-produce`)
+- `--chatterbox-python PATH`, `--voice-refs DIR`, `--device cuda|cpu` — Chatterbox Turbo options (same as `xil-produce`; `--device` auto-falls back to `cpu` when `cuda` is unavailable, so it's only needed to force `cpu` on a working GPU)
 - Requires `ELEVENLABS_API_KEY` for `--backend elevenlabs`
 
 ### SFX Library Discovery
