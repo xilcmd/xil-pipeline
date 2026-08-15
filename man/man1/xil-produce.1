@@ -1,9 +1,9 @@
-.TH XIL\-PRODUCE "1" "2026\-08\-06" "xil\-pipeline 0.3.2" "User Commands"
+.TH XIL\-PRODUCE "1" "2026\-08\-14" "xil\-pipeline 0.3.2" "User Commands"
 .SH NAME
 xil\-produce
 .SH SYNOPSIS
 .B xil\-produce
-[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--reconcile] [--apply] [--force] [--start-from START_FROM] [--stop-at STOP_AT] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--sfx-backend BACKEND] [--mmaudio-python PATH] [--mmaudio-duration FLOAT] [--mmaudio-cfg FLOAT] [--mmaudio-steps INT] [--mmaudio-negative-prompt STR] [--mmaudio-seed INT] [--mmaudio-accept-noncommercial]
+[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--reconcile] [--apply] [--force] [--start-from START_FROM] [--stop-at STOP_AT] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--device DEVICE] [--sfx-backend BACKEND] [--mmaudio-python PATH] [--mmaudio-duration FLOAT] [--mmaudio-cfg FLOAT] [--mmaudio-steps INT] [--mmaudio-negative-prompt STR] [--mmaudio-seed INT] [--mmaudio-accept-noncommercial]
 .SH DESCRIPTION
 Voice Generation — generate voice stems via ElevenLabs
 
@@ -105,6 +105,13 @@ cloning (default: <workspace>/voice_refs/). Missing refs fall back to
 Chatterbox's default voice.
 
 .TP
+\fB\-\-device\fR \fI\,DEVICE\/\fR
+Device for \-\-backend chatterbox\-turbo (default: cuda). The worker auto\-falls
+back to cpu when cuda is requested but unavailable, so this rarely needs
+setting explicitly — pass 'cpu' to force it (e.g. the GPU is busy with another
+job) even when cuda would work. Slower on cpu, but functional.
+
+.TP
 \fB\-\-sfx\-backend\fR \fI\,BACKEND\/\fR
 Backend for SFX/music/ambience generation, independent of the dialogue
 \-\-backend. 'elevenlabs' (default) calls the ElevenLabs Sound Effects API.
@@ -174,6 +181,7 @@ for \-\-sfx\-backend mmaudio.
 .BR xil-status (1),
 .BR xil-sfx-restore (1),
 .BR xil-sfx-impact (1),
+.BR xil-sfx-match (1),
 .BR xil-db-profile (1),
 .BR xil-sfx-csv (1),
 .BR xil-parsed-csv (1),

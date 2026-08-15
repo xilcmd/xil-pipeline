@@ -26,6 +26,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 from xil_pipeline.chatterbox_turbo_worker import ALLOWED_TAGS
 from xil_pipeline.log_config import configure_logging, get_logger
@@ -87,6 +88,9 @@ def load_and_normalize(path: str) -> list[str]:
     """
     with open(path, encoding="utf-8") as f:
         text = f.read()
+    # Match the parser: NFC before anything else, so a decomposed accent does
+    # not read as a different cue here than it does downstream.
+    text = unicodedata.normalize("NFC", text)
     text = strip_markdown_escapes(text)
     text = strip_markdown_formatting(text)
     return text.split("\n")
@@ -241,12 +245,23 @@ def scan_direction_texts(
     return {"matched": matched, "hinted": hinted, "new": new}
 
 
-def scan_vintage_filter_pairing(lines: list[str]) -> list[dict]:
-    """Check that every VINTAGE FILTER ENGAGES has a matching DISENGAGES.
+def scan_span_pairing(lines: list[str], marker: str, *, allow_colon: bool = False) -> list[dict]:
+    """Check that every ``<marker> ENGAGES`` has a matching ``DISENGAGES``.
 
-    Returns a list of unpaired marker dicts:
-    ``{"text": str, "line": int, "type": "ENGAGES" | "DISENGAGES"}``
+    Args:
+        lines: Raw script lines.
+        marker: Span direction name, e.g. ``"VINTAGE FILTER"``.
+        allow_colon: Also accept the ``"<marker>: ENGAGES"`` spelling.  Left
+            off for VINTAGE FILTER, whose exact-match behaviour is relied on by
+            scripts already in production.
+
+    Returns:
+        List of unpaired marker dicts:
+        ``{"text": str, "line": int, "type": "ENGAGES" | "DISENGAGES"}``
     """
+    pattern = re.compile(
+        rf"^{re.escape(marker)}{':?' if allow_colon else ''}\s+(ENGAGES|DISENGAGES)$"
+    )
     stack: list[dict] = []
     unpaired: list[dict] = []
     for i, raw_line in enumerate(lines):
@@ -254,9 +269,12 @@ def scan_vintage_filter_pairing(lines: list[str]) -> list[dict]:
         if not is_stage_direction(line):
             continue
         inner = line[1:-1].strip()
-        if inner == "VINTAGE FILTER ENGAGES":
+        match = pattern.match(inner)
+        if not match:
+            continue
+        if match.group(1) == "ENGAGES":
             stack.append({"text": inner, "line": i + 1, "type": "ENGAGES"})
-        elif inner == "VINTAGE FILTER DISENGAGES":
+        else:
             if stack:
                 stack.pop()
             else:
@@ -264,6 +282,37 @@ def scan_vintage_filter_pairing(lines: list[str]) -> list[dict]:
     # Any unclosed ENGAGES still on the stack
     unpaired.extend(stack)
     return unpaired
+
+
+def scan_vintage_filter_pairing(lines: list[str]) -> list[dict]:
+    """Check that every VINTAGE FILTER ENGAGES has a matching DISENGAGES.
+
+    Colon-form markers (``[VINTAGE FILTER: ENGAGES]``) are deliberately not
+    matched: widening this check would newly surface unpaired markers in scripts
+    that pass today, turning a cosmetic inconsistency into a failed scan.
+
+    Args:
+        lines: Raw script lines.
+
+    Returns:
+        List of unpaired marker dicts.
+    """
+    return scan_span_pairing(lines, "VINTAGE FILTER")
+
+
+def scan_film_audio_pairing(lines: list[str]) -> list[dict]:
+    """Check that every FILM AUDIO ENGAGES has a matching DISENGAGES.
+
+    Both the colon and colon-free spellings are accepted, so this direction
+    type does not inherit the VINTAGE FILTER spelling split.
+
+    Args:
+        lines: Raw script lines.
+
+    Returns:
+        List of unpaired marker dicts.
+    """
+    return scan_span_pairing(lines, "FILM AUDIO", allow_colon=True)
 
 
 def scan_preamble_postamble(sections: list[dict]) -> dict:
@@ -460,6 +509,16 @@ def format_report(scan: dict, header: dict) -> str:
     lines.append("VINTAGE FILTER PAIRING")
     if vf_unpaired:
         for item in vf_unpaired:
+            lines.append(f"  ⚠  {item['type']:<12} unpaired  line {item['line']}")
+    else:
+        lines.append("  ✓  all markers paired (or none present)")
+
+    # FILM AUDIO pairing
+    fa_unpaired = scan.get("film_audio_unpaired", [])
+    lines.append("")
+    lines.append("FILM AUDIO PAIRING")
+    if fa_unpaired:
+        for item in fa_unpaired:
             lines.append(f"  ⚠  {item['type']:<12} unpaired  line {item['line']}")
     else:
         lines.append("  ✓  all markers paired (or none present)")
@@ -861,6 +920,9 @@ def main():
         # VINTAGE FILTER pairing
         scan["vintage_filter_unpaired"] = scan_vintage_filter_pairing(lines)
 
+        # FILM AUDIO pairing
+        scan["film_audio_unpaired"] = scan_film_audio_pairing(lines)
+
         # Ambience loop coverage
         scan["ambience_unclosed"] = scan_ambience_coverage(lines)
 
@@ -886,7 +948,11 @@ def main():
         else:
             logger.info(format_report(scan, header))
 
-        fatal = bool(scan["unrecognized"]) or bool(scan["vintage_filter_unpaired"])
+        fatal = (
+            bool(scan["unrecognized"])
+            or bool(scan["vintage_filter_unpaired"])
+            or bool(scan["film_audio_unpaired"])
+        )
         if fatal:
             sys.exit(1)
 

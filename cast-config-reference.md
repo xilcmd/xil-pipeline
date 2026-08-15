@@ -78,13 +78,47 @@ spaces — e.g. `adam`, `mr_patterson`). Keys are matched case-sensitively again
 | `full_name` | string | yes | Character display name (used in ID3 tags and voice sample filenames) |
 | `voice_id` | string | yes | ElevenLabs voice ID. Set to `"TBD"` when not yet assigned — pipeline will skip TTS for this speaker |
 | `pan` | float −1.0 to 1.0 | yes | Stereo position. `0.0` = centre, `−1.0` = full left, `1.0` = full right |
-| `filter` | bool | yes | `true` applies a phone-speaker bandpass filter (telephone/radio effect) |
+| `filter` | bool or string | yes | Voice treatment. `false`/`null` = none. See the [Voice Filters](#voice-filters) table |
 | `role` | string | yes | Character description passed as `previous_text` context to ElevenLabs |
 | `stability` | float 0–1 | no | Voice stability. `0.0` = expressive/variable, `1.0` = monotone/consistent. `null` uses the voice's ElevenLabs default |
 | `similarity_boost` | float 0–1 | no | Adherence to the original cloned voice. `1.0` = strict match. `null` uses the voice default |
 | `style` | float 0–1 | no | Style exaggeration relative to the original speaker. `0.0` = neutral. `null` uses the voice default |
 | `use_speaker_boost` | bool | no | Boosts similarity to the original speaker at the cost of slightly higher latency. `null` uses the voice default |
 | `language_code` | string | no | ISO 639-1 code for ElevenLabs text normalisation (e.g. `"en"`, `"de"`, `"uk"` for British English). `null` = auto-detect |
+
+#### Voice Filters
+
+The `filter` field names a voice treatment applied to that speaker's dialogue
+stems during assembly and DAW export. Pick by how it should *sound*:
+
+| Value | Sounds like | Use for |
+|-------|-------------|---------|
+| `false` / `null` | untreated | everyone in the room |
+| `true` / `"phone"` | thin and band-limited (300 Hz–3 kHz), gentle | a landline caller; the long-standing default |
+| `"vintage"` | dark, mono, mid-forward, no saturation | aged tape or a record player; period flashbacks |
+| `"film"` | warm and reflective, rolled-off top, recessed presence, audible grain | dialogue heard from a film print (1990s indie register) |
+| `"speakerphone"` | narrow, crunchy, hard-levelled, with a room slap | a phone on a table, on speaker |
+
+Comma-separated values chain left to right, so `"vintage,phone"` and
+`"phone,vintage"` give different results. Unknown names are ignored with a
+warning in the log.
+
+`"vintage"` and `"film"` are easy to confuse: both are "old and warm". `vintage`
+is darker and collapses to mono; `film` keeps stereo, keeps low-end body, and
+adds compression and grain. When in doubt, `film` is the one that still sounds
+like a modern recording of something old.
+
+`phone` and `speakerphone` are independent — `speakerphone` is not a stronger
+`phone`, it is a separate chain with saturation, hard AGC and a short delay.
+
+`film` and `speakerphone` are rendered through ffmpeg. If ffmpeg is unavailable
+the stem passes through untreated and a warning is logged; set `XIL_STRICT_FX=1`
+to make that a hard error instead.
+
+Note that a speaker whose `filter` names a treatment **and** who speaks inside a
+matching script span (see `FILM AUDIO` in the direction types reference) receives
+that treatment twice. This has always been the behaviour for `VINTAGE FILTER`;
+it is more audible for `film`, which compounds compression and grain.
 
 #### Pan Guide
 

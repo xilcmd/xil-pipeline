@@ -1223,3 +1223,47 @@ class TestResolveVenvPython:
         monkeypatch.delenv("XIL_CODEROOT", raising=False)
         monkeypatch.setenv("XIL_PROJECTROOT", str(tmp_path))
         assert models.resolve_venv_python("venv-testxyz") is None
+
+
+# ─── Tests: SfxConfiguration Unicode normalization ───
+
+class TestSfxConfigUnicodeNormalization:
+    """Decomposed accents in a config must collapse to NFC on load.
+
+    Two keys that render identically but differ in normalization would
+    otherwise be two separate effects, and only one would match the script.
+    """
+
+    NFC_KEY = "SFX: RÍAN CROSSES THE ROOM"
+    NFD_KEY = "SFX: RÍAN CROSSES THE ROOM"
+
+    def _config(self, effects):
+        return models.SfxConfiguration(
+            show="Dead Air", season=1, episode=1, effects=effects)
+
+    def test_nfd_key_is_normalized_to_nfc(self):
+        cfg = self._config({self.NFD_KEY: {"source": "SFX/x.mp3", "duration_seconds": 5.0}})
+        assert list(cfg.effects) == [self.NFC_KEY]
+
+    def test_nfc_lookup_finds_nfd_authored_entry(self):
+        cfg = self._config({self.NFD_KEY: {"source": "SFX/x.mp3", "duration_seconds": 5.0}})
+        assert cfg.effects.get(self.NFC_KEY) is not None
+
+    def test_duplicate_forms_collapse_to_one_effect(self):
+        cfg = self._config({
+            self.NFD_KEY: {"source": "SFX/a.mp3", "duration_seconds": 5.0},
+            self.NFC_KEY: {"source": "SFX/b.mp3", "duration_seconds": 5.0},
+        })
+        assert len(cfg.effects) == 1
+
+    def test_source_path_is_normalized(self):
+        cfg = self._config({
+            "SFX: PLAIN": {"source": "SFX/deadair/RÍAN.mp3", "duration_seconds": 5.0},
+        })
+        assert cfg.effects["SFX: PLAIN"].source == "SFX/deadair/RÍAN.mp3"
+
+    def test_ascii_config_is_untouched(self):
+        effects = {"SFX: DOOR": {"source": "SFX/door.mp3", "duration_seconds": 5.0}}
+        cfg = self._config(effects)
+        assert list(cfg.effects) == ["SFX: DOOR"]
+        assert cfg.effects["SFX: DOOR"].source == "SFX/door.mp3"

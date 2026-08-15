@@ -18,6 +18,7 @@ extract_seq = mix_common.extract_seq
 _apply_clip_effects = mix_common._apply_clip_effects
 _resolve_audio_params = mix_common._resolve_audio_params
 _vf_engaged_seqs = mix_common._vf_engaged_seqs
+_span_treatments = mix_common._span_treatments
 _volume_pct_to_db = mix_common._volume_pct_to_db
 build_ambience_layer = mix_common.build_ambience_layer
 build_music_layer = mix_common.build_music_layer
@@ -1023,3 +1024,89 @@ class TestDeriveStructureBands:
 
     def test_empty_inputs_return_empty(self):
         assert mix_common.derive_structure_bands({}, {}, 1000, "section") == []
+
+
+# ─── Tests: _span_treatments (generalised span mechanism) ───
+
+class TestSpanTreatments:
+    def _plan(self, seq, entry_type, direction_type=None, text=None):
+        return StemPlan(seq=seq, filepath="", entry_type=entry_type,
+                        direction_type=direction_type, text=text)
+
+    def test_film_span_engages_film_treatment(self):
+        plans = [
+            self._plan(10, "direction", "FILM AUDIO", "FILM AUDIO ENGAGES"),
+            self._plan(11, "dialogue"),
+            self._plan(12, "direction", "FILM AUDIO", "FILM AUDIO DISENGAGES"),
+            self._plan(13, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {11: ("film",)}
+
+    def test_colon_spelling_also_opens_a_span(self):
+        plans = [
+            self._plan(1, "direction", "FILM AUDIO", "FILM AUDIO: ENGAGES"),
+            self._plan(2, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {2: ("film",)}
+
+    def test_disengages_closes_rather_than_reopens(self):
+        """DISENGAGES contains ENGAGES as a substring — order of tests matters."""
+        plans = [
+            self._plan(1, "direction", "FILM AUDIO", "FILM AUDIO ENGAGES"),
+            self._plan(2, "direction", "FILM AUDIO", "FILM AUDIO DISENGAGES"),
+            self._plan(3, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {}
+
+    def test_overlapping_spans_stack_in_declaration_order(self):
+        plans = [
+            self._plan(1, "direction", "VINTAGE FILTER", "VINTAGE FILTER ENGAGES"),
+            self._plan(2, "direction", "FILM AUDIO", "FILM AUDIO ENGAGES"),
+            self._plan(3, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {3: ("vintage", "film")}
+
+    def test_vintage_only_episode_matches_legacy_helper(self):
+        plans = [
+            self._plan(10, "direction", "VINTAGE FILTER", "VINTAGE FILTER ENGAGES"),
+            self._plan(11, "dialogue"),
+            self._plan(12, "dialogue"),
+            self._plan(13, "direction", "VINTAGE FILTER", "VINTAGE FILTER DISENGAGES"),
+            self._plan(14, "dialogue"),
+        ]
+        assert _vf_engaged_seqs(plans) == frozenset({11, 12})
+        assert _span_treatments(plans) == {11: ("vintage",), 12: ("vintage",)}
+
+    def test_film_audio_is_background(self):
+        plan = self._plan(1, "direction", "FILM AUDIO", "FILM AUDIO ENGAGES")
+        assert plan.is_background
+
+
+# ─── Tests: span sentinel injection ───
+
+class TestSpanSentinels:
+    def _index(self, entries):
+        return {e["seq"]: e for e in entries}
+
+    def test_film_audio_injects_both_markers(self, tmp_path):
+        index = self._index([
+            {"seq": 1, "type": "direction", "direction_type": "FILM AUDIO",
+             "text": "FILM AUDIO ENGAGES"},
+            {"seq": 2, "type": "direction", "direction_type": "FILM AUDIO",
+             "text": "FILM AUDIO DISENGAGES"},
+        ])
+        plans = collect_stem_plans(str(tmp_path), index)
+        assert sorted(p.seq for p in plans) == [1, 2]
+        assert all(p.filepath == "" for p in plans)
+
+    def test_vintage_filter_injects_only_disengages(self, tmp_path):
+        """ENGAGES binds to a real crackle stem; injecting one would change
+        the rendering of episodes whose stem was never generated."""
+        index = self._index([
+            {"seq": 1, "type": "direction", "direction_type": "VINTAGE FILTER",
+             "text": "VINTAGE FILTER ENGAGES"},
+            {"seq": 2, "type": "direction", "direction_type": "VINTAGE FILTER",
+             "text": "VINTAGE FILTER DISENGAGES"},
+        ])
+        plans = collect_stem_plans(str(tmp_path), index)
+        assert [p.seq for p in plans] == [2]

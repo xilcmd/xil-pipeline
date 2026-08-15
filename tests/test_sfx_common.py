@@ -1155,3 +1155,48 @@ class TestSfxEditJournal:
         data = json.loads(open(cfg, encoding="utf-8").read())
         assert data["defaults"]["music_volume_percentage"] == 10
         assert data["defaults"]["ambience_ramp_in_seconds"] == 2.0
+
+
+# ─── Tests: Unicode normalization of source paths ───
+
+class TestResolveSourcePath:
+    """An accented filename can be stored NFC or NFD; both must resolve.
+
+    'Í' is either U+00CD (NFC) or 'I' + U+0301 (NFD).  They render identically
+    but are different byte strings, so a config written in one form used to
+    silently fail against an asset stored in the other.
+    """
+
+    NFC_NAME = "SFX-_RÍAN_FOOTSTEPS.mp3"
+    NFD_NAME = "SFX-_RÍAN_FOOTSTEPS.mp3"
+
+    def _make_asset(self, tmp_path, monkeypatch, filename):
+        sfx = tmp_path / "SFX" / "deadair"
+        sfx.mkdir(parents=True)
+        (sfx / filename).write_bytes(b"\x00" * 64)
+        monkeypatch.setattr(sfx_common, "get_workspace_root", lambda: tmp_path)
+        return f"SFX/deadair/{filename}"
+
+    def test_exact_match_resolves(self, tmp_path, monkeypatch):
+        src = self._make_asset(tmp_path, monkeypatch, self.NFC_NAME)
+        assert sfx_common.resolve_source_path(src) is not None
+
+    def test_nfd_config_finds_nfc_file(self, tmp_path, monkeypatch):
+        self._make_asset(tmp_path, monkeypatch, self.NFC_NAME)
+        declared = f"SFX/deadair/{self.NFD_NAME}"
+        assert sfx_common.resolve_source_path(declared) is not None
+
+    def test_nfc_config_finds_nfd_file(self, tmp_path, monkeypatch):
+        """macOS-created assets are typically NFD even when configs are NFC."""
+        self._make_asset(tmp_path, monkeypatch, self.NFD_NAME)
+        declared = f"SFX/deadair/{self.NFC_NAME}"
+        assert sfx_common.resolve_source_path(declared) is not None
+
+    def test_genuinely_missing_returns_none(self, tmp_path, monkeypatch):
+        self._make_asset(tmp_path, monkeypatch, self.NFC_NAME)
+        assert sfx_common.resolve_source_path("SFX/deadair/NOT_HERE.mp3") is None
+
+    def test_relative_paths_are_workspace_not_cwd_relative(self, tmp_path, monkeypatch):
+        src = self._make_asset(tmp_path, monkeypatch, self.NFC_NAME)
+        monkeypatch.chdir(tmp_path.parent)      # run from somewhere else entirely
+        assert sfx_common.resolve_source_path(src) is not None

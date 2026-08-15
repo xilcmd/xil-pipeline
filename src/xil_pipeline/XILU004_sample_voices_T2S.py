@@ -182,7 +182,12 @@ class _ChatterboxClient:
             if msg.get("ready"):
                 break
             logger.debug("%s worker startup: %s", self._label, raw)
-        logger.info("%s worker ready (sample_rate=%d)", self._label, msg["sr"])
+        actual_device = msg.get("device", self._device)
+        if actual_device != self._device:
+            logger.warning("%s: requested device %r unavailable, running on %r",
+                            self._label, self._device, actual_device)
+        logger.info("%s worker ready (sample_rate=%d, device=%s)",
+                    self._label, msg["sr"], actual_device)
 
     def _ref_for(self, speaker_key: str) -> str | None:
         for ext in (".wav", ".mp3"):
@@ -274,6 +279,13 @@ def get_parser() -> argparse.ArgumentParser:
              "Used with --backend chatterbox or chatterbox-turbo.",
     )
     parser.add_argument(
+        "--device", choices=["cuda", "cpu"], default="cuda", metavar="DEVICE",
+        help="Device for --backend chatterbox-turbo (default: cuda). The worker "
+             "auto-falls back to cpu when cuda is requested but unavailable, so "
+             "this rarely needs setting explicitly — pass 'cpu' to force it "
+             "even when cuda would work. Slower on cpu, but functional.",
+    )
+    parser.add_argument(
         "--sample-text", default=None, metavar="TEXT",
         help=(
             "Override the sample text spoken by each voice. Use {name} as a placeholder "
@@ -350,7 +362,7 @@ def main() -> None:
             chatterbox_client = _ChatterboxClient(
                 python_path=python_path,
                 voice_refs_dir=args.voice_refs,
-
+                device=args.device,
             )
 
         generated = 0

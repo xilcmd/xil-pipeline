@@ -79,7 +79,7 @@ END OF EPISODE
 - **Scene headers**: `SCENE N: LOCATION NAME` (on own line)
 - **Dialogue**: Speaker name on one line, dialogue text on the next
 - **Acting directions**: In parentheses after speaker name: `CHARACTER (whispering)`
-- **Directions**: In square brackets: `[SFX: ...]`, `[AMBIENCE: ...]`, `[MUSIC: ...]`, `[BEAT]`, `[BEAT — N SECONDS]`, `[VINTAGE FILTER: ENGAGES]`, `[VINTAGE FILTER: DISENGAGES]`
+- **Directions**: In square brackets: `[SFX: ...]`, `[AMBIENCE: ...]`, `[MUSIC: ...]`, `[BEAT]`, `[BEAT — N SECONDS]`, `[VINTAGE FILTER ENGAGES]`, `[VINTAGE FILTER DISENGAGES]`, `[FILM AUDIO ENGAGES]`, `[FILM AUDIO DISENGAGES]`
 - **End marker**: `END OF EPISODE` (stops parsing)
 - **Ambience stop**: `[AMBIENCE: STOP]` or `[AMBIENCE: description FADES OUT]` to end a looping ambience
 
@@ -421,8 +421,53 @@ In the cast config, mark the character with `"filter": "vintage"`:
 }
 ```
 
-Stems for vintage-filter characters are written to the `vintage_filter` WAV layer in XILP005
-(DAW export) and XILP011 (master export).
+Treated dialogue stays in the `dialogue` layer. The separate `vintage_filter` WAV layer
+written by XILP005 / XILP011 carries record-player crackle for the span, not the voices.
+
+**Note:** the pairing validator matches `[VINTAGE FILTER ENGAGES]` without the colon, which
+is the spelling every production script uses. The colon form above is accepted by the mixer
+but is invisible to `xil scan`, so prefer the colon-free spelling in new scripts.
+
+## Film Audio
+
+Use `[FILM AUDIO ENGAGES]` and `[FILM AUDIO DISENGAGES]` span markers for dialogue heard
+from a film print — warm and reflective, with a rolled-off top end and an audible grain:
+
+```
+[FILM AUDIO ENGAGES]
+
+MARGARET
+(warm, at peace)
+It was a good year. The best one, maybe.
+
+[FILM AUDIO DISENGAGES]
+```
+
+Or mark a character whose every line is film audio with `"filter": "film"` in the cast
+config, which needs no span markers at all:
+
+```json
+"margaret": {
+  "full_name": "Margaret Ellis",
+  "voice_id": "...",
+  "pan": 0.0,
+  "filter": "film",
+  "role": "Heard only through the restoration print — FILM AUDIO"
+}
+```
+
+Both spellings (`[FILM AUDIO ENGAGES]` and `[FILM AUDIO: ENGAGES]`) are accepted. Markers
+must be paired — an unclosed span fails `xil scan`. They generate no audio and cost no API
+credits.
+
+Avoid doing both for the same character: a speaker with `"filter": "film"` speaking inside a
+`FILM AUDIO` span is treated twice, which doubles the compression and grain.
+
+## Speakerphone
+
+There is no span marker for speakerphone; set `"filter": "speakerphone"` on the character.
+It is a separate chain from `phone` rather than a stronger version of it — narrow-band with
+saturation, hard levelling and a short room slap, for a handset lying on a table.
 
 ## Consistency Guidelines
 

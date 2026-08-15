@@ -351,3 +351,36 @@ class TestMainCLI:
             with pytest.raises(SystemExit) as exc:
                 scanner.main()
         assert exc.value.code != 0
+
+
+# ─── Tests: span pairing (VINTAGE FILTER / FILM AUDIO) ───
+
+class TestSpanPairing:
+    def test_film_audio_paired_is_clean(self):
+        lines = ["[FILM AUDIO ENGAGES]", "some dialogue", "[FILM AUDIO DISENGAGES]"]
+        assert scanner.scan_film_audio_pairing(lines) == []
+
+    def test_film_audio_colon_form_is_paired(self):
+        lines = ["[FILM AUDIO: ENGAGES]", "[FILM AUDIO: DISENGAGES]"]
+        assert scanner.scan_film_audio_pairing(lines) == []
+
+    def test_film_audio_unclosed_engages_is_reported(self):
+        found = scanner.scan_film_audio_pairing(["[FILM AUDIO ENGAGES]", "text"])
+        assert [f["type"] for f in found] == ["ENGAGES"]
+
+    def test_film_audio_orphan_disengages_is_reported(self):
+        found = scanner.scan_film_audio_pairing(["[FILM AUDIO DISENGAGES]"])
+        assert [f["type"] for f in found] == ["DISENGAGES"]
+
+    def test_vintage_filter_colon_form_still_ignored(self):
+        """Deliberate: widening this would newly fail scripts that pass today."""
+        lines = ["[VINTAGE FILTER: ENGAGES]"]
+        assert scanner.scan_vintage_filter_pairing(lines) == []
+
+    def test_vintage_filter_colonless_unclosed_is_reported(self):
+        found = scanner.scan_vintage_filter_pairing(["[VINTAGE FILTER ENGAGES]"])
+        assert [f["type"] for f in found] == ["ENGAGES"]
+
+    def test_film_audio_markers_do_not_match_vintage_scan(self):
+        lines = ["[FILM AUDIO ENGAGES]"]
+        assert scanner.scan_vintage_filter_pairing(lines) == []
