@@ -5,7 +5,7 @@
 Defined in `XILP001_script_parser.py` at module level:
 
 ```python
-DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO"]
+DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO", "SPEAKERPHONE"]
 ```
 
 These are the recognized sound-category prefixes for stage directions enclosed in
@@ -27,7 +27,7 @@ for dt in DIRECTION_TYPES:
 Called with the **bracket-interior text** only (e.g., `"SFX: DOOR SLAMS"`, not the full
 `"[SFX: DOOR SLAMS]"`). The first prefix match wins and is returned as the
 `direction_type` value. Order in the list matters if any prefixes were overlapping,
-but the current six are disjoint.
+but the current seven are disjoint.
 
 `is_stage_direction()` fires on any `[...]` line regardless — it does not consult
 `DIRECTION_TYPES`. Classification happens after detection, not before.
@@ -94,6 +94,7 @@ receives the corresponding voice treatment. The mapping lives in
 |----------------|----------------------------------------|
 | `VINTAGE FILTER` | `vintage` — mono, dark, mid-forward |
 | `FILM AUDIO` | `film` — warm, soft top, gentle compression and grain |
+| `SPEAKERPHONE` | `speakerphone` — narrow-band, hard AGC, crunch, room slap |
 
 Spans of different types may overlap; treatments then stack in
 `SPAN_DIRECTION_TREATMENTS` declaration order.
@@ -102,7 +103,7 @@ Spans of different types may overlap; treatments then stack in
 `{TAG}_layer_vintage_filter.wav` holds record-player crackle audio for the span, which is a
 different mechanism that happens to share the name — it is not where filtered voices go.
 
-No stems are generated for `FILM AUDIO` markers: `generate_sfx_config()` writes them as
+No stems are generated for `FILM AUDIO` or `SPEAKERPHONE` markers: `generate_sfx_config()` writes them as
 `{"type": "silence", "duration_seconds": 0.0}`, which `load_sfx_entries()` skips, so they
 cost no API credits and produce no files. `VINTAGE FILTER ENGAGES` differs — it binds to a
 real crackle asset, and only its `DISENGAGES` marker is a pure boundary.
@@ -116,7 +117,7 @@ scripts already in production; the mixer itself tolerates either.
 ## The Pydantic Constraint (models.py line 46)
 
 ```python
-direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO"] | None = Field(
+direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO", "SPEAKERPHONE"] | None = Field(
     default=None, description="Sound category for direction entries"
 )
 ```

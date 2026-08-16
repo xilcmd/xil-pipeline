@@ -79,7 +79,7 @@ END OF EPISODE
 - **Scene headers**: `SCENE N: LOCATION NAME` (on own line)
 - **Dialogue**: Speaker name on one line, dialogue text on the next
 - **Acting directions**: In parentheses after speaker name: `CHARACTER (whispering)`
-- **Directions**: In square brackets: `[SFX: ...]`, `[AMBIENCE: ...]`, `[MUSIC: ...]`, `[BEAT]`, `[BEAT — N SECONDS]`, `[VINTAGE FILTER ENGAGES]`, `[VINTAGE FILTER DISENGAGES]`, `[FILM AUDIO ENGAGES]`, `[FILM AUDIO DISENGAGES]`
+- **Directions**: In square brackets: `[SFX: ...]`, `[AMBIENCE: ...]`, `[MUSIC: ...]`, `[BEAT]`, `[BEAT — N SECONDS]`, `[VINTAGE FILTER ENGAGES]`, `[VINTAGE FILTER DISENGAGES]`, `[FILM AUDIO ENGAGES]`, `[FILM AUDIO DISENGAGES]`, `[SPEAKERPHONE ENGAGES]`, `[SPEAKERPHONE DISENGAGES]`
 - **End marker**: `END OF EPISODE` (stops parsing)
 - **Ambience stop**: `[AMBIENCE: STOP]` or `[AMBIENCE: description FADES OUT]` to end a looping ambience
 
@@ -465,9 +465,43 @@ Avoid doing both for the same character: a speaker with `"filter": "film"` speak
 
 ## Speakerphone
 
-There is no span marker for speakerphone; set `"filter": "speakerphone"` on the character.
-It is a separate chain from `phone` rather than a stronger version of it — narrow-band with
-saturation, hard levelling and a short room slap, for a handset lying on a table.
+Narrow-band with saturation, hard levelling and a short room slap — a handset lying on a
+table. It is a separate chain from `phone`, not a stronger version of it.
+
+Use `[SPEAKERPHONE ENGAGES]` / `[SPEAKERPHONE DISENGAGES]` around the lines coming *out of
+the phone*. **The span treats every line it encloses**, so in a call scene bracket each
+remote line rather than the whole call — otherwise the people in the room get filtered too:
+
+```
+[SPEAKERPHONE ENGAGES]
+
+KAREN
+Where are you? I've been calling.
+
+[SPEAKERPHONE DISENGAGES]
+
+ADAM
+(to Maya, off the phone)
+Don't say anything.
+
+[SPEAKERPHONE ENGAGES]
+
+KAREN
+Adam. I can hear you.
+
+[SPEAKERPHONE DISENGAGES]
+```
+
+This is the reason to prefer markers over the cast config: a character who is on the phone
+in one scene and in the room in another needs **no second cast entry**. The script alone
+decides, line by line.
+
+Setting `"filter": "speakerphone"` on the character still works and is the better choice
+when a voice is *only ever* heard through a phone for the whole episode.
+
+Both spellings (`[SPEAKERPHONE ENGAGES]` and `[SPEAKERPHONE: ENGAGES]`) are accepted.
+Markers must be paired — an unclosed span fails `xil scan`. They generate no audio and cost
+no API credits.
 
 ## Consistency Guidelines
 

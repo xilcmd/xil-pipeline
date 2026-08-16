@@ -43,14 +43,21 @@ logger = get_logger(__name__)
 # Background direction types — excluded from the foreground timeline,
 # overlaid at their cue positions in a separate background pass.
 BACKGROUND_DIRECTION_TYPES: frozenset[str] = frozenset(
-    {"AMBIENCE", "MUSIC", "VINTAGE FILTER", "FILM AUDIO"}
+    {"AMBIENCE", "MUSIC", "VINTAGE FILTER", "FILM AUDIO", "SPEAKERPHONE"}
 )
 
 # Span-marker direction types and the dialogue treatment each one engages.
 # Declaration order determines the order treatments stack when spans overlap.
+#
+# A span applies to *every* dialogue line it encloses, not to one speaker.  For
+# VINTAGE FILTER and FILM AUDIO that is the natural reading — everything inside
+# is in the same treated world.  SPEAKERPHONE is different: a call scene usually
+# alternates remote and in-room voices, so the writer opens and closes around
+# the remote lines rather than around the whole call.
 SPAN_DIRECTION_TREATMENTS: dict[str, str] = {
     "VINTAGE FILTER": "vintage",
     "FILM AUDIO": "film",
+    "SPEAKERPHONE": "speakerphone",
 }
 
 # Which markers of each span type need a synthetic boundary plan injected.
@@ -58,11 +65,13 @@ SPAN_DIRECTION_TREATMENTS: dict[str, str] = {
 # The asymmetry is deliberate.  VINTAGE FILTER ENGAGES binds to a real crackle
 # stem on disk, so it already appears in the timeline; injecting a sentinel for
 # it would make episodes whose crackle stem has not been generated start
-# applying the vintage EQ where they previously did not.  FILM AUDIO has no
-# audio at all, so both of its markers need sentinels to exist as boundaries.
+# applying the vintage EQ where they previously did not.  FILM AUDIO and
+# SPEAKERPHONE have no audio at all, so both of their markers need sentinels to
+# exist as boundaries.
 _SPAN_SENTINEL_MARKERS: dict[str, tuple[str, ...]] = {
     "VINTAGE FILTER": ("DISENGAGES",),
     "FILM AUDIO": ("ENGAGES", "DISENGAGES"),
+    "SPEAKERPHONE": ("ENGAGES", "DISENGAGES"),
 }
 
 # Default level adjustments for the automated mixed master (Option A).

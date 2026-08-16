@@ -99,6 +99,10 @@ stems during assembly and DAW export. Pick by how it should *sound*:
 | `"film"` | warm and reflective, rolled-off top, recessed presence, audible grain | dialogue heard from a film print (1990s indie register) |
 | `"speakerphone"` | narrow, crunchy, hard-levelled, with a room slap | a phone on a table, on speaker |
 
+For a character who is on speakerphone in one scene and in the room in another, prefer the
+`[SPEAKERPHONE ENGAGES]` / `[DISENGAGES]` script markers over a second cast entry — the span
+decides line by line. Use the cast field when a voice is only ever heard through a phone.
+
 Comma-separated values chain left to right, so `"vintage,phone"` and
 `"phone,vintage"` give different results. Unknown names are ignored with a
 warning in the log.

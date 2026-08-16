@@ -315,6 +315,22 @@ def scan_film_audio_pairing(lines: list[str]) -> list[dict]:
     return scan_span_pairing(lines, "FILM AUDIO", allow_colon=True)
 
 
+def scan_speakerphone_pairing(lines: list[str]) -> list[dict]:
+    """Check that every SPEAKERPHONE ENGAGES has a matching DISENGAGES.
+
+    Both the colon and colon-free spellings are accepted.  Note the span
+    treats every line it encloses, so a call scene is normally written as one
+    marker pair per remote line rather than one pair around the whole call.
+
+    Args:
+        lines: Raw script lines.
+
+    Returns:
+        List of unpaired marker dicts.
+    """
+    return scan_span_pairing(lines, "SPEAKERPHONE", allow_colon=True)
+
+
 def scan_preamble_postamble(sections: list[dict]) -> dict:
     """Check whether PREAMBLE and POSTAMBLE sections are present.
 
@@ -519,6 +535,16 @@ def format_report(scan: dict, header: dict) -> str:
     lines.append("FILM AUDIO PAIRING")
     if fa_unpaired:
         for item in fa_unpaired:
+            lines.append(f"  ⚠  {item['type']:<12} unpaired  line {item['line']}")
+    else:
+        lines.append("  ✓  all markers paired (or none present)")
+
+    # SPEAKERPHONE pairing
+    sp_unpaired = scan.get("speakerphone_unpaired", [])
+    lines.append("")
+    lines.append("SPEAKERPHONE PAIRING")
+    if sp_unpaired:
+        for item in sp_unpaired:
             lines.append(f"  ⚠  {item['type']:<12} unpaired  line {item['line']}")
     else:
         lines.append("  ✓  all markers paired (or none present)")
@@ -923,6 +949,9 @@ def main():
         # FILM AUDIO pairing
         scan["film_audio_unpaired"] = scan_film_audio_pairing(lines)
 
+        # SPEAKERPHONE pairing
+        scan["speakerphone_unpaired"] = scan_speakerphone_pairing(lines)
+
         # Ambience loop coverage
         scan["ambience_unclosed"] = scan_ambience_coverage(lines)
 
@@ -952,6 +981,7 @@ def main():
             bool(scan["unrecognized"])
             or bool(scan["vintage_filter_unpaired"])
             or bool(scan["film_audio_unpaired"])
+            or bool(scan["speakerphone_unpaired"])
         )
         if fatal:
             sys.exit(1)
