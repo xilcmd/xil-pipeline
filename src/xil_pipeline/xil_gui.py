@@ -503,6 +503,25 @@ def _audio_cache_dir() -> str:
     return d
 
 
+def _allowed_paths() -> list[str]:
+    """Directories Gradio is permitted to serve files from.
+
+    Both roots are required. The workspace holds the source audio, but every
+    cached playback and every concat preview is returned from
+    :func:`_audio_cache_dir` — and Gradio refuses any path outside
+    ``allowed_paths``, the working directory or the system temp dir. Listing
+    only the workspace makes the cache that exists to keep NAS playback
+    bearable the one place playback always fails.
+
+    Including the cache grants no new reach: it holds copies of workspace files
+    the app was already permitted to serve.
+
+    Returns:
+        Absolute paths to whitelist in ``demo.launch(allowed_paths=...)``.
+    """
+    return [str(get_workspace_root()), _audio_cache_dir()]
+
+
 def _evict_audio_cache(cache_dir: str, keep: str = "") -> None:
     """Delete oldest-mtime cache files until under _AUDIO_CACHE_MAX_BYTES."""
     try:
@@ -2417,7 +2436,7 @@ def main() -> None:
             server_name=args.host,
             server_port=args.port,
             share=args.share,
-            allowed_paths=[str(get_workspace_root())],
+            allowed_paths=_allowed_paths(),
             prevent_thread_lock=True,
         )
         # launch() replaced demo.app with the FastAPI app that actually
