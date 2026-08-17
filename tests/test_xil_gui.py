@@ -1341,3 +1341,53 @@ class TestSfxDefaultsRoute:
             "slug": "../../etc", "tag": "S01E01", "layer": "music",
             "volume_percentage": 10})
         assert not self._journal(tmp_path).exists()
+
+
+class TestAllowedPaths:
+    """Gradio only serves files under allowed_paths / cwd / tempdir.
+
+    The audio cache lives under $XDG_CACHE_HOME, which is none of those, so
+    omitting it made every cached playback and concat preview raise
+    InvalidPathError — the cache exists precisely to avoid streaming off the
+    NAS, so it is the path playback always takes.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _xdg(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+
+    def _under_allowed(self, path: str) -> bool:
+        real = os.path.realpath(path)
+        for root in xil_gui._allowed_paths():
+            root = os.path.realpath(root)
+            try:
+                if os.path.commonpath([real, root]) == root:
+                    return True
+            except ValueError:
+                # Different drives on Windows — commonpath raises rather than
+                # returning "no common prefix", so a cross-drive pair means
+                # "not under this root", not a test failure. Same hazard as
+                # TestCrossDriveSymlinkFallback in test_build_docs.py.
+                continue
+        return False
+
+    def test_includes_the_audio_cache_dir(self):
+        assert xil_gui._audio_cache_dir() in xil_gui._allowed_paths()
+
+    def test_includes_the_workspace_root(self):
+        from xil_pipeline.models import get_workspace_root
+        assert str(get_workspace_root()) in xil_gui._allowed_paths()
+
+    def test_honours_xdg_cache_home(self, tmp_path):
+        assert any(str(tmp_path / "xdg") in p for p in xil_gui._allowed_paths())
+
+    def test_cached_audio_path_is_servable(self, tmp_path):
+        """The regression: a real cached file must fall under an allowed root."""
+        src = tmp_path / "a.mp3"
+        src.write_bytes(b"x" * 1000)
+        assert self._under_allowed(xil_gui._cached_audio_path(str(src)))
+
+    def test_concat_preview_dir_is_servable(self):
+        """Concat previews are written into the same cache dir."""
+        probe = os.path.join(xil_gui._audio_cache_dir(), "concat_deadbeef.mp3")
+        assert self._under_allowed(probe)
