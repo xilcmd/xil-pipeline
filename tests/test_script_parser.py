@@ -2541,3 +2541,52 @@ class TestFilmAudioDirectionType:
         assert entry == {"type": "silence", "duration_seconds": 0.0}
         assert "prompt" not in entry
         assert "source" not in entry
+
+
+# ─── Tests: SPEAKERPHONE direction type ───
+
+SPEAKERPHONE_SCRIPT = """\
+# THE 413 — S01E01 — Test
+
+## COLD OPEN
+
+[SPEAKERPHONE ENGAGES]
+
+KAREN
+Where are you?
+
+[SPEAKERPHONE DISENGAGES]
+
+ADAM
+Downstairs.
+
+[END OF EPISODE]
+"""
+
+
+class TestSpeakerphoneDirectionType:
+    def test_classify_engages(self):
+        assert parser.classify_direction("SPEAKERPHONE ENGAGES") == "SPEAKERPHONE"
+
+    def test_classify_colon_form(self):
+        assert parser.classify_direction("SPEAKERPHONE: DISENGAGES") == "SPEAKERPHONE"
+
+    def test_parse_script_accepts_markers(self, tmp_path):
+        script = tmp_path / "sp.md"
+        script.write_text(SPEAKERPHONE_SCRIPT, encoding="utf-8")
+        parsed = parser.parse_script(str(script))
+        types = [e["direction_type"] for e in parsed["entries"] if e["type"] == "direction"]
+        assert types.count("SPEAKERPHONE") == 2
+
+    def test_sfx_config_marks_markers_as_zero_length_silence(self, tmp_path):
+        """No prompt, no source — markers must never reach SFX generation."""
+        script = tmp_path / "sp.md"
+        script.write_text(SPEAKERPHONE_SCRIPT, encoding="utf-8")
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        entry = config["effects"]["SPEAKERPHONE ENGAGES"]
+        assert entry == {"type": "silence", "duration_seconds": 0.0}
+        assert "prompt" not in entry and "source" not in entry

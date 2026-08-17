@@ -384,3 +384,39 @@ class TestSpanPairing:
     def test_film_audio_markers_do_not_match_vintage_scan(self):
         lines = ["[FILM AUDIO ENGAGES]"]
         assert scanner.scan_vintage_filter_pairing(lines) == []
+
+
+# ─── Tests: SPEAKERPHONE pairing ───
+
+class TestSpeakerphonePairing:
+    def test_paired_is_clean(self):
+        lines = ["[SPEAKERPHONE ENGAGES]", "dialogue", "[SPEAKERPHONE DISENGAGES]"]
+        assert scanner.scan_speakerphone_pairing(lines) == []
+
+    def test_colon_form_is_paired(self):
+        lines = ["[SPEAKERPHONE: ENGAGES]", "[SPEAKERPHONE: DISENGAGES]"]
+        assert scanner.scan_speakerphone_pairing(lines) == []
+
+    def test_unclosed_engages_is_reported(self):
+        found = scanner.scan_speakerphone_pairing(["[SPEAKERPHONE ENGAGES]", "x"])
+        assert [f["type"] for f in found] == ["ENGAGES"]
+
+    def test_orphan_disengages_is_reported(self):
+        found = scanner.scan_speakerphone_pairing(["[SPEAKERPHONE DISENGAGES]"])
+        assert [f["type"] for f in found] == ["DISENGAGES"]
+
+    def test_alternating_pairs_are_clean(self):
+        lines = ["[SPEAKERPHONE ENGAGES]", "a", "[SPEAKERPHONE DISENGAGES]", "b",
+                 "[SPEAKERPHONE ENGAGES]", "c", "[SPEAKERPHONE DISENGAGES]"]
+        assert scanner.scan_speakerphone_pairing(lines) == []
+
+    def test_does_not_match_other_span_types(self):
+        assert scanner.scan_speakerphone_pairing(["[FILM AUDIO ENGAGES]"]) == []
+        assert scanner.scan_film_audio_pairing(["[SPEAKERPHONE ENGAGES]"]) == []
+
+    def test_mixed_spellings_still_pair(self):
+        """A span may open plain and close with the colon form, or vice versa."""
+        assert scanner.scan_speakerphone_pairing(
+            ["[SPEAKERPHONE ENGAGES]", "[SPEAKERPHONE: DISENGAGES]"]) == []
+        assert scanner.scan_speakerphone_pairing(
+            ["[SPEAKERPHONE: ENGAGES]", "[SPEAKERPHONE DISENGAGES]"]) == []

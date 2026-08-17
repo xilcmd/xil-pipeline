@@ -1110,3 +1110,88 @@ class TestSpanSentinels:
         ])
         plans = collect_stem_plans(str(tmp_path), index)
         assert [p.seq for p in plans] == [2]
+
+
+# ─── Tests: SPEAKERPHONE span ───
+
+class TestSpeakerphoneSpan:
+    """A blanket span, like the other two — it treats every enclosed line.
+
+    A call scene alternates remote and in-room voices, so the writer brackets
+    each remote line rather than the whole call.  These tests pin that scope so
+    a future change to speaker-aware spans has to be deliberate.
+    """
+
+    def _plan(self, seq, entry_type, direction_type=None, text=None):
+        return StemPlan(seq=seq, filepath="", entry_type=entry_type,
+                        direction_type=direction_type, text=text)
+
+    def test_enclosed_dialogue_is_treated(self):
+        plans = [
+            self._plan(1, "direction", "SPEAKERPHONE", "SPEAKERPHONE ENGAGES"),
+            self._plan(2, "dialogue"),
+            self._plan(3, "direction", "SPEAKERPHONE", "SPEAKERPHONE DISENGAGES"),
+            self._plan(4, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {2: ("speakerphone",)}
+
+    def test_colon_spelling_opens_a_span(self):
+        plans = [
+            self._plan(1, "direction", "SPEAKERPHONE", "SPEAKERPHONE: ENGAGES"),
+            self._plan(2, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {2: ("speakerphone",)}
+
+    def test_disengages_closes_rather_than_reopens(self):
+        plans = [
+            self._plan(1, "direction", "SPEAKERPHONE", "SPEAKERPHONE ENGAGES"),
+            self._plan(2, "direction", "SPEAKERPHONE", "SPEAKERPHONE DISENGAGES"),
+            self._plan(3, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {}
+
+    def test_alternating_call_treats_only_bracketed_lines(self):
+        """The real usage: remote lines bracketed, in-room lines left dry."""
+        plans = [
+            self._plan(1, "direction", "SPEAKERPHONE", "SPEAKERPHONE ENGAGES"),
+            self._plan(2, "dialogue"),                                   # remote
+            self._plan(3, "direction", "SPEAKERPHONE", "SPEAKERPHONE DISENGAGES"),
+            self._plan(4, "dialogue"),                                   # in room
+            self._plan(5, "direction", "SPEAKERPHONE", "SPEAKERPHONE ENGAGES"),
+            self._plan(6, "dialogue"),                                   # remote
+            self._plan(7, "direction", "SPEAKERPHONE", "SPEAKERPHONE DISENGAGES"),
+        ]
+        assert _span_treatments(plans) == {2: ("speakerphone",), 6: ("speakerphone",)}
+
+    def test_stacks_with_another_span_in_declaration_order(self):
+        plans = [
+            self._plan(1, "direction", "VINTAGE FILTER", "VINTAGE FILTER ENGAGES"),
+            self._plan(2, "direction", "SPEAKERPHONE", "SPEAKERPHONE ENGAGES"),
+            self._plan(3, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {3: ("vintage", "speakerphone")}
+
+    def test_marker_is_background(self):
+        plan = self._plan(1, "direction", "SPEAKERPHONE", "SPEAKERPHONE ENGAGES")
+        assert plan.is_background
+
+    def test_both_markers_get_sentinels(self, tmp_path):
+        index = {e["seq"]: e for e in [
+            {"seq": 1, "type": "direction", "direction_type": "SPEAKERPHONE",
+             "text": "SPEAKERPHONE ENGAGES"},
+            {"seq": 2, "type": "direction", "direction_type": "SPEAKERPHONE",
+             "text": "SPEAKERPHONE DISENGAGES"},
+        ]}
+        plans = collect_stem_plans(str(tmp_path), index)
+        assert sorted(p.seq for p in plans) == [1, 2]
+        assert all(p.filepath == "" for p in plans)
+
+    def test_mixed_spellings_open_and_close_one_span(self):
+        """Opening plain and closing with the colon form must still close."""
+        plans = [
+            self._plan(1, "direction", "SPEAKERPHONE", "SPEAKERPHONE ENGAGES"),
+            self._plan(2, "dialogue"),
+            self._plan(3, "direction", "SPEAKERPHONE", "SPEAKERPHONE: DISENGAGES"),
+            self._plan(4, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {2: ("speakerphone",)}
