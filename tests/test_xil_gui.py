@@ -1357,11 +1357,19 @@ class TestAllowedPaths:
         monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
 
     def _under_allowed(self, path: str) -> bool:
-        return any(
-            os.path.commonpath([os.path.realpath(path), os.path.realpath(root)])
-            == os.path.realpath(root)
-            for root in xil_gui._allowed_paths()
-        )
+        real = os.path.realpath(path)
+        for root in xil_gui._allowed_paths():
+            root = os.path.realpath(root)
+            try:
+                if os.path.commonpath([real, root]) == root:
+                    return True
+            except ValueError:
+                # Different drives on Windows — commonpath raises rather than
+                # returning "no common prefix", so a cross-drive pair means
+                # "not under this root", not a test failure. Same hazard as
+                # TestCrossDriveSymlinkFallback in test_build_docs.py.
+                continue
+        return False
 
     def test_includes_the_audio_cache_dir(self):
         assert xil_gui._audio_cache_dir() in xil_gui._allowed_paths()
