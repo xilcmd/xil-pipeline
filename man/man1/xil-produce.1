@@ -1,9 +1,9 @@
-.TH XIL\-PRODUCE "1" "2026\-08\-14" "xil\-pipeline 0.3.2" "User Commands"
+.TH XIL\-PRODUCE "1" "2026\-08\-15" "xil\-pipeline 0.3.2" "User Commands"
 .SH NAME
 xil\-produce
 .SH SYNOPSIS
 .B xil\-produce
-[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--reconcile] [--apply] [--force] [--start-from START_FROM] [--stop-at STOP_AT] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--device DEVICE] [--sfx-backend BACKEND] [--mmaudio-python PATH] [--mmaudio-duration FLOAT] [--mmaudio-cfg FLOAT] [--mmaudio-steps INT] [--mmaudio-negative-prompt STR] [--mmaudio-seed INT] [--mmaudio-accept-noncommercial]
+[-h] (--episode EPISODE | --tag TAG) [--show SHOW] [--script SCRIPT] [--dry-run] [--reconcile] [--apply] [--force] [--start-from START_FROM] [--stop-at STOP_AT] [--seq-list N,N,...] [--terse] [--gen-sfx] [--gen-music] [--gen-ambience] [--sfx-music] [--local-only] [--backend BACKEND] [--chatterbox-python PATH] [--voice-refs DIR] [--device DEVICE] [--sfx-backend BACKEND] [--mmaudio-python PATH] [--mmaudio-duration FLOAT] [--mmaudio-cfg FLOAT] [--mmaudio-steps INT] [--mmaudio-negative-prompt STR] [--mmaudio-seed INT] [--mmaudio-accept-noncommercial]
 .SH DESCRIPTION
 Voice Generation — generate voice stems via ElevenLabs
 
@@ -39,9 +39,9 @@ With \-\-reconcile: execute the renames instead of dry\-run preview.
 
 .TP
 \fB\-\-force\fR
-Overwrite existing stem files instead of skipping them. Use with \-\-range to
-regenerate specific lines. WARNING: incurs ElevenLabs API cost for every stem
-in range.
+Overwrite existing stem files instead of skipping them. Use with \-\-start\-
+from/\-\-stop\-at or \-\-seq\-list to regenerate specific lines. WARNING: incurs
+ElevenLabs API cost for every stem in range.
 
 .TP
 \fB\-\-start\-from\fR \fI\,START_FROM\/\fR
@@ -50,6 +50,16 @@ Start generation from sequence number N (for resuming)
 .TP
 \fB\-\-stop\-at\fR \fI\,STOP_AT\/\fR
 Stop generation at sequence number N, inclusive (for previewing a section)
+
+.TP
+\fB\-\-seq\-list\fR \fI\,N,N,...\/\fR
+Comma\-separated list of exact sequence numbers to process (e.g.
+"12,45,88,203"), for regenerating a specific non\-contiguous set of dialogue
+lines in one run — the TTS worker/subprocess is started once and reused across
+all listed seqs, instead of once per \-\-start\-from/\-\-stop\-at invocation. Takes
+precedence over \-\-start\-from/\-\-stop\-at when given. Dialogue only — does not
+affect \-\-gen\-sfx/\-\-gen\-music/\-\-gen\-ambience filtering. Combine with \-\-force to
+actually overwrite stems that already exist on disk.
 
 .TP
 \fB\-\-terse\fR

@@ -339,9 +339,29 @@ def load_production(
     return config, dialogue_entries, tag
 
 
+def _in_selection(seq: int, start_from: int, stop_at: int | None, seq_list: set[int] | None) -> bool:
+    """True if *seq* is selected for processing.
+
+    When *seq_list* is given it is authoritative and *start_from*/*stop_at*
+    are ignored; otherwise falls back to the start_from/stop_at range check.
+    """
+    if seq_list is not None:
+        return seq in seq_list
+    return seq >= start_from and (stop_at is None or seq <= stop_at)
+
+
+def _format_seq_list(seq_list: set[int], max_shown: int = 10) -> str:
+    """Render *seq_list* as a sorted, comma-joined string, capped for log readability."""
+    ordered = sorted(seq_list)
+    if len(ordered) <= max_shown:
+        return ",".join(str(s) for s in ordered)
+    shown = ",".join(str(s) for s in ordered[:max_shown])
+    return f"{shown},... and {len(ordered) - max_shown} more"
+
+
 def dry_run(
     config: dict[str, dict], dialogue_entries: list[dict], start_from: int = 1,
-    stop_at: int | None = None,
+    stop_at: int | None = None, seq_list: set[int] | None = None,
     sfx_entries: list[dict] | None = None, sfx_config: dict | None = None,
     stems_dir: str = "", force: bool = False,
     sfx_backend_name: str = "elevenlabs",
@@ -356,6 +376,8 @@ def dry_run(
             are shown but marked as skipped).
         stop_at: Sequence number to stop at, inclusive (lines after this
             are shown but marked as skipped). ``None`` means no upper limit.
+        seq_list: If given, an explicit set of seq numbers to select — takes
+            precedence over start_from/stop_at. ``None`` means use the range check.
         sfx_entries: Optional SFX entry dicts from ``load_sfx_entries()``.
         sfx_config: Optional raw SFX config dict.
         stems_dir: Episode stems directory (for SFX shared-library status).
@@ -377,7 +399,7 @@ def dry_run(
         char_count = len(entry["text"])
         total_chars += char_count
         speaker = entry["speaker"]
-        in_range = entry["seq"] >= start_from and (stop_at is None or entry["seq"] <= stop_at)
+        in_range = _in_selection(entry["seq"], start_from, stop_at, seq_list)
 
         stem_exists = (not force) and bool(
             stems_dir and os.path.exists(os.path.join(stems_dir, entry["stem_name"] + ".mp3"))
@@ -428,13 +450,16 @@ def dry_run(
     # Summary
     chars_in_range = sum(
         len(e["text"]) for e in dialogue_entries
-        if e["seq"] >= start_from and (stop_at is None or e["seq"] <= stop_at)
+        if _in_selection(e["seq"], start_from, stop_at, seq_list)
     )
     tbd_voices = [sp for sp, cfg in config.items() if cfg["id"] == "TBD"]
 
     logger.info("%s", "="*70)
     logger.info("TOTAL:  %d lines, %s TTS characters", len(dialogue_entries), f"{total_chars:,}")
-    if start_from > 1 or stop_at is not None:
+    if seq_list is not None:
+        range_label = f"SEQ-LIST {_format_seq_list(seq_list)}"
+        logger.info("%s: %d lines, %s TTS characters", range_label, lines_to_generate, f"{chars_in_range:,}")
+    elif start_from > 1 or stop_at is not None:
         if stop_at is not None and start_from > 1:
             range_label = f"FROM {start_from}–{stop_at}"
         elif stop_at is not None:
@@ -486,6 +511,7 @@ def dry_run(
 def generate_voices(
     config: dict[str, dict], dialogue_entries: list[dict],
     stems_dir: str, start_from: int = 1, stop_at: int | None = None,
+    seq_list: set[int] | None = None,
     show: str = "Sample Show", backend: str = "elevenlabs",
     chatterbox_client: "_ChatterboxClient | None" = None,
     force: bool = False,
@@ -505,6 +531,8 @@ def generate_voices(
         start_from: Sequence number to resume generation from.
         stop_at: Sequence number to stop at, inclusive. ``None`` means
             process all entries from ``start_from`` onward.
+        seq_list: If given, an explicit set of seq numbers to select — takes
+            precedence over start_from/stop_at. ``None`` means use the range check.
         backend: TTS backend — ``"elevenlabs"`` (default) or ``"gtts"`` for
             a free flat-voice draft pass.
     """
@@ -526,7 +554,7 @@ def generate_voices(
     if backend == "elevenlabs":
         speakers_needed = {
             e["speaker"] for e in dialogue_entries
-            if e["seq"] >= start_from and (stop_at is None or e["seq"] <= stop_at)
+            if _in_selection(e["seq"], start_from, stop_at, seq_list)
         }
         tbd_needed = [sp for sp in speakers_needed if config.get(sp, {}).get("id") == "TBD"]
         if tbd_needed:
@@ -540,7 +568,7 @@ def generate_voices(
     # Filter to entries in the requested range
     entries_to_process = [
         e for e in dialogue_entries
-        if e["seq"] >= start_from and (stop_at is None or e["seq"] <= stop_at)
+        if _in_selection(e["seq"], start_from, stop_at, seq_list)
     ]
 
     # Build seq-ordered index over the full dialogue list for prev/next continuity
@@ -549,7 +577,9 @@ def generate_voices(
     entries_by_seq = {e["seq"]: e for e in dialogue_entries}
 
     range_note = ""
-    if stop_at is not None:
+    if seq_list is not None:
+        range_note = f" (seq list: {_format_seq_list(seq_list)})"
+    elif stop_at is not None:
         range_note = f" (seq {start_from}–{stop_at})"
     elif start_from > 1:
         range_note = f" (from seq {start_from})"
@@ -1066,6 +1096,17 @@ def reconcile(
         logger.info("  Manifest updated: %s", os.path.basename(mf_path))
 
 
+def _parse_seq_list(s: str) -> set[int]:
+    """Parse a comma-separated list of seq numbers (e.g. "12, 45, 88,") into a set[int]."""
+    tokens = [t.strip() for t in s.split(",") if t.strip()]
+    if not tokens:
+        raise argparse.ArgumentTypeError(f"no sequence numbers found in {s!r}")
+    try:
+        return {int(t) for t in tokens}
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid sequence number list: {s!r}") from None
+
+
 def get_parser() -> argparse.ArgumentParser:
     """Return the argument parser for xil-produce."""
     parser = argparse.ArgumentParser(
@@ -1091,12 +1132,23 @@ def get_parser() -> argparse.ArgumentParser:
                         help="With --reconcile: execute the renames instead of dry-run preview.")
     parser.add_argument("--force", action="store_true", default=False,
                         help="Overwrite existing stem files instead of skipping them. "
-                             "Use with --range to regenerate specific lines. "
-                             "WARNING: incurs ElevenLabs API cost for every stem in range.")
+                             "Use with --start-from/--stop-at or --seq-list to regenerate "
+                             "specific lines. WARNING: incurs ElevenLabs API cost for every "
+                             "stem in range.")
     parser.add_argument("--start-from", type=int, default=1,
                         help="Start generation from sequence number N (for resuming)")
     parser.add_argument("--stop-at", type=int, default=None,
                         help="Stop generation at sequence number N, inclusive (for previewing a section)")
+    parser.add_argument("--seq-list", type=_parse_seq_list, default=None, metavar="N,N,...",
+                        help="Comma-separated list of exact sequence numbers to process "
+                             "(e.g. \"12,45,88,203\"), for regenerating a specific "
+                             "non-contiguous set of dialogue lines in one run — the TTS "
+                             "worker/subprocess is started once and reused across all "
+                             "listed seqs, instead of once per --start-from/--stop-at "
+                             "invocation. Takes precedence over --start-from/--stop-at "
+                             "when given. Dialogue only — does not affect "
+                             "--gen-sfx/--gen-music/--gen-ambience filtering. Combine with "
+                             "--force to actually overwrite stems that already exist on disk.")
     parser.add_argument("--terse", action="store_true",
                         help="Truncate each line to 3 words to minimize TTS character cost")
     parser.add_argument("--gen-sfx", action="store_true",
@@ -1298,7 +1350,7 @@ def main() -> None:
                       backend=args.backend, apply=args.apply)
         elif args.dry_run:
             dry_run(config, dialogue_entries, start_from=args.start_from,
-                    stop_at=args.stop_at,
+                    stop_at=args.stop_at, seq_list=args.seq_list,
                     sfx_entries=sfx_entries, sfx_config=sfx_config_data,
                     stems_dir=stems_dir, force=args.force,
                     sfx_backend_name=args.sfx_backend,
@@ -1363,6 +1415,7 @@ def main() -> None:
             try:
                 generate_voices(config, dialogue_entries, stems_dir,
                                 start_from=args.start_from, stop_at=args.stop_at,
+                                seq_list=args.seq_list,
                                 show=cast_cfg.show, backend=args.backend,
                                 chatterbox_client=chatterbox_client,
                                 force=args.force,

@@ -160,6 +160,32 @@ class TestDryRun:
         skipped = [l for l in lines if "[x]" in l and ("006" in l or "007" in l)]
         assert len(skipped) == 2
 
+    def test_seq_list_filters_noncontiguous(self, sample_script, sample_cast, caplog):
+        config, entries, _tag = producer.load_production(sample_script, sample_cast)
+        # entries at seq 3, 4, 6, 7 — seq_list={3, 7} selects only those two,
+        # skipping 4 and 6 even though they fall between 3 and 7
+        producer.dry_run(config, entries, seq_list={3, 7})
+        assert "SEQ-LIST 3,7" in caplog.text
+        assert "2 lines" in caplog.text
+
+    def test_seq_list_marks_unlisted_entries_skipped(self, sample_script, sample_cast, caplog):
+        config, entries, _tag = producer.load_production(sample_script, sample_cast)
+        producer.dry_run(config, entries, seq_list={3, 7})
+        lines = caplog.text.splitlines()
+        skipped = [l for l in lines if "[x]" in l and ("004" in l or "006" in l)]
+        assert len(skipped) == 2
+        selected = [l for l in lines if "[ ]" in l and ("003" in l or "007" in l)]
+        assert len(selected) == 2
+
+    def test_seq_list_overrides_start_from_stop_at(self, sample_script, sample_cast, caplog):
+        config, entries, _tag = producer.load_production(sample_script, sample_cast)
+        # start_from/stop_at would select only seq 6-7; seq_list wins and selects 3,4 instead
+        producer.dry_run(config, entries, start_from=6, stop_at=7, seq_list={3, 4})
+        assert "2 lines" in caplog.text
+        lines = caplog.text.splitlines()
+        assert any("[ ]" in l and "003" in l for l in lines)
+        assert any("[x]" in l and "006" in l for l in lines)
+
     def test_shows_stem_names(self, sample_script, sample_cast, caplog):
         config, entries, _tag = producer.load_production(sample_script, sample_cast)
         producer.dry_run(config, entries)
@@ -413,6 +439,31 @@ class TestGenerateVoices:
         # start_from=6 AND stop_at=4 → empty range, nothing to process
         producer.generate_voices(config, entries, stems_dir, start_from=6, stop_at=4)
 
+        assert "Generating 0 voice stems" in caplog.text
+
+    def test_seq_list_generates_only_listed_seqs(self, config, entries, tmp_path, caplog):
+        self._setup_api()
+        stems_dir = str(tmp_path)
+        # entries fixture: seq 3 (adam, valid voice), seq 6 (dez, TBD voice)
+        # Restrict to adam-only via seq_list={3} to avoid the TBD block, proving
+        # seq 6 is excluded even though it's the only other entry available.
+        producer.generate_voices(config, entries, stems_dir, seq_list={3})
+        assert (tmp_path / "003_cold-open_adam.mp3").exists()
+        assert not (tmp_path / "006_act1_dez.mp3").exists()
+        assert "006" not in caplog.text
+
+    def test_seq_list_overrides_start_from(self, config, entries, tmp_path):
+        self._setup_api()
+        stems_dir = str(tmp_path)
+        # start_from=6 alone would select only seq 6 (dez, TBD → blocked);
+        # seq_list={3} overrides it and selects seq 3 (adam) instead.
+        producer.generate_voices(config, entries, stems_dir, start_from=6, seq_list={3})
+        assert (tmp_path / "003_cold-open_adam.mp3").exists()
+
+    def test_seq_list_empty_selection_generates_zero(self, config, entries, tmp_path, caplog):
+        self._setup_api()
+        stems_dir = str(tmp_path)
+        producer.generate_voices(config, entries, stems_dir, seq_list={999})
         assert "Generating 0 voice stems" in caplog.text
 
     def test_skips_tag_only_text(self, tmp_path, caplog):
@@ -1108,3 +1159,37 @@ class TestChatterboxDeviceFlag:
             python_path="/x/python3", voice_refs_dir="voice_refs", device="cpu",
         )
         assert client._device == "cpu"
+
+
+class TestSeqListFlag:
+    """--seq-list regenerates an arbitrary, non-contiguous set of dialogue
+    seqs in one invocation, so the Chatterbox worker subprocess starts once
+    and is reused across all of them instead of once per --start-from/
+    --stop-at invocation."""
+
+    def test_parses_comma_separated_ints(self):
+        parser = producer.get_parser()
+        args = parser.parse_args(["--episode", "S01E01", "--seq-list", "12,45,88,203"])
+        assert args.seq_list == {12, 45, 88, 203}
+
+    def test_defaults_to_none(self):
+        parser = producer.get_parser()
+        args = parser.parse_args(["--episode", "S01E01"])
+        assert args.seq_list is None
+
+    def test_tolerates_whitespace_and_trailing_comma(self):
+        parser = producer.get_parser()
+        args = parser.parse_args(["--episode", "S01E01", "--seq-list", "12, 45, 88,"])
+        assert args.seq_list == {12, 45, 88}
+
+    def test_rejects_non_integer_token(self, capsys):
+        parser = producer.get_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["--episode", "S01E01", "--seq-list", "12,abc,45"])
+        assert exc_info.value.code == 2
+        assert "--seq-list" in capsys.readouterr().err
+
+    def test_rejects_empty_string(self):
+        parser = producer.get_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--episode", "S01E01", "--seq-list", ""])
