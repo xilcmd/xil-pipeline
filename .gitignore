@@ -80,3 +80,10 @@ stem_log*.csv
 .active_show
 tools/generated_character_map.json
 tools/timeline_s01e01.json
+
+# MMAudio model weights (large binaries, downloaded not built)
+weights/
+ext_weights/
+
+# Local implementation plans (working notes, not shared project content)
+PLAN-*.md
