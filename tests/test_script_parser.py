@@ -1307,6 +1307,105 @@ class TestParseDirectionHintAttributes:
         assert parser.format_hint_attr("volume_percentage", 12.5) == "play_volume_pct=12.5%"
 
 
+class TestParseDirectionHintPlayDuration:
+    """A `play_duration_pct` segment becomes a per-cue play_duration override."""
+
+    def test_duration_without_file(self):
+        clean, src, attrs = parser._parse_direction_hint("MUSIC: STING | play_duration_pct=35%")
+        assert clean == "MUSIC: STING"
+        assert src is None
+        assert attrs == {"play_duration": 35.0}
+
+    def test_file_volume_and_duration_together(self):
+        clean, src, attrs = parser._parse_direction_hint(
+            "OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20% | play_duration_pct=35%",
+            slug="the413",
+        )
+        assert clean == "OUTRO MUSIC"
+        assert src == "SFX/the413/sundy3M4_v3.mp3"
+        assert attrs == {"volume_percentage": 20.0, "play_duration": 35.0}
+
+    def test_percent_sign_optional(self):
+        _, _, attrs = parser._parse_direction_hint("MUSIC: STING | play_duration_pct=35")
+        assert attrs == {"play_duration": 35.0}
+
+    def test_order_is_free(self):
+        clean, src, attrs = parser._parse_direction_hint(
+            "OUTRO MUSIC | play_duration_pct=35% | outro.mp3"
+        )
+        assert clean == "OUTRO MUSIC"
+        assert src == "SFX/outro.mp3"
+        assert attrs == {"play_duration": 35.0}
+
+    def test_out_of_range_value_ignored(self):
+        """play_duration is a 0–100 percentage — 150% is not a valid trim."""
+        _, _, attrs = parser._parse_direction_hint("SFX: BUZZ | play_duration_pct=150%")
+        assert attrs == {}
+
+    def test_non_numeric_value_ignored(self):
+        clean, _, attrs = parser._parse_direction_hint("SFX: BUZZ | play_duration_pct=half")
+        assert attrs == {}
+        assert clean == "SFX: BUZZ | play_duration_pct=half"
+
+    def test_format_hint_attr_round_trips(self):
+        assert parser.format_hint_attr("play_duration", 35.0) == "play_duration_pct=35%"
+        assert parser.format_hint_attr("play_duration", 12.5) == "play_duration_pct=12.5%"
+
+
+class TestFilterSfxOverrides:
+    """Not every cue can use every attribute hint."""
+
+    def test_looped_cue_drops_duration_but_keeps_volume(self):
+        entry = {"source": "SFX/amb.mp3", "loop": True}
+        out = parser.filter_sfx_overrides(
+            "AMBIENCE: ROOM TONE", entry,
+            {"volume_percentage": 30.0, "play_duration": 35.0},
+        )
+        assert out == {"volume_percentage": 30.0}
+
+    def test_vintage_filter_cue_drops_duration(self):
+        out = parser.filter_sfx_overrides(
+            "VINTAGE FILTER", {}, {"play_duration": 35.0},
+        )
+        assert out == {}
+
+    def test_silence_cue_takes_nothing(self):
+        out = parser.filter_sfx_overrides(
+            "BEAT", {"type": "silence"},
+            {"volume_percentage": 30.0, "play_duration": 35.0},
+        )
+        assert out == {}
+
+    def test_music_cue_keeps_both(self):
+        out = parser.filter_sfx_overrides(
+            "OUTRO MUSIC", {"source": "SFX/o.mp3"},
+            {"volume_percentage": 20.0, "play_duration": 35.0},
+        )
+        assert out == {"volume_percentage": 20.0, "play_duration": 35.0}
+
+
+class TestApplySfxOverridesDurationSeconds:
+    """play_duration and duration_seconds are mutually exclusive on source cues."""
+
+    def test_source_cue_loses_duration_seconds(self):
+        entry = {"source": "SFX/the413/outro.mp3", "duration_seconds": 5.0}
+        parser._apply_sfx_overrides("OUTRO MUSIC", entry, {"play_duration": 35.0})
+        assert entry["play_duration"] == 35.0
+        assert "duration_seconds" not in entry
+
+    def test_generated_cue_keeps_duration_seconds(self):
+        """With no source, duration_seconds is the API generation length, not a trim."""
+        entry = {"prompt": "MUSIC: STING", "duration_seconds": 15.0}
+        parser._apply_sfx_overrides("MUSIC: STING", entry, {"play_duration": 35.0})
+        assert entry["play_duration"] == 35.0
+        assert entry["duration_seconds"] == 15.0
+
+    def test_volume_alone_keeps_duration_seconds(self):
+        entry = {"source": "SFX/the413/outro.mp3", "duration_seconds": 5.0}
+        parser._apply_sfx_overrides("OUTRO MUSIC", entry, {"volume_percentage": 20.0})
+        assert entry["duration_seconds"] == 5.0
+
+
 # ─── Tests: generate_sfx_config with source hints ───
 
 class TestGenerateSfxConfigWithHints:
@@ -1405,6 +1504,80 @@ class TestGenerateSfxConfigWithHints:
         with open(sfx_path, encoding="utf-8") as f:
             config = json.load(f)
         assert "volume_percentage" not in config["effects"]["BEAT"]
+
+    def test_duration_hint_lands_in_config(self, tmp_path):
+        """play_duration_pct reaches the cue and clears the skeleton's 5.0 default."""
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20% | play_duration_pct=35%]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        direction = next(e for e in parsed["entries"] if e["type"] == "direction")
+        assert direction["text"] == "OUTRO MUSIC"
+        assert direction["sfx_overrides"] == {
+            "volume_percentage": 20.0, "play_duration": 35.0,
+        }
+
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        effect = config["effects"]["OUTRO MUSIC"]
+        assert effect["play_duration"] == 35.0
+        assert effect["volume_percentage"] == 20.0
+        assert effect["source"] == "SFX/the413/sundy3M4_v3.mp3"
+        assert "duration_seconds" not in effect
+
+    def test_duration_hint_on_generated_cue_keeps_duration_seconds(self, tmp_path):
+        """No source means duration_seconds is the generation length — keep it."""
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[MUSIC: STING | play_duration_pct=35%]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        effect = config["effects"]["MUSIC: STING"]
+        assert effect["play_duration"] == 35.0
+        assert effect["duration_seconds"] == 15.0
+
+    def test_ambience_cue_drops_duration_hint(self, tmp_path):
+        """AMBIENCE loops, so play_duration is meaningless — volume still applies."""
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[AMBIENCE: ROOM TONE | play_volume_pct=30% | play_duration_pct=35%]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        effect = config["effects"]["AMBIENCE: ROOM TONE"]
+        assert "play_duration" not in effect
+        assert effect["volume_percentage"] == 30.0
+        assert effect["duration_seconds"] == 30.0
+
+    def test_silence_cue_ignores_duration_hint(self, tmp_path):
+        script = tmp_path / "s.md"
+        script.write_text(
+            "THE 413 — Season 1, Episode 1\n===\nCOLD OPEN\n===\n"
+            "[BEAT | play_duration_pct=35%]\n",
+            encoding="utf-8",
+        )
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert "play_duration" not in config["effects"]["BEAT"]
 
 
 # ─── Tests: backfill_sfx_sources ───
@@ -1540,6 +1713,55 @@ class TestBackfillSfxOverrides:
         sfx_data = {"effects": {"BEAT": {"type": "silence", "duration_seconds": 1.0}}}
         result = self._run(tmp_path, parsed, sfx_data)
         assert "volume_percentage" not in result["effects"]["BEAT"]
+
+    def test_duration_hint_updates_existing_cue(self, tmp_path):
+        parsed = {"entries": [{"type": "direction", "text": "OUTRO MUSIC",
+                               "sfx_overrides": {"play_duration": 35.0}}]}
+        sfx_data = {"effects": {"OUTRO MUSIC": {"source": "SFX/outro.mp3",
+                                                "duration_seconds": 5.0}}}
+        result = self._run(tmp_path, parsed, sfx_data)
+        effect = result["effects"]["OUTRO MUSIC"]
+        assert effect["play_duration"] == 35.0
+        assert "duration_seconds" not in effect
+
+    def test_existing_duration_is_overwritten(self, tmp_path):
+        parsed = {"entries": [{"type": "direction", "text": "OUTRO MUSIC",
+                               "sfx_overrides": {"play_duration": 35.0}}]}
+        sfx_data = {"effects": {"OUTRO MUSIC": {"source": "SFX/outro.mp3",
+                                                "play_duration": 80.0}}}
+        result = self._run(tmp_path, parsed, sfx_data)
+        assert result["effects"]["OUTRO MUSIC"]["play_duration"] == 35.0
+
+    def test_duration_hint_keeps_generation_length_on_prompt_cue(self, tmp_path):
+        parsed = {"entries": [{"type": "direction", "text": "MUSIC: STING",
+                               "sfx_overrides": {"play_duration": 35.0}}]}
+        sfx_data = {"effects": {"MUSIC: STING": {"prompt": "MUSIC: STING",
+                                                 "duration_seconds": 15.0}}}
+        result = self._run(tmp_path, parsed, sfx_data)
+        effect = result["effects"]["MUSIC: STING"]
+        assert effect["play_duration"] == 35.0
+        assert effect["duration_seconds"] == 15.0
+
+    def test_ambience_cue_never_gets_a_duration(self, tmp_path):
+        parsed = {"entries": [{"type": "direction", "text": "AMBIENCE: ROOM TONE",
+                               "sfx_overrides": {"volume_percentage": 30.0,
+                                                 "play_duration": 35.0}}]}
+        sfx_data = {"effects": {"AMBIENCE: ROOM TONE": {"source": "SFX/amb.mp3",
+                                                        "duration_seconds": 30.0,
+                                                        "loop": True}}}
+        result = self._run(tmp_path, parsed, sfx_data)
+        effect = result["effects"]["AMBIENCE: ROOM TONE"]
+        assert "play_duration" not in effect
+        assert effect["volume_percentage"] == 30.0
+        assert effect["duration_seconds"] == 30.0
+
+    def test_silence_cue_never_gets_a_duration(self, tmp_path):
+        parsed = {"entries": [{"type": "direction", "text": "BEAT",
+                               "sfx_overrides": {"play_duration": 35.0}}]}
+        sfx_data = {"effects": {"BEAT": {"type": "silence", "duration_seconds": 1.0}}}
+        result = self._run(tmp_path, parsed, sfx_data)
+        assert "play_duration" not in result["effects"]["BEAT"]
+        assert result["effects"]["BEAT"]["duration_seconds"] == 1.0
 
 
 # ─── Tests: strip_markdown_formatting ───

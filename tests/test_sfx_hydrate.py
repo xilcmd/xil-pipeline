@@ -82,6 +82,41 @@ class TestAttributeHydration:
         result = json.loads(path.read_text(encoding="utf-8"))
         assert result["effects"]["OUTRO MUSIC"]["volume_percentage"] == 20.0
 
+    def test_duration_change_on_hydrated_cue(self, tmp_path):
+        path = _write(tmp_path, {"OUTRO MUSIC": {"source": "SFX/outro.mp3",
+                                                 "duration_seconds": 5.0}})
+        parsed = {"entries": [_direction(
+            "OUTRO MUSIC",
+            sfx_source="SFX/outro.mp3",
+            sfx_overrides={"play_duration": 35.0},
+        )]}
+
+        assert hydrate_sfx_config(parsed, str(path)) == 1
+        effect = json.loads(path.read_text(encoding="utf-8"))["effects"]["OUTRO MUSIC"]
+        assert effect["play_duration"] == 35.0
+        assert "duration_seconds" not in effect
+
+    def test_matching_duration_is_a_no_op(self, tmp_path):
+        path = _write(tmp_path, {"OUTRO MUSIC": {"source": "SFX/outro.mp3",
+                                                 "play_duration": 35.0}})
+        parsed = {"entries": [_direction(
+            "OUTRO MUSIC", sfx_overrides={"play_duration": 35.0},
+        )]}
+
+        assert hydrate_sfx_config(parsed, str(path)) == 0
+
+    def test_duration_on_looped_cue_is_not_reported(self, tmp_path):
+        """The report must not promise a field backfill will drop."""
+        path = _write(tmp_path, {"AMBIENCE: ROOM": {"source": "SFX/amb.mp3",
+                                                    "loop": True}})
+        parsed = {"entries": [_direction(
+            "AMBIENCE: ROOM", sfx_overrides={"play_duration": 35.0},
+        )]}
+
+        assert hydrate_sfx_config(parsed, str(path)) == 0
+        assert "play_duration" not in json.loads(
+            path.read_text(encoding="utf-8"))["effects"]["AMBIENCE: ROOM"]
+
 
 class TestForceReplacesSources:
     """--force makes the script authoritative for `source`.
