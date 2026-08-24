@@ -412,9 +412,10 @@ class ScriptEntry(_DocModel):
 
     sfx_overrides: dict[str, float] | None = Field(default=None)
     """Per-cue :class:`SfxEntry` overrides from the script's attribute hints, keyed by
-    config field name — ``'| play_volume_pct=20%'`` yields
-    ``{"volume_percentage": 20.0}``. Applied on top of the generated SFX config entry;
-    the script wins over any value already in ``sfx_<TAG>.json``."""
+    config field name — ``'| play_volume_pct=20% | play_duration_pct=35%'`` yields
+    ``{"volume_percentage": 20.0, "play_duration": 35.0}``. Applied on top of the
+    generated SFX config entry; the script wins over any value already in
+    ``sfx_<TAG>.json``."""
 
 
 class ScriptStats(_DocModel):

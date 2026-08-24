@@ -231,6 +231,38 @@ The format is: `[TYPE: DESCRIPTION | filename.mp3]`
 - The filename after the pipe tells the operator which file from `SFX/` to assign as the `source`
 - If no matching asset exists, omit the pipe and filename — it will be generated via API
 
+### Playback hints — volume and duration
+
+Two optional `key=value` segments let you set playback from the script, so the operator
+does not have to fix it by hand after every parse. Add them as extra pipe segments, in
+any order, with or without a filename. The `%` sign is optional.
+
+| Hint | Range | What it does |
+|------|-------|--------------|
+| `play_volume_pct=20%` | 0–200 | Playback level. `100` is unity; `20` is quiet under dialogue. |
+| `play_duration_pct=35%` | 0–100 | How much of the file to play, from the start. `35` plays the first third. |
+
+```
+[OUTRO MUSIC | The Porch Light.mp3 | play_volume_pct=20% | play_duration_pct=35%]
+
+[MUSIC: STING | play_volume_pct=40%]
+
+[INTRO MUSIC | The Porch Light.mp3 | play_duration_pct=35%]
+```
+
+**Use `play_duration_pct` on any music bed you drop in by filename.** The pipeline gives a
+new cue a default length of 5 seconds, which will cut a long track short. A
+`play_duration_pct` hint replaces that default, and it is the setting that survives a
+later re-parse.
+
+Notes:
+
+- `play_duration_pct` does nothing on `AMBIENCE:` or `VINTAGE FILTER` cues — those loop to
+  fill the scene. It is dropped with a warning. `play_volume_pct` still works on them.
+- `BEAT` cues are silence, so they take neither hint.
+- A value outside the range, or a non-number, is warned about and ignored. The parse does
+  not fail.
+
 ### How to find matching assets — VERBATIM FILENAMES ONLY
 
 **⛔ Never construct or guess a filename.** Even an obvious-seeming name like

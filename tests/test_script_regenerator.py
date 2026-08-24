@@ -324,6 +324,20 @@ class TestPipeHintEmission:
         result = regenerate_script(self._parsed("MUSIC: STING"), sfx_config=sfx)
         assert "[MUSIC: STING | play_volume_pct=40%]" in result
 
+    def test_source_volume_and_duration(self):
+        sfx = {"effects": {"OUTRO MUSIC": {"source": "SFX/the413/outro.mp3",
+                                           "volume_percentage": 20,
+                                           "play_duration": 35}}}
+        result = regenerate_script(self._parsed("OUTRO MUSIC"), sfx_config=sfx)
+        assert ("[OUTRO MUSIC | outro.mp3 | play_volume_pct=20% "
+                "| play_duration_pct=35%]") in result
+
+    def test_duration_without_source_still_emits(self):
+        sfx = {"effects": {"MUSIC: STING": {"prompt": "MUSIC: STING",
+                                            "play_duration": 35}}}
+        result = regenerate_script(self._parsed("MUSIC: STING"), sfx_config=sfx)
+        assert "[MUSIC: STING | play_duration_pct=35%]" in result
+
     def test_bare_prompt_emits_no_hint(self):
         sfx = {"effects": {"MUSIC: STING": {"prompt": "MUSIC: STING"}}}
         result = regenerate_script(self._parsed("MUSIC: STING"), sfx_config=sfx)
@@ -334,7 +348,8 @@ class TestPipeHintEmission:
         from xil_pipeline import XILP001_script_parser as parser
 
         sfx = {"effects": {"OUTRO MUSIC": {"source": "SFX/the413/outro.mp3",
-                                           "volume_percentage": 20}}}
+                                           "volume_percentage": 20,
+                                           "play_duration": 35}}}
         script = regenerate_script(self._parsed("OUTRO MUSIC"), sfx_config=sfx)
         path = tmp_path / "regen.md"
         path.write_text(script, encoding="utf-8")
@@ -343,4 +358,5 @@ class TestPipeHintEmission:
         direction = next(e for e in reparsed["entries"] if e["type"] == "direction")
         assert direction["text"] == "OUTRO MUSIC"
         assert direction["sfx_source"] == "SFX/the413/outro.mp3"
-        assert direction["sfx_overrides"] == {"volume_percentage": 20.0}
+        assert direction["sfx_overrides"] == {"volume_percentage": 20.0,
+                                              "play_duration": 35.0}

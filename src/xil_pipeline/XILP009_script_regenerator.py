@@ -77,8 +77,9 @@ def speaker_display_name(key: str) -> str:
 def _build_sfx_lookup(sfx_config: dict) -> dict[str, str]:
     """Build a direction-text → pipe-hint-suffix lookup from an SFX config.
 
-    The suffix is the source basename, any attribute hints (``play_volume_pct``),
-    or both joined by ``" | "`` — whatever the cue carries. Entries with neither
+    The suffix is the source basename, any attribute hints (``play_volume_pct``,
+    ``play_duration_pct``), or both joined by ``" | "`` — whatever the cue
+    carries. Entries with neither
     (a bare prompt, or silence) produce no hint and are omitted, so the
     regenerated direction is emitted as plain ``[TEXT]``.
 
@@ -220,7 +221,7 @@ def get_parser() -> argparse.ArgumentParser:
                         help="Override SFX config path (sfx_<TAG>.json); "
                              "when supplied, direction entries are emitted with "
                              "a pipe-hint suffix carrying the source filename "
-                             "and any play_volume_pct override")
+                             "and any play_volume_pct / play_duration_pct override")
     parser.add_argument("--show", default=None,
                         help="Show name override (default: from project.json)")
     parser.add_argument("--output", default=None,

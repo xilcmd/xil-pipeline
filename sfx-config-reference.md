@@ -149,6 +149,10 @@ Meaning depends on context:
 > replayed by the timeline edit journal — a `duration_seconds` edit reverts to `5.0` the
 > next time the config is rebuilt from a skeleton, silently re-clipping the cue.
 > `play_duration` survives regeneration.
+>
+> Better still, fix it in the script: a `play_duration_pct` pipe-hint on the direction
+> sets `play_duration` **and removes `duration_seconds`** from source-backed cues, so
+> the contradiction never gets written in the first place.
 
 ### `play_duration`
 
@@ -167,8 +171,24 @@ duration.
 - `25` = use the first 25% of "The Porch Light.mp3".
 - Only valid when `source` is set.
 - Mutually exclusive with `duration_seconds` for music entries; use one or the other.
+- Ignored on looped layers (AMBIENCE, VINTAGE FILTER) — they tile to fill the scene.
 - Best for music where the natural length is unknown and you want a proportional excerpt
   rather than a hard-coded second count.
+
+It can also come straight from the script. A `play_duration_pct` pipe-hint on the
+direction sets this field, and the script wins over whatever the config holds:
+
+```
+[INTRO MUSIC | The Porch Light.mp3 | play_duration_pct=35%]
+```
+
+On a cue that has a `source`, the hint also **removes** `duration_seconds`, since the two
+are mutually exclusive and the skeleton's default `5.0` would otherwise sit in the config
+contradicting the hint. On a generated cue (no `source`) `duration_seconds` is kept — there
+it is the requested generation length sent to the SFX API, not a trim.
+
+A hint on an AMBIENCE or VINTAGE FILTER cue is dropped with a warning at parse time; a
+`play_volume_pct` on the same direction still applies.
 
 ### `loop`
 
@@ -214,6 +234,13 @@ Reparsing (`xil parse`) or `xil sfx-hydrate` applies it; `xil regen` writes it b
 into the markdown, so the annotation survives a full round-trip. Hand-editing this
 field is still fine — just remember a later re-parse will restore the script's value
 if the direction still carries the hint.
+
+> **The edit journal beats the script hint on a full re-parse.** `xil parse` writes the
+> skeleton from the script, *then* replays `sfx_<TAG>.json`'s edit journal on top. So a
+> `volume_percentage` or `play_duration` you set in the xil-gui Timeline wins over a
+> fresh hint in the script. `xil sfx-hydrate` has the opposite precedence — there the
+> script always wins. If a hint appears not to take, check
+> `sfx_<TAG>_edits.jsonl` (see `xil sfx-restore`).
 
 ### `prompt_influence`
 
@@ -284,9 +311,9 @@ effect entry
 | `source` | string (path) | — | Source-based entries |
 | `prompt` | string | — | API-generated entries |
 | `duration_seconds` | float | — | Clip/generate/silence length |
-| `play_duration` | float (0–100) | — | Source music % trim |
+| `play_duration` | float (0–100) | — | Source music % trim (script hint: `play_duration_pct`) |
 | `loop` | bool | `true` for AMBIENCE | Tile vs. one-shot |
-| `volume_percentage` | float | from `defaults` | Per-entry volume |
+| `volume_percentage` | float | from `defaults` | Per-entry volume (script hint: `play_volume_pct`) |
 | `prompt_influence` | float 0–1 | from `defaults` | API creativity control |
 
 ---

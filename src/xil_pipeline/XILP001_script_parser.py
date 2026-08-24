@@ -447,10 +447,16 @@ DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM A
 # the script-facing spelling can stay writer-friendly (play_volume_pct=20%) while
 # the config keeps its canonical field name.  Add a key here to support a new
 # attribute; nothing else in the parser needs to change.
-HINT_ATTRS = {"play_volume_pct": "volume_percentage"}
+HINT_ATTRS = {"play_volume_pct": "volume_percentage",
+              "play_duration_pct": "play_duration"}
 
 # Accepted range per target field, mirroring the SfxEntry validators.
-HINT_ATTR_RANGES = {"volume_percentage": (0.0, 200.0)}
+HINT_ATTR_RANGES = {"volume_percentage": (0.0, 200.0),
+                    "play_duration": (0.0, 100.0)}
+
+# Cue key prefixes whose layers loop, so a play_duration percentage is meaningless
+# there — mix_common only resolves play_duration for MUSIC / SFX / BEAT.
+LOOPED_CUE_PREFIXES = ("AMBIENCE:", "VINTAGE FILTER")
 
 
 def strip_markdown_escapes(text: str) -> str:
@@ -582,7 +588,7 @@ def _parse_direction_hint(raw: str, slug: str = "") -> tuple[str, str | None, di
     Scriptwriters may annotate directions with pipe-separated hints::
 
         SFX: RADIO STATIC — BRIEF TUNING | sfx_radio-static-tuning-transition.mp3
-        OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20%
+        OUTRO MUSIC | sundy3M4_v3.mp3 | play_volume_pct=20% | play_duration_pct=35%
 
     Every segment after the first is classified independently and order-free:
 
@@ -658,6 +664,71 @@ def _parse_hint_value(field: str, value: str, raw: str) -> float | None:
                        field, raw, value, lo, hi)
         return None
     return num
+
+
+def filter_sfx_overrides(key_text: str, entry: dict, overrides: dict[str, float],
+                         warn: bool = False) -> dict[str, float]:
+    """Narrow attribute pipe-hints to the ones this cue can actually use.
+
+    Two hints are not universally meaningful:
+
+    * silence cues (``BEAT``, stop markers) take no attribute hints at all — there
+      is no audio to set a level or a length on
+    * looped layers (see :data:`LOOPED_CUE_PREFIXES`) drop ``play_duration``,
+      because ``mix_common`` only honours it for MUSIC / SFX / BEAT; a volume hint
+      on the same cue still applies
+
+    Used by both the write path (:func:`_apply_sfx_overrides`) and ``xil
+    sfx-hydrate``'s report, so what the report promises is what gets written.
+
+    Args:
+        key_text: The cue key (the direction text), used to spot looped layers.
+        entry: The SFX config entry the hints would land on.
+        overrides: Config-field-keyed hints from :func:`_parse_direction_hint`.
+        warn: Log a warning for each dropped hint.  Callers that would otherwise
+            warn twice for the same cue leave this ``False``.
+
+    Returns:
+        The subset of *overrides* this cue accepts.
+    """
+    if not overrides or entry.get("type") == "silence":
+        return {}
+
+    allowed = dict(overrides)
+    if "play_duration" in allowed and key_text.startswith(LOOPED_CUE_PREFIXES):
+        allowed.pop("play_duration")
+        if warn:
+            logger.warning("  Ignoring play_duration_pct on looped cue [%s]", key_text)
+    return allowed
+
+
+def _apply_sfx_overrides(key_text: str, entry: dict, overrides: dict[str, float]) -> dict[str, float]:
+    """Apply attribute pipe-hints to one SFX config entry, in place.
+
+    Shared by :func:`generate_sfx_config` (fresh skeleton) and
+    :func:`backfill_sfx_sources` (existing config) so both write sites behave the
+    same.  On top of :func:`filter_sfx_overrides`, a ``play_duration`` hint clears
+    ``duration_seconds`` on **source-backed** cues: the two are mutually exclusive,
+    and leaving the skeleton's default 5.0 in place would contradict the hint.
+    Generated cues keep it — there it is the requested generation length sent to
+    the SFX API, not a trim.
+
+    Args:
+        key_text: The cue key (the direction text).
+        entry: The SFX config entry dict to update in place.
+        overrides: Config-field-keyed hints from :func:`_parse_direction_hint`.
+
+    Returns:
+        The fields actually written, so callers can count or report them.
+    """
+    applied = filter_sfx_overrides(key_text, entry, overrides, warn=True)
+    if not applied:
+        return {}
+
+    entry.update(applied)
+    if "play_duration" in applied and entry.get("source"):
+        entry.pop("duration_seconds", None)
+    return applied
 
 
 def is_section_header(line: str, section_map: dict[str, str] | None = None) -> bool:
@@ -1469,10 +1540,10 @@ def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = 
             effects[text] = {"prompt": text, "duration_seconds": 5.0}
             sfx_count += 1
 
-        # Attribute hints (play_volume_pct=…) apply to any audible cue, generated
-        # or source-backed.  Silence entries have no level to set.
-        if sfx_overrides and effects[text].get("type") != "silence":
-            effects[text].update(sfx_overrides)
+        # Attribute hints (play_volume_pct=…, play_duration_pct=…) apply to any
+        # audible cue, generated or source-backed.  Silence entries have no level
+        # to set, and looped layers have no play_duration.
+        _apply_sfx_overrides(text, effects[text], sfx_overrides)
 
     config = {
         "_docs": {
@@ -1656,11 +1727,9 @@ def backfill_sfx_sources(parsed: dict, sfx_path: str, force: bool = False) -> No
 
         # The script wins for attribute hints: overwrite whatever is there.
         effect = effects[text]
-        if sfx_overrides and effect.get("type") != "silence":
-            changed = {k: v for k, v in sfx_overrides.items() if effect.get(k) != v}
-            if changed:
-                effect.update(changed)
-                updated += 1
+        changed = {k: v for k, v in sfx_overrides.items() if effect.get(k) != v}
+        if _apply_sfx_overrides(text, effect, changed):
+            updated += 1
 
     if updated:
         with open(sfx_path, "w", encoding="utf-8") as f:

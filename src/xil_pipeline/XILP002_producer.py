@@ -366,6 +366,7 @@ def dry_run(
     stems_dir: str = "", force: bool = False,
     sfx_backend_name: str = "elevenlabs",
     sfx_dir: str | None = None,
+    backend: str = "elevenlabs",
 ) -> None:
     """Preview all dialogue lines and TTS cost without making API calls.
 
@@ -381,6 +382,9 @@ def dry_run(
         sfx_entries: Optional SFX entry dicts from ``load_sfx_entries()``.
         sfx_config: Optional raw SFX config dict.
         stems_dir: Episode stems directory (for SFX shared-library status).
+        backend: Dialogue TTS backend. Only ``"elevenlabs"`` needs a
+            ``voice_id``; local cloning backends use ``voice_refs/<key>.wav``,
+            so the TBD checks are skipped for them.
     """
     logger.info("\n%s", "="*70)
     logger.info("DRY RUN — %d dialogue lines", len(dialogue_entries))
@@ -424,7 +428,7 @@ def dry_run(
 
         cfg = config.get(speaker, {})
         voice_id = cfg.get("id", "???")
-        voice_status = "TBD" if voice_id == "TBD" else "OK"
+        voice_status = "TBD" if (voice_id == "TBD" and backend == "elevenlabs") else "OK"
 
         # Summarise any non-default voice settings
         vs_parts = []
@@ -452,7 +456,10 @@ def dry_run(
         len(e["text"]) for e in dialogue_entries
         if _in_selection(e["seq"], start_from, stop_at, seq_list)
     )
-    tbd_voices = [sp for sp, cfg in config.items() if cfg["id"] == "TBD"]
+    tbd_voices = (
+        [sp for sp, cfg in config.items() if cfg["id"] == "TBD"]
+        if backend == "elevenlabs" else []
+    )
 
     logger.info("%s", "="*70)
     logger.info("TOTAL:  %d lines, %s TTS characters", len(dialogue_entries), f"{total_chars:,}")
@@ -1354,7 +1361,8 @@ def main() -> None:
                     sfx_entries=sfx_entries, sfx_config=sfx_config_data,
                     stems_dir=stems_dir, force=args.force,
                     sfx_backend_name=args.sfx_backend,
-                    sfx_dir=_sfx_dir_for(slug))
+                    sfx_dir=_sfx_dir_for(slug),
+                    backend=args.backend)
         else:
             if args.backend == "elevenlabs":
                 check_elevenlabs_quota()

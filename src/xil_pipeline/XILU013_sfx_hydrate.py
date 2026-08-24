@@ -5,8 +5,8 @@
 """XILU013 — SFX Source Hydration.
 
 Reads ``sfx_source`` and ``sfx_overrides`` pipe-hint fields from a parsed script
-JSON and writes the corresponding ``source`` / ``volume_percentage`` values into
-the SFX config — without requiring a full re-parse.
+JSON and writes the corresponding ``source`` / ``volume_percentage`` /
+``play_duration`` values into the SFX config — without requiring a full re-parse.
 
 This is the standalone counterpart to the automatic backfill that runs at the
 end of ``xil parse`` when the SFX config already exists.  Use it after adding
@@ -31,7 +31,11 @@ import sys
 from xil_pipeline.log_config import configure_logging, get_logger
 from xil_pipeline.models import derive_paths, resolve_slug
 from xil_pipeline.sfx_common import run_banner
-from xil_pipeline.XILP001_script_parser import backfill_sfx_sources, format_hint_attr
+from xil_pipeline.XILP001_script_parser import (
+    backfill_sfx_sources,
+    filter_sfx_overrides,
+    format_hint_attr,
+)
 
 logger = get_logger(__name__)
 
@@ -47,7 +51,8 @@ def hydrate_sfx_config(
     """Apply pipe-hint fields from *parsed* to the SFX config at *sfx_path*.
 
     Covers both halves of the hint grammar: a ``source`` filename is written when
-    the cue has none, while attribute hints (``play_volume_pct=…``) overwrite
+    the cue has none, while attribute hints (``play_volume_pct=…``,
+    ``play_duration_pct=…``) overwrite
     whatever the config holds, since the script is authoritative for those.
 
     With *force*, a differing ``source`` is replaced too — the only way to correct
@@ -95,7 +100,10 @@ def hydrate_sfx_config(
         elif force and sfx_source and current != sfx_source:
             action = (("replace", sfx_source) if _hint_target_exists(sfx_source)
                       else ("skip", sfx_source))
-        changed = {k: v for k, v in overrides.items() if effect.get(k) != v}
+        # Filter with the same rule the write path uses, so the report never
+        # promises a field backfill_sfx_sources will drop.
+        usable = filter_sfx_overrides(text, effect, overrides, warn=dry_run)
+        changed = {k: v for k, v in usable.items() if effect.get(k) != v}
         if action or changed:
             pending.append((text, action, changed, current))
 
@@ -139,8 +147,9 @@ def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="xil-sfx-hydrate",
         description=(
-            "Write pipe-hint source and attribute fields (play_volume_pct) from "
-            "parsed JSON into the SFX config without re-parsing the script."
+            "Write pipe-hint source and attribute fields (play_volume_pct, "
+            "play_duration_pct) from parsed JSON into the SFX config without "
+            "re-parsing the script."
         ),
     )
     tag_group = parser.add_mutually_exclusive_group(required=True)
