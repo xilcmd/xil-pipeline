@@ -420,3 +420,35 @@ class TestSpeakerphonePairing:
             ["[SPEAKERPHONE ENGAGES]", "[SPEAKERPHONE: DISENGAGES]"]) == []
         assert scanner.scan_speakerphone_pairing(
             ["[SPEAKERPHONE: ENGAGES]", "[SPEAKERPHONE DISENGAGES]"]) == []
+
+
+class TestPhoneFilterPairing:
+    def test_paired_markers_report_nothing(self):
+        lines = ["[PHONE FILTER: ENGAGES]", "[PHONE FILTER: DISENGAGES]"]
+        assert scanner.scan_phone_filter_pairing(lines) == []
+
+    def test_colon_free_form_is_accepted(self):
+        lines = ["[PHONE FILTER ENGAGES]", "[PHONE FILTER DISENGAGES]"]
+        assert scanner.scan_phone_filter_pairing(lines) == []
+
+    def test_scoped_engages_pairs_with_bare_disengages(self):
+        """A speaker scope must not make the ENGAGES invisible to the lint."""
+        lines = ["[PHONE FILTER: ENGAGES DEZ]", "[PHONE FILTER: DISENGAGES]"]
+        assert scanner.scan_phone_filter_pairing(lines) == []
+
+    def test_scope_on_both_markers_pairs(self):
+        lines = ["[PHONE FILTER: ENGAGES DEZ]", "[PHONE FILTER: DISENGAGES DEZ]"]
+        assert scanner.scan_phone_filter_pairing(lines) == []
+
+    def test_unclosed_engages_is_reported(self):
+        result = scanner.scan_phone_filter_pairing(["[PHONE FILTER: ENGAGES DEZ]"])
+        assert len(result) == 1
+        assert result[0]["type"] == "ENGAGES"
+
+    def test_orphan_disengages_is_reported(self):
+        result = scanner.scan_phone_filter_pairing(["[PHONE FILTER: DISENGAGES]"])
+        assert len(result) == 1
+        assert result[0]["type"] == "DISENGAGES"
+
+    def test_sfx_cue_is_not_a_marker(self):
+        assert scanner.scan_phone_filter_pairing(["[SFX: PHONE SCREEN TAP]"]) == []

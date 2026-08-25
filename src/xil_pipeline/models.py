@@ -402,7 +402,8 @@ class ScriptEntry(_DocModel):
     """The spoken text, header text, or stage direction content."""
 
     direction_type: Literal[
-        "SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO", "SPEAKERPHONE"
+        "SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO",
+        "SPEAKERPHONE", "PHONE FILTER",
     ] | None = Field(default=None)
     """Subtype for direction entries indicating sound category."""
 

@@ -259,8 +259,13 @@ def scan_span_pairing(lines: list[str], marker: str, *, allow_colon: bool = Fals
         List of unpaired marker dicts:
         ``{"text": str, "line": int, "type": "ENGAGES" | "DISENGAGES"}``
     """
+    # An optional trailing token is the span's speaker scope
+    # (``[PHONE FILTER: ENGAGES DEZ]``); pairing itself ignores it, but the
+    # pattern has to accept it or a scoped ENGAGES reads as no marker at all
+    # and its DISENGAGES is then reported as an orphan.
     pattern = re.compile(
-        rf"^{re.escape(marker)}{':?' if allow_colon else ''}\s+(ENGAGES|DISENGAGES)$"
+        rf"^{re.escape(marker)}{':?' if allow_colon else ''}"
+        rf"\s+(ENGAGES|DISENGAGES)(?:[\s:,-]+\S+)?$"
     )
     stack: list[dict] = []
     unpaired: list[dict] = []
@@ -329,6 +334,23 @@ def scan_speakerphone_pairing(lines: list[str]) -> list[dict]:
         List of unpaired marker dicts.
     """
     return scan_span_pairing(lines, "SPEAKERPHONE", allow_colon=True)
+
+
+def scan_phone_filter_pairing(lines: list[str]) -> list[dict]:
+    """Check that every PHONE FILTER ENGAGES has a matching DISENGAGES.
+
+    Both the colon and colon-free spellings are accepted; scripts already in
+    production use the colon form.  Like SPEAKERPHONE, the span treats every
+    line it encloses, so a phone call is normally written as one marker pair
+    per remote line rather than one pair around the whole call.
+
+    Args:
+        lines: Raw script lines.
+
+    Returns:
+        List of unpaired marker dicts.
+    """
+    return scan_span_pairing(lines, "PHONE FILTER", allow_colon=True)
 
 
 def scan_preamble_postamble(sections: list[dict]) -> dict:
@@ -545,6 +567,16 @@ def format_report(scan: dict, header: dict) -> str:
     lines.append("SPEAKERPHONE PAIRING")
     if sp_unpaired:
         for item in sp_unpaired:
+            lines.append(f"  ⚠  {item['type']:<12} unpaired  line {item['line']}")
+    else:
+        lines.append("  ✓  all markers paired (or none present)")
+
+    # PHONE FILTER pairing
+    pf_unpaired = scan.get("phone_filter_unpaired", [])
+    lines.append("")
+    lines.append("PHONE FILTER PAIRING")
+    if pf_unpaired:
+        for item in pf_unpaired:
             lines.append(f"  ⚠  {item['type']:<12} unpaired  line {item['line']}")
     else:
         lines.append("  ✓  all markers paired (or none present)")
@@ -951,6 +983,9 @@ def main():
 
         # SPEAKERPHONE pairing
         scan["speakerphone_unpaired"] = scan_speakerphone_pairing(lines)
+
+        # PHONE FILTER pairing
+        scan["phone_filter_unpaired"] = scan_phone_filter_pairing(lines)
 
         # Ambience loop coverage
         scan["ambience_unclosed"] = scan_ambience_coverage(lines)

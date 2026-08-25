@@ -99,9 +99,11 @@ stems during assembly and DAW export. Pick by how it should *sound*:
 | `"film"` | warm and reflective, rolled-off top, recessed presence, audible grain | dialogue heard from a film print (1990s indie register) |
 | `"speakerphone"` | narrow, crunchy, hard-levelled, with a room slap | a phone on a table, on speaker |
 
-For a character who is on speakerphone in one scene and in the room in another, prefer the
-`[SPEAKERPHONE ENGAGES]` / `[DISENGAGES]` script markers over a second cast entry — the span
-decides line by line. Use the cast field when a voice is only ever heard through a phone.
+For a character who is on the phone in one scene and in the room in another, prefer the
+script span markers over a second cast entry — the span decides line by line. Use
+`[PHONE FILTER: ENGAGES <speaker>]` for an ordinary call and
+`[SPEAKERPHONE ENGAGES]` for a phone on speaker in the room. Use the cast field when a
+voice is only ever heard through a phone.
 
 Comma-separated values chain left to right, so `"vintage,phone"` and
 `"phone,vintage"` give different results. Unknown names are ignored with a
@@ -123,6 +125,13 @@ Note that a speaker whose `filter` names a treatment **and** who speaks inside a
 matching script span (see `FILM AUDIO` in the direction types reference) receives
 that treatment twice. This has always been the behaviour for `VINTAGE FILTER`;
 it is more audible for `film`, which compounds compression and grain.
+
+**`phone` is the one exception.** A `phone` span treatment is skipped when the
+speaker's own `filter` already applied it, because `apply_phone_filter` is a
+band-limit plus a fixed +5 dB — applying it twice band-limits twice and lands
++10 dB, which is wrong rather than merely doubled. The exception is deliberately
+narrow: only `phone` is deduped, and only against an identical cast filter. A
+`vintage` speaker inside a `PHONE FILTER` span still gets both.
 
 #### Pan Guide
 

@@ -590,3 +590,78 @@ class TestAssembleAudioFromCastFile:
             os.chdir(original_cwd)
         # multitrack path prints "multi-track" or "No stems" (empty dir)
         assert "multi-track" in caplog.text or "No stems" in caplog.text
+
+
+# ─── Tests: cast filter + span treatment interaction ───
+
+class TestCastFilterSpanDedupe:
+    """A span must not re-apply a treatment the speaker's cast filter did.
+
+    phone is a band-limit plus a fixed +5 dB, so running it twice band-limits
+    twice and lands +10 dB.  vintage and film keep stacking — long-standing
+    behaviour that mixes may already be leaning on.
+    """
+
+    @pytest.fixture
+    def stems(self, tmp_path):
+        stems_dir = tmp_path / "stems"
+        stems_dir.mkdir()
+        _write_mp3(str(stems_dir / "002_act-one_dez.mp3"), duration_ms=300)
+        return stems_dir
+
+    def _index(self, direction_type, text):
+        return {
+            1: {"seq": 1, "type": "direction", "direction_type": direction_type,
+                "text": f"{text} ENGAGES"},
+            2: {"seq": 2, "type": "dialogue", "direction_type": None, "text": "Hello"},
+            3: {"seq": 3, "type": "direction", "direction_type": direction_type,
+                "text": f"{text} DISENGAGES"},
+        }
+
+    def _run(self, stems, index, cast_filter, patched):
+        cfg = {"dez": {"pan": 0.0, "filter": cast_filter}}
+        plans = mix_common.collect_stem_plans(str(stems), index)
+        with unittest.mock.patch.object(
+            mix_common, patched, wraps=getattr(mix_common, patched)
+        ) as mock_filter:
+            mix_common.build_foreground(plans, cfg)
+        return mock_filter.call_count
+
+    def test_phone_cast_filter_inside_phone_span_applies_once(self, stems):
+        calls = self._run(stems, self._index("PHONE FILTER", "PHONE FILTER"),
+                          "phone", "apply_phone_filter")
+        assert calls == 1
+
+    def test_legacy_true_cast_filter_also_dedupes(self, stems):
+        """`filter: True` normalises to phone, so it must dedupe too."""
+        calls = self._run(stems, self._index("PHONE FILTER", "PHONE FILTER"),
+                          True, "apply_phone_filter")
+        assert calls == 1
+
+    def test_phone_span_alone_still_applies(self, stems):
+        calls = self._run(stems, self._index("PHONE FILTER", "PHONE FILTER"),
+                          False, "apply_phone_filter")
+        assert calls == 1
+
+    def test_phone_cast_filter_alone_still_applies(self, stems):
+        index = {2: {"seq": 2, "type": "dialogue", "direction_type": None,
+                     "text": "Hello"}}
+        calls = self._run(stems, index, "phone", "apply_phone_filter")
+        assert calls == 1
+
+    def test_film_still_stacks(self, stems):
+        """Scoped to phone — film keeps its documented double-treatment.
+
+        FILM AUDIO rather than VINTAGE FILTER because only FILM AUDIO gets a
+        sentinel for its ENGAGES marker; a VINTAGE FILTER span needs its real
+        crackle stem on disk to open at all.
+        """
+        calls = self._run(stems, self._index("FILM AUDIO", "FILM AUDIO"),
+                          "film", "apply_film_filter")
+        assert calls == 2
+
+    def test_unrelated_cast_filter_does_not_suppress_the_span(self, stems):
+        """A vintage speaker inside a PHONE FILTER span still gets phone."""
+        calls = self._run(stems, self._index("PHONE FILTER", "PHONE FILTER"),
+                          "vintage", "apply_phone_filter")
+        assert calls == 1

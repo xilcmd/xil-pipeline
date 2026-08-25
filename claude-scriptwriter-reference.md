@@ -79,7 +79,7 @@ END OF EPISODE
 - **Scene headers**: `SCENE N: LOCATION NAME` (on own line)
 - **Dialogue**: Speaker name on one line, dialogue text on the next
 - **Acting directions**: In parentheses after speaker name: `CHARACTER (whispering)`
-- **Directions**: In square brackets: `[SFX: ...]`, `[AMBIENCE: ...]`, `[MUSIC: ...]`, `[BEAT]`, `[BEAT — N SECONDS]`, `[VINTAGE FILTER ENGAGES]`, `[VINTAGE FILTER DISENGAGES]`, `[FILM AUDIO ENGAGES]`, `[FILM AUDIO DISENGAGES]`, `[SPEAKERPHONE ENGAGES]`, `[SPEAKERPHONE DISENGAGES]`
+- **Directions**: In square brackets: `[SFX: ...]`, `[AMBIENCE: ...]`, `[MUSIC: ...]`, `[BEAT]`, `[BEAT — N SECONDS]`, `[VINTAGE FILTER ENGAGES]`, `[VINTAGE FILTER DISENGAGES]`, `[FILM AUDIO ENGAGES]`, `[FILM AUDIO DISENGAGES]`, `[SPEAKERPHONE ENGAGES]`, `[SPEAKERPHONE DISENGAGES]`, `[PHONE FILTER: ENGAGES <speaker>]`, `[PHONE FILTER: DISENGAGES]`
 - **End marker**: `END OF EPISODE` (stops parsing)
 - **Ambience stop**: `[AMBIENCE: STOP]` or `[AMBIENCE: description FADES OUT]` to end a looping ambience
 
@@ -534,6 +534,45 @@ when a voice is *only ever* heard through a phone for the whole episode.
 Both spellings (`[SPEAKERPHONE ENGAGES]` and `[SPEAKERPHONE: ENGAGES]`) are accepted.
 Markers must be paired — an unclosed span fails `xil scan`. They generate no audio and cost
 no API credits.
+
+### Phone Calls — `PHONE FILTER`
+
+Use this for an ordinary phone call: a voice heard down the line, band-limited but still
+present. It is the plain telephone sound. Reach for `SPEAKERPHONE` instead when the call is
+on a speaker in the room — that one adds saturation, hard AGC and a room slap.
+
+```
+[PHONE FILTER: ENGAGES DEZ]
+
+DEZ
+(filtered, through phone)
+Rían. It's midnight.
+
+RÍAN
+I know. You at the diner still?
+
+[PHONE FILTER: DISENGAGES]
+```
+
+**Name the remote speaker on the ENGAGES marker.** A call alternates the voice on the phone
+with the voice in the room, and without a name the span filters *every* line it encloses —
+including the in-room half of the conversation. Naming the speaker lets you wrap the whole
+call in one marker pair, which is how a call actually reads on the page:
+
+| Marker | Effect |
+|--------|--------|
+| `[PHONE FILTER: ENGAGES DEZ]` | only DEZ's lines inside the span are filtered |
+| `[PHONE FILTER: ENGAGES]` | every line inside the span is filtered |
+
+The speaker name is the cast key, and it works on `SPEAKERPHONE`, `FILM AUDIO` and
+`VINTAGE FILTER` spans too. The closing marker may repeat the name or not.
+
+Both spellings are accepted, markers must be paired, and like the other span markers they
+generate no audio and cost no API credits.
+
+Setting `"filter": "phone"` on the character still works and is the better choice when a
+voice is *only ever* heard through a phone. If you do both, the treatment is applied once,
+not twice.
 
 ## Consistency Guidelines
 

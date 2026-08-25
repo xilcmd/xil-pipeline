@@ -2812,3 +2812,64 @@ class TestSpeakerphoneDirectionType:
         entry = config["effects"]["SPEAKERPHONE ENGAGES"]
         assert entry == {"type": "silence", "duration_seconds": 0.0}
         assert "prompt" not in entry and "source" not in entry
+
+
+PHONE_FILTER_SCRIPT = """\
+# THE 413 — S01E01 — Test
+
+## COLD OPEN
+
+[PHONE FILTER: ENGAGES DEZ]
+
+DEZ
+(filtered, through phone)
+Rian. It's midnight.
+
+RIAN
+I know. You at the diner still?
+
+[PHONE FILTER: DISENGAGES]
+
+ADAM
+Downstairs.
+
+[END OF EPISODE]
+"""
+
+
+class TestPhoneFilterDirectionType:
+    def test_classify_engages(self):
+        assert parser.classify_direction("PHONE FILTER ENGAGES") == "PHONE FILTER"
+
+    def test_classify_colon_form(self):
+        assert parser.classify_direction("PHONE FILTER: DISENGAGES") == "PHONE FILTER"
+
+    def test_classify_scoped_form(self):
+        assert parser.classify_direction("PHONE FILTER: ENGAGES DEZ") == "PHONE FILTER"
+
+    def test_speakerphone_is_not_swallowed(self):
+        """Neither name is a prefix of the other — both must survive."""
+        assert parser.classify_direction("SPEAKERPHONE ENGAGES") == "SPEAKERPHONE"
+
+    def test_phone_sfx_cue_still_classifies_as_sfx(self):
+        assert parser.classify_direction("SFX: PHONE SCREEN TAP") == "SFX"
+
+    def test_parse_script_accepts_markers(self, tmp_path):
+        script = tmp_path / "pf.md"
+        script.write_text(PHONE_FILTER_SCRIPT, encoding="utf-8")
+        parsed = parser.parse_script(str(script))
+        types = [e["direction_type"] for e in parsed["entries"] if e["type"] == "direction"]
+        assert types.count("PHONE FILTER") == 2
+
+    def test_sfx_config_marks_markers_as_zero_length_silence(self, tmp_path):
+        """No prompt, no source — markers must never reach SFX generation."""
+        script = tmp_path / "pf.md"
+        script.write_text(PHONE_FILTER_SCRIPT, encoding="utf-8")
+        parsed = parser.parse_script(str(script))
+        sfx_path = str(tmp_path / "sfx.json")
+        parser.generate_sfx_config(parsed, sfx_path)
+        with open(sfx_path, encoding="utf-8") as f:
+            config = json.load(f)
+        entry = config["effects"]["PHONE FILTER: ENGAGES DEZ"]
+        assert entry == {"type": "silence", "duration_seconds": 0.0}
+        assert "prompt" not in entry and "source" not in entry

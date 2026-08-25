@@ -43,7 +43,7 @@ logger = get_logger(__name__)
 # Background direction types — excluded from the foreground timeline,
 # overlaid at their cue positions in a separate background pass.
 BACKGROUND_DIRECTION_TYPES: frozenset[str] = frozenset(
-    {"AMBIENCE", "MUSIC", "VINTAGE FILTER", "FILM AUDIO", "SPEAKERPHONE"}
+    {"AMBIENCE", "MUSIC", "VINTAGE FILTER", "FILM AUDIO", "SPEAKERPHONE", "PHONE FILTER"}
 )
 
 # Span-marker direction types and the dialogue treatment each one engages.
@@ -51,13 +51,17 @@ BACKGROUND_DIRECTION_TYPES: frozenset[str] = frozenset(
 #
 # A span applies to *every* dialogue line it encloses, not to one speaker.  For
 # VINTAGE FILTER and FILM AUDIO that is the natural reading — everything inside
-# is in the same treated world.  SPEAKERPHONE is different: a call scene usually
-# alternates remote and in-room voices, so the writer opens and closes around
-# the remote lines rather than around the whole call.
+# is in the same treated world.  SPEAKERPHONE and PHONE FILTER are different: a
+# call scene usually alternates remote and in-room voices, so the writer opens
+# and closes around the remote lines rather than around the whole call.
+#
+# PHONE FILTER is last because it is a band-limit rather than a tone shape, so
+# it reads best applied after whatever else the enclosed line is already in.
 SPAN_DIRECTION_TREATMENTS: dict[str, str] = {
     "VINTAGE FILTER": "vintage",
     "FILM AUDIO": "film",
     "SPEAKERPHONE": "speakerphone",
+    "PHONE FILTER": "phone",
 }
 
 # Which markers of each span type need a synthetic boundary plan injected.
@@ -65,14 +69,21 @@ SPAN_DIRECTION_TREATMENTS: dict[str, str] = {
 # The asymmetry is deliberate.  VINTAGE FILTER ENGAGES binds to a real crackle
 # stem on disk, so it already appears in the timeline; injecting a sentinel for
 # it would make episodes whose crackle stem has not been generated start
-# applying the vintage EQ where they previously did not.  FILM AUDIO and
-# SPEAKERPHONE have no audio at all, so both of their markers need sentinels to
-# exist as boundaries.
+# applying the vintage EQ where they previously did not.  FILM AUDIO,
+# SPEAKERPHONE and PHONE FILTER have no audio at all, so both of their markers
+# need sentinels to exist as boundaries.
 _SPAN_SENTINEL_MARKERS: dict[str, tuple[str, ...]] = {
     "VINTAGE FILTER": ("DISENGAGES",),
     "FILM AUDIO": ("ENGAGES", "DISENGAGES"),
     "SPEAKERPHONE": ("ENGAGES", "DISENGAGES"),
+    "PHONE FILTER": ("ENGAGES", "DISENGAGES"),
 }
+
+# Treatments that must not stack with an identical cast-config filter.  phone is
+# a band-limit plus a fixed +5 dB, so applying it twice band-limits twice and
+# lands +10 dB — audibly wrong rather than merely redundant.  vintage and film
+# keep stacking as they always have; see the caveat in cast-config-reference.md.
+_DEDUPED_TREATMENTS: frozenset[str] = frozenset({"phone"})
 
 # Default level adjustments for the automated mixed master (Option A).
 # Use 0 for DAW export layers so the producer controls levels in-DAW.
@@ -96,6 +107,51 @@ def _span_marker(text: str | None) -> str | None:
     if "ENGAGES" in body:
         return "ENGAGES"
     return None
+
+
+def _span_scope(text: str | None, direction_type: str) -> str | None:
+    """Extract the optional speaker scope from a span ENGAGES marker.
+
+    ``[PHONE FILTER: ENGAGES DEZ]`` limits the span to dez's lines; the bare
+    ``[PHONE FILTER: ENGAGES]`` treats every line it encloses.  Scoping matters
+    for call scenes, where a writer naturally wraps the whole conversation but
+    only the remote voice belongs on the filter.
+
+    Args:
+        text: Full marker text, e.g. ``"PHONE FILTER: ENGAGES DEZ"``.
+        direction_type: The classified span type, stripped off before parsing.
+
+    Returns:
+        Lower-cased speaker key, or ``None`` when the marker names no speaker.
+    """
+    body = (text or "").strip()
+    if body.upper().startswith(direction_type):
+        body = body[len(direction_type):]
+    # Everything after the ENGAGES keyword is the scope; the keyword itself may
+    # be preceded by a colon in either spelling.
+    idx = body.upper().find("ENGAGES")
+    if idx == -1:
+        return None
+    return body[idx + len("ENGAGES"):].strip(" :,-").strip().lower() or None
+
+
+def _plan_speaker(plan: "StemPlan") -> str:
+    """Return the speaker key encoded in a dialogue stem's filename.
+
+    Stems are named ``…_<speaker>.mp3``, the same convention the render loops
+    use to look a speaker up in the cast config.  Sentinel plans carry an empty
+    ``filepath`` and yield ``""``, which matches no scoped span.
+
+    Args:
+        plan: The stem plan to inspect.
+
+    Returns:
+        Lower-cased speaker key, or ``""`` when the plan has no stem file.
+    """
+    if not plan.filepath:
+        return ""
+    basename = os.path.splitext(os.path.basename(plan.filepath))[0]
+    return basename.rsplit("_", 1)[-1].lower()
 
 
 @dataclass
@@ -573,6 +629,53 @@ def _apply_named_filter(segment: AudioSegment, name: str) -> AudioSegment:
     return globals()[func_name](segment)
 
 
+def _span_names_to_apply(
+    span_names: "tuple[str, ...]", cast_names: "list[str]",
+) -> list[str]:
+    """Drop span treatments the speaker's own cast filter has already applied.
+
+    Only names in :data:`_DEDUPED_TREATMENTS` are dropped.  Everything else
+    stacks exactly as before, so a speaker whose cast filter is ``vintage``
+    inside a VINTAGE FILTER span is still treated twice — long-standing
+    behaviour that scripts and mixes may already be leaning on.
+
+    Args:
+        span_names: Ordered treatments from the open spans at this seq.
+        cast_names: Normalised filter names from the speaker's cast entry.
+
+    Returns:
+        The treatments still to apply, in span order.
+    """
+    if not cast_names:
+        return list(span_names)
+    return [
+        name for name in span_names
+        if not (name in _DEDUPED_TREATMENTS and name in cast_names)
+    ]
+
+
+def _cast_filter_names(filter_val: "str | bool | None") -> list[str]:
+    """Normalise a cast config ``filter`` value into an ordered list of names.
+
+    Split out of :func:`_apply_speaker_filters` so the render loops can ask
+    *which* filters a speaker already carries without applying them — that is
+    what lets a span treatment in :data:`_DEDUPED_TREATMENTS` skip itself rather
+    than double-treating the line.  One normalisation, so the two cannot drift.
+
+    Args:
+        filter_val: Cast config ``filter`` field value.
+
+    Returns:
+        Lower-cased filter names in application order; empty when unset.
+    """
+    if not filter_val:
+        return []
+    # Normalise: True (legacy bool) → "phone"
+    if filter_val is True:
+        return ["phone"]
+    return [n.strip().lower() for n in str(filter_val).split(",") if n.strip()]
+
+
 def _apply_speaker_filters(segment: AudioSegment, filter_val: "str | bool | None") -> AudioSegment:
     """Apply audio filter(s) to a segment based on the cast config filter value.
 
@@ -593,14 +696,7 @@ def _apply_speaker_filters(segment: AudioSegment, filter_val: "str | bool | None
     Returns:
         Filtered (or unmodified) audio segment.
     """
-    if not filter_val:
-        return segment
-    # Normalise: True (legacy bool) → "phone"
-    if filter_val is True:
-        names = ["phone"]
-    else:
-        names = [n.strip().lower() for n in str(filter_val).split(",") if n.strip()]
-    for name in names:
+    for name in _cast_filter_names(filter_val):
         segment = _apply_named_filter(segment, name)
     return segment
 
@@ -623,20 +719,25 @@ def _span_treatments(stem_plans: list[StemPlan]) -> dict[int, tuple[str, ...]]:
         Mapping of dialogue ``seq`` to an ordered tuple of treatment names.
         Dialogue stems inside no span are absent from the mapping.
     """
-    active: dict[str, bool] = {}
+    # direction type → speaker scope of the open span: a speaker key limits the
+    # span to that speaker's lines, None treats every line it encloses.  Absent
+    # means no span of that type is open.
+    active: dict[str, str | None] = {}
     engaged: dict[int, tuple[str, ...]] = {}
     for plan in sorted(stem_plans, key=lambda p: p.seq):
         if plan.direction_type in SPAN_DIRECTION_TREATMENTS:
             marker = _span_marker(plan.text)
             if marker == "DISENGAGES":
-                active[plan.direction_type] = False
+                active.pop(plan.direction_type, None)
             elif marker == "ENGAGES":
-                active[plan.direction_type] = True
+                active[plan.direction_type] = _span_scope(plan.text, plan.direction_type)
         elif plan.entry_type == "dialogue":
+            speaker = _plan_speaker(plan)
             names = tuple(
                 treatment
                 for direction, treatment in SPAN_DIRECTION_TREATMENTS.items()
-                if active.get(direction)
+                if direction in active
+                and (active[direction] is None or active[direction] == speaker)
             )
             if names:
                 engaged[plan.seq] = names
@@ -718,7 +819,9 @@ def build_foreground(
         # Apply per-speaker effects to dialogue stems.
         basename = os.path.splitext(os.path.basename(plan.filepath))[0]
         speaker = basename.rsplit("_", 1)[-1]
+        cast_names: list[str] = []
         if speaker in cast_config:
+            cast_names = _cast_filter_names(cast_config[speaker].get("filter"))
             segment = _apply_speaker_filters(segment, cast_config[speaker].get("filter"))
             segment = segment.pan(cast_config[speaker].get("pan", 0.0))
 
@@ -727,7 +830,7 @@ def build_foreground(
         if plan.entry_type == "dialogue":
             span_names = span_map.get(plan.seq)
             if span_names:
-                for name in span_names:
+                for name in _span_names_to_apply(span_names, cast_names):
                     segment = _apply_named_filter(segment, name)
             elif vintage_scenes and plan.scene in vintage_scenes:
                 segment = apply_vintage_filter(segment)
@@ -1023,12 +1126,14 @@ def build_dialogue_layer(
         segment = AudioSegment.from_file(plan.filepath)
         basename = os.path.splitext(os.path.basename(plan.filepath))[0]
         speaker = basename.rsplit("_", 1)[-1]
+        cast_names: list[str] = []
         if speaker in cast_config:
+            cast_names = _cast_filter_names(cast_config[speaker].get("filter"))
             segment = _apply_speaker_filters(segment, cast_config[speaker].get("filter"))
             segment = segment.pan(cast_config[speaker].get("pan", 0.0))
         span_names = span_map.get(plan.seq)
         if span_names:
-            for name in span_names:
+            for name in _span_names_to_apply(span_names, cast_names):
                 segment = _apply_named_filter(segment, name)
         elif vintage_scenes and plan.scene in vintage_scenes:
             segment = apply_vintage_filter(segment)
