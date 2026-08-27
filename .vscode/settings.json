@@ -19,6 +19,21 @@
             120
         ]
     },
+    // Pylance's package index is disabled here on purpose.
+    //
+    // Measured 2026-08-17: indexing this folder's venv cost 29.5 s of
+    // "scan packages" (571 files) plus 6.9 s of indexing at EVERY window
+    // open. The venv lives on /mnt/c, so WSL reads it over drvfs at about
+    // 19 files/s. "python.analysis.persistAllIndices" defaults to true and
+    // should have made that a one-time cost, but no Pylance cache dir is
+    // ever written under ~/.vscode-server/data/User/globalStorage, so the
+    // full scan repeats on every start.
+    //
+    // Cost of turning it off: no auto-import suggestions for not-yet-
+    // imported symbols, and no Ctrl+T symbol search inside library code.
+    // Everything else (go-to-definition, hover, completion on imported
+    // names, type checking) is unaffected. Delete this line to restore it.
+    "python.analysis.indexing": false,
     "cSpell.words": [
         "Williamstown"
     ]

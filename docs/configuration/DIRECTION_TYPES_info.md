@@ -95,31 +95,54 @@ receives the corresponding voice treatment. The mapping lives in
 | `VINTAGE FILTER` | `vintage` — mono, dark, mid-forward |
 | `FILM AUDIO` | `film` — warm, soft top, gentle compression and grain |
 | `SPEAKERPHONE` | `speakerphone` — narrow-band, hard AGC, crunch, room slap |
+| `PHONE FILTER` | `phone` — 300 Hz–3 kHz band-limit, the same treatment as the cast config `filter: phone` |
 
 Spans of different types may overlap; treatments then stack in
-`SPAN_DIRECTION_TREATMENTS` declaration order.
+`SPAN_DIRECTION_TREATMENTS` declaration order. `PHONE FILTER` is declared last
+because a band-limit reads best applied after any tone shaping.
+
+### Narrowing a span to one speaker
+
+By default a span treats **every** dialogue line it encloses. Naming a speaker on the
+`ENGAGES` marker narrows it to that speaker's lines:
+
+```
+[PHONE FILTER: ENGAGES DEZ]
+```
+
+This matters for call scenes. A writer naturally wraps the whole conversation in one
+marker pair, but only the remote character belongs on the filter — a blanket span would
+band-limit the in-room voice too. The speaker key is the cast config key (matched
+case-insensitively against the stem filename suffix), the scope applies to every span
+type, and the closing marker may repeat it or not. A bare `ENGAGES` keeps the original
+treat-everything behaviour.
+
+Naming a speaker who has no lines inside the span treats nothing — the span is still
+opened and closed, it just matches no dialogue.
 
 **Treated dialogue stays in the `dialogue` layer.** The separate
 `{TAG}_layer_vintage_filter.wav` holds record-player crackle audio for the span, which is a
 different mechanism that happens to share the name — it is not where filtered voices go.
 
-No stems are generated for `FILM AUDIO` or `SPEAKERPHONE` markers: `generate_sfx_config()` writes them as
+No stems are generated for `FILM AUDIO`, `SPEAKERPHONE` or `PHONE FILTER` markers: `generate_sfx_config()` writes them as
 `{"type": "silence", "duration_seconds": 0.0}`, which `load_sfx_entries()` skips, so they
 cost no API credits and produce no files. `VINTAGE FILTER ENGAGES` differs — it binds to a
 real crackle asset, and only its `DISENGAGES` marker is a pure boundary.
 
-Marker spelling: the scanner accepts both `[FILM AUDIO ENGAGES]` and `[FILM AUDIO: ENGAGES]`.
-For `VINTAGE FILTER` only the colon-free form is validated, for backward compatibility with
-scripts already in production; the mixer itself tolerates either.
+Marker spelling: the scanner accepts both `[FILM AUDIO ENGAGES]` and `[FILM AUDIO: ENGAGES]`,
+and likewise for `SPEAKERPHONE` and `PHONE FILTER`. For `VINTAGE FILTER` only the colon-free
+form is validated, for backward compatibility with scripts already in production; the mixer
+itself tolerates either.
 
 ---
 
 ## The Pydantic Constraint (models.py line 46)
 
 ```python
-direction_type: Literal["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO", "SPEAKERPHONE"] | None = Field(
-    default=None, description="Sound category for direction entries"
-)
+direction_type: Literal[
+    "SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO",
+    "SPEAKERPHONE", "PHONE FILTER",
+] | None = Field(default=None, description="Sound category for direction entries")
 ```
 
 `DIRECTION_TYPES` in the parser and the `Literal` in `ScriptEntry` are **independently

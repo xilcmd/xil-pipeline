@@ -440,7 +440,8 @@ def get_section_map(project_type: str = "podcast") -> dict[str, str]:
 
 
 # Direction subtypes
-DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO", "SPEAKERPHONE"]
+DIRECTION_TYPES = ["SFX", "MUSIC", "AMBIENCE", "BEAT", "VINTAGE FILTER", "FILM AUDIO",
+                   "SPEAKERPHONE", "PHONE FILTER"]
 
 # Scriptwriter pipe-hint attributes: the name written in the script → the
 # SfxEntry field it populates in sfx_<TAG>.json.  Keeping the two decoupled means
@@ -1510,7 +1511,7 @@ def generate_sfx_config(parsed: dict, sfx_path: str, tag_override: str | None = 
         elif text == "AMBIENCE: STOP" or text.endswith("FADES OUT"):
             effects[text] = {"type": "silence", "duration_seconds": 0.0}
             silence_count += 1
-        elif text.startswith(("FILM AUDIO", "SPEAKERPHONE")):
+        elif text.startswith(("FILM AUDIO", "SPEAKERPHONE", "PHONE FILTER")):
             # Span marker only — the treatment is applied to dialogue stems in
             # the mixer, so this cue has no audio of its own.  A zero duration
             # makes load_sfx_entries skip it, which keeps the marker out of the

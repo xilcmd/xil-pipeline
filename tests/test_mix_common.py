@@ -1115,11 +1115,11 @@ class TestSpanSentinels:
 # ─── Tests: SPEAKERPHONE span ───
 
 class TestSpeakerphoneSpan:
-    """A blanket span, like the other two — it treats every enclosed line.
+    """A blanket span when the marker names no speaker.
 
-    A call scene alternates remote and in-room voices, so the writer brackets
-    each remote line rather than the whole call.  These tests pin that scope so
-    a future change to speaker-aware spans has to be deliberate.
+    An unscoped marker treats every enclosed line, so a call scene can be
+    written by bracketing each remote line.  Naming a speaker on the ENGAGES
+    marker narrows it instead — see :class:`TestScopedSpans`.
     """
 
     def _plan(self, seq, entry_type, direction_type=None, text=None):
@@ -1195,3 +1195,157 @@ class TestSpeakerphoneSpan:
             self._plan(4, "dialogue"),
         ]
         assert _span_treatments(plans) == {2: ("speakerphone",)}
+
+
+class TestPhoneFilterSpan:
+    """PHONE FILTER engages the same `phone` treatment as the cast filter."""
+
+    def _plan(self, seq, entry_type, direction_type=None, text=None):
+        return StemPlan(seq=seq, filepath="", entry_type=entry_type,
+                        direction_type=direction_type, text=text)
+
+    def test_enclosed_dialogue_is_treated(self):
+        plans = [
+            self._plan(1, "direction", "PHONE FILTER", "PHONE FILTER ENGAGES"),
+            self._plan(2, "dialogue"),
+            self._plan(3, "direction", "PHONE FILTER", "PHONE FILTER DISENGAGES"),
+            self._plan(4, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {2: ("phone",)}
+
+    def test_colon_spelling_opens_a_span(self):
+        """Scripts already in production use the colon form."""
+        plans = [
+            self._plan(1, "direction", "PHONE FILTER", "PHONE FILTER: ENGAGES"),
+            self._plan(2, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {2: ("phone",)}
+
+    def test_disengages_closes_rather_than_reopens(self):
+        plans = [
+            self._plan(1, "direction", "PHONE FILTER", "PHONE FILTER: ENGAGES"),
+            self._plan(2, "direction", "PHONE FILTER", "PHONE FILTER: DISENGAGES"),
+            self._plan(3, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {}
+
+    def test_engage_without_disengage_runs_to_end(self):
+        plans = [
+            self._plan(1, "direction", "PHONE FILTER", "PHONE FILTER: ENGAGES"),
+            self._plan(2, "dialogue"),
+            self._plan(3, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {2: ("phone",), 3: ("phone",)}
+
+    def test_stacks_last_in_declaration_order(self):
+        """A band-limit reads best applied after any tone shaping."""
+        plans = [
+            self._plan(1, "direction", "VINTAGE FILTER", "VINTAGE FILTER ENGAGES"),
+            self._plan(2, "direction", "PHONE FILTER", "PHONE FILTER: ENGAGES"),
+            self._plan(3, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {3: ("vintage", "phone")}
+
+    def test_marker_is_background(self):
+        plan = self._plan(1, "direction", "PHONE FILTER", "PHONE FILTER: ENGAGES")
+        assert plan.is_background
+
+    def test_both_markers_get_sentinels(self, tmp_path):
+        """No audio of its own, so both boundaries need synthetic plans."""
+        index = {e["seq"]: e for e in [
+            {"seq": 1, "type": "direction", "direction_type": "PHONE FILTER",
+             "text": "PHONE FILTER: ENGAGES"},
+            {"seq": 2, "type": "direction", "direction_type": "PHONE FILTER",
+             "text": "PHONE FILTER: DISENGAGES"},
+        ]}
+        plans = collect_stem_plans(str(tmp_path), index)
+        assert sorted(p.seq for p in plans) == [1, 2]
+        assert all(p.filepath == "" for p in plans)
+
+    def test_mixed_spellings_open_and_close_one_span(self):
+        plans = [
+            self._plan(1, "direction", "PHONE FILTER", "PHONE FILTER ENGAGES"),
+            self._plan(2, "dialogue"),
+            self._plan(3, "direction", "PHONE FILTER", "PHONE FILTER: DISENGAGES"),
+            self._plan(4, "dialogue"),
+        ]
+        assert _span_treatments(plans) == {2: ("phone",)}
+
+
+class TestScopedSpans:
+    """`[PHONE FILTER: ENGAGES DEZ]` narrows a span to one speaker.
+
+    Writers naturally wrap a whole call in one marker pair and mark only the
+    remote character's lines, so a blanket span would filter the in-room voice
+    too.  Naming the speaker on the ENGAGES marker fixes that without forcing
+    the script to be re-bracketed line by line.
+    """
+
+    def _dialogue(self, seq, speaker):
+        return StemPlan(seq=seq, filepath=f"n{seq:03d}_{speaker}.mp3",
+                        entry_type="dialogue", direction_type=None)
+
+    def _marker(self, seq, text, direction_type="PHONE FILTER"):
+        return StemPlan(seq=seq, filepath="", entry_type="direction",
+                        direction_type=direction_type, text=text)
+
+    def _call(self, engages):
+        """A two-hander call: dez is remote, rian is in the room."""
+        return [
+            self._marker(1, engages),
+            self._dialogue(2, "dez"),
+            self._dialogue(3, "rian"),
+            self._dialogue(4, "dez"),
+            self._marker(5, "PHONE FILTER: DISENGAGES"),
+            self._dialogue(6, "rian"),
+        ]
+
+    def test_scope_treats_only_that_speaker(self):
+        assert _span_treatments(self._call("PHONE FILTER: ENGAGES DEZ")) == {
+            2: ("phone",), 4: ("phone",),
+        }
+
+    def test_unscoped_marker_still_treats_everyone(self):
+        """The existing blanket behaviour must survive untouched."""
+        assert _span_treatments(self._call("PHONE FILTER: ENGAGES")) == {
+            2: ("phone",), 3: ("phone",), 4: ("phone",),
+        }
+
+    def test_scope_is_case_insensitive(self):
+        assert _span_treatments(self._call("PHONE FILTER: ENGAGES Dez")) == {
+            2: ("phone",), 4: ("phone",),
+        }
+
+    def test_scope_works_without_the_colon(self):
+        assert _span_treatments(self._call("PHONE FILTER ENGAGES DEZ")) == {
+            2: ("phone",), 4: ("phone",),
+        }
+
+    def test_scope_naming_an_absent_speaker_treats_nothing(self):
+        assert _span_treatments(self._call("PHONE FILTER: ENGAGES ESTELLE")) == {}
+
+    def test_disengages_may_repeat_the_speaker(self):
+        plans = [
+            self._marker(1, "PHONE FILTER: ENGAGES DEZ"),
+            self._dialogue(2, "dez"),
+            self._marker(3, "PHONE FILTER: DISENGAGES DEZ"),
+            self._dialogue(4, "dez"),
+        ]
+        assert _span_treatments(plans) == {2: ("phone",)}
+
+    def test_scope_applies_to_other_span_types_too(self):
+        plans = [
+            self._marker(1, "SPEAKERPHONE ENGAGES RIAN", "SPEAKERPHONE"),
+            self._dialogue(2, "dez"),
+            self._dialogue(3, "rian"),
+        ]
+        assert _span_treatments(plans) == {3: ("speakerphone",)}
+
+    def test_two_scoped_span_types_narrow_independently(self):
+        plans = [
+            self._marker(1, "PHONE FILTER: ENGAGES DEZ"),
+            self._marker(2, "VINTAGE FILTER ENGAGES RIAN", "VINTAGE FILTER"),
+            self._dialogue(3, "dez"),
+            self._dialogue(4, "rian"),
+        ]
+        assert _span_treatments(plans) == {3: ("phone",), 4: ("vintage",)}
