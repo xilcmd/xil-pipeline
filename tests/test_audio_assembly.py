@@ -597,8 +597,8 @@ class TestAssembleAudioFromCastFile:
 class TestCastFilterSpanDedupe:
     """A span must not re-apply a treatment the speaker's cast filter did.
 
-    phone is a band-limit plus a fixed +5 dB, so running it twice band-limits
-    twice and lands +10 dB.  vintage and film keep stacking — long-standing
+    Running phone twice band-limits twice and codes the voice through GSM twice,
+    compounding the artifacts.  vintage and film keep stacking — long-standing
     behaviour that mixes may already be leaning on.
     """
 

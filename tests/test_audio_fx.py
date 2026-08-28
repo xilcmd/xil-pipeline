@@ -5,18 +5,22 @@
 """Tests for audio_fx.py — the ffmpeg-backed dialogue treatments."""
 
 import hashlib
+import subprocess
 import unittest.mock
 
 import pytest
 from pydub import AudioSegment
-from pydub.generators import Sine
+from pydub.generators import Sine, WhiteNoise
 
 from xil_pipeline import audio_fx, mix_common
 
-# Hashes recorded from the pre-registry implementation.  These lock the two
-# legacy pydub treatments against accidental damage: episodes already produced
-# with them must keep rendering identically.
-GOLDEN_PHONE = "3c80fd1f05707336da859a6b26ae2efc63c08a0dc59538fdfa093794ca226849"
+# Hash recorded from the pre-registry implementation.  This locks the one
+# remaining pure-pydub treatment against accidental damage: episodes already
+# produced with it must keep rendering identically.
+#
+# `phone` used to be pinned here too.  It is an ffmpeg treatment now, and
+# ffmpeg output is not byte-identical across the CI matrix, so it is covered by
+# TestPhoneResponse the same way film and speakerphone always have been.
 GOLDEN_VINTAGE = "00a2455c3b7867f722acc3aa12b8b8a64b4c8bc0a767bec0e5e85d3fd8b1bb49"
 
 ffmpeg_required = pytest.mark.skipif(
@@ -40,23 +44,17 @@ def _clear_fx_cache():
 
 class TestLegacyFiltersUnchanged:
 
-    def test_phone_filter_hash(self):
-        out = mix_common.apply_phone_filter(_tone(duration_ms=500))
-        assert hashlib.sha256(out.raw_data).hexdigest() == GOLDEN_PHONE
-
     def test_vintage_filter_hash(self):
         out = mix_common.apply_vintage_filter(_tone(duration_ms=500))
         assert hashlib.sha256(out.raw_data).hexdigest() == GOLDEN_VINTAGE
 
-    def test_legacy_names_never_invoke_ffmpeg(self, monkeypatch):
-        """phone/vintage must stay pure pydub — no subprocess on that path."""
+    def test_vintage_never_invokes_ffmpeg(self, monkeypatch):
+        """vintage must stay pure pydub — no subprocess on that path."""
         def _boom(*args, **kwargs):
-            pytest.fail("ffmpeg spawned for a legacy filter")
+            pytest.fail("ffmpeg spawned for the vintage filter")
 
         monkeypatch.setattr(audio_fx, "run_ffmpeg_filter", _boom)
-        tone = _tone()
-        for value in (True, "phone", "vintage", "vintage,phone", "phone,vintage"):
-            mix_common._apply_speaker_filters(tone, value)
+        mix_common._apply_speaker_filters(_tone(), "vintage")
 
 
 # ─── ffmpeg bridge mechanics ───
@@ -135,6 +133,107 @@ class TestFailureDegradation:
 #
 # Asserted as relative levels rather than exact samples, so the tests survive an
 # ffmpeg version bump that nudges filter coefficients.
+
+@ffmpeg_required
+class TestPhoneResponse:
+    """The band-limit that the pure-pydub implementation never actually had.
+
+    The old chain left 80 Hz only ~11 dB down and 8 kHz only ~9 dB down, which
+    reads as a slightly muffled voice.  These thresholds are set well inside the
+    measured margins (~37 dB and ~47 dB) so an ffmpeg version bump does not trip
+    them, while still failing loudly if the treatment ever degrades to a tilt.
+    """
+
+    @staticmethod
+    def _delta(freq: int) -> float:
+        tone = _tone(freq, gain_db=-20)
+        return audio_fx.apply_treatment(tone, "phone").dBFS - tone.dBFS
+
+    def test_low_end_is_rejected(self):
+        assert self._delta(1000) - self._delta(80) >= 25
+
+    def test_top_end_is_rejected(self):
+        assert self._delta(1000) - self._delta(6000) >= 25
+
+    def test_passband_is_reasonably_flat(self):
+        span = [self._delta(f) for f in (500, 1000, 1700, 3000)]
+        assert max(span) - min(span) <= 8
+
+    def test_broadband_level_stays_near_unity(self):
+        """No runaway gain and no collapse on material that spans the band.
+
+        A sine is the wrong probe here: it sits entirely inside the passband, so
+        it picks up the presence lift and comes out ~7 dB hot.  Broadband noise
+        loses its out-of-band energy the way speech does.  The output trim is
+        calibrated on real dialogue stems, where it lands ~1.4 dB under dry;
+        this only pins that the treatment has not drifted into a blanket boost
+        like the legacy flat +5 dB.
+        """
+        noise = WhiteNoise().to_audio_segment(duration=800) - 18
+        out = audio_fx.apply_treatment(noise, "phone")
+        assert abs(out.dBFS - noise.dBFS) <= 4
+
+    def test_phone_and_speakerphone_differ(self):
+        tone = _tone(1000, duration_ms=400, gain_db=-18)
+        assert (audio_fx.apply_treatment(tone, "phone").raw_data
+                != audio_fx.apply_treatment(tone, "speakerphone").raw_data)
+
+
+@ffmpeg_required
+class TestCodecRoundTrip:
+    """The GSM stage is what makes it a mobile call rather than an EQ curve."""
+
+    def _no_encoder(self, monkeypatch):
+        """Make only the encode invocation fail, leaving the filter pass alone."""
+        real = subprocess.run
+
+        def fake(cmd, *args, **kwargs):
+            if "-c:a" in cmd:
+                return subprocess.CompletedProcess(cmd, 1, b"", b"Unknown encoder")
+            return real(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake)
+
+    def test_codec_changes_the_result(self):
+        tone = _tone(1000, duration_ms=400, gain_db=-18)
+        graph = audio_fx.TREATMENTS["phone"].graph
+        plain = audio_fx.run_ffmpeg_filter(tone, graph, label="phone")
+        coded = audio_fx.run_ffmpeg_filter(
+            tone, graph, label="phone",
+            codec="libgsm", container="gsm", codec_rate=8000,
+        )
+        assert plain.raw_data != coded.raw_data
+
+    def test_codec_is_part_of_the_cache_key(self):
+        """Two runs differing only in codec must not collide in the cache."""
+        tone = _tone(1000, duration_ms=400, gain_db=-18)
+        graph = audio_fx.TREATMENTS["phone"].graph
+        first = audio_fx.run_ffmpeg_filter(tone, graph, label="phone")
+        second = audio_fx.run_ffmpeg_filter(
+            tone, graph, label="phone",
+            codec="libgsm", container="gsm", codec_rate=8000,
+        )
+        assert first.raw_data != second.raw_data
+
+    def test_missing_codec_keeps_the_filtered_audio(self, monkeypatch):
+        """Losing the encoder must cost the grit, not the whole treatment."""
+        tone = _tone(1000, duration_ms=400, gain_db=-18)
+        self._no_encoder(monkeypatch)
+        out = audio_fx.apply_treatment(tone, "phone")
+        assert out.raw_data != tone.raw_data          # filters still applied
+        assert len(out) == len(tone)
+
+    def test_missing_codec_raises_in_strict_mode(self, monkeypatch):
+        monkeypatch.setenv(audio_fx.STRICT_ENV_VAR, "1")
+        self._no_encoder(monkeypatch)
+        with pytest.raises(audio_fx.AudioFxError):
+            audio_fx.apply_treatment(_tone(1000, gain_db=-18), "phone")
+
+    def test_length_is_preserved_across_the_round_trip(self):
+        """GSM codes in 20 ms frames, so odd lengths come back padded."""
+        tone = _tone(1000, duration_ms=333, gain_db=-18)
+        assert len(audio_fx.apply_treatment(tone, "phone")) == len(tone)
+
 
 @ffmpeg_required
 class TestSpeakerphoneResponse:

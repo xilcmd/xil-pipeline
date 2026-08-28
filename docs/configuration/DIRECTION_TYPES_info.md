@@ -95,7 +95,7 @@ receives the corresponding voice treatment. The mapping lives in
 | `VINTAGE FILTER` | `vintage` — mono, dark, mid-forward |
 | `FILM AUDIO` | `film` — warm, soft top, gentle compression and grain |
 | `SPEAKERPHONE` | `speakerphone` — narrow-band, hard AGC, crunch, room slap |
-| `PHONE FILTER` | `phone` — 300 Hz–3 kHz band-limit, the same treatment as the cast config `filter: phone` |
+| `PHONE FILTER` | `phone` — mobile call: steep 300 Hz–3.4 kHz skirts, earpiece presence, hard AGC and real GSM codec grit. The same treatment as the cast config `filter: phone` |
 
 Spans of different types may overlap; treatments then stack in
 `SPAN_DIRECTION_TREATMENTS` declaration order. `PHONE FILTER` is declared last

@@ -73,11 +73,24 @@ class Treatment:
             May contain ``{rate}`` and ``{layout}`` placeholders, substituted
             with the input segment's sample rate and channel layout.
         summary: One-line description of the sound, for docs and logs.
+        codec: Optional ffmpeg encoder to round-trip the filtered audio through,
+            for treatments whose character comes from real codec artifacts
+            rather than from EQ alone.  ``None`` skips the round-trip entirely,
+            which is the behaviour every filter-only treatment relies on.
+        container: Muxer for that round-trip.  Codec and container are not
+            freely interchangeable — ``libgsm`` needs the raw ``gsm`` format and
+            errors out inside a WAV container.
+        codec_rate: Sample rate to encode at.  This is where a telephone
+            treatment gets its hard ceiling: encoding at 8 kHz brickwalls at
+            4 kHz far more steeply than any practical filter cascade.
     """
 
     name: str
     graph: str
     summary: str
+    codec: str | None = None
+    container: str | None = None
+    codec_rate: int | None = None
 
 
 # --- Treatment definitions -------------------------------------------------
@@ -156,7 +169,49 @@ SPEAKERPHONE = Treatment(
     ),
 )
 
-TREATMENTS: dict[str, Treatment] = {t.name: t for t in (FILM, SPEAKERPHONE)}
+PHONE = Treatment(
+    name="phone",
+    summary="Mobile call — steep 300 Hz/3.4 kHz skirts, earpiece presence lift, "
+            "hard AGC and genuine GSM codec grit, sitting just under the room.",
+    graph=(
+        "[0:a]"
+        # The legacy pydub implementation was a single-pole tilt: only ~11 dB
+        # down at 80 Hz and ~9 dB at 8 kHz, which reads as a slightly muffled
+        # voice rather than a phone.  Cascaded 2-pole sections give 24 dB/oct.
+        "highpass=f=300:poles=2,"
+        "highpass=f=300:poles=2,"
+        # The 8 kHz codec rate already brickwalls at 4 kHz, so this pair looks
+        # redundant — it is not.  It is what makes the treatment degrade
+        # gracefully: with no libgsm, the filter-only result is still a proper
+        # band-limit instead of a half-finished effect.
+        "lowpass=f=3400:poles=2,"
+        "lowpass=f=3400:poles=2,"
+        "equalizer=f=500:w=1.0:t=q:g=-4,"
+        # Earpiece presence.  Lower and wider than speakerphone's 1800 Hz honk,
+        # which is a small loudspeaker in a room rather than against an ear.
+        "equalizer=f=1700:w=1.2:t=q:g=6,"
+        "acompressor=threshold=-22dB:ratio=8:attack=3:release=90:makeup=3:knee=2,"
+        # See the note in FILM: asoftclip's param scales the input, so drive has
+        # to come from the volume stages either side.
+        "volume=6dB,"
+        "asoftclip=type=atan:param=1:oversample=4,"
+        "volume=-6dB,"
+        # Output trim, calibrated across 20 real dialogue stems: band-limiting
+        # speech costs ~12 dB, so this lands a caller ~1.4 dB UNDER the person
+        # in the room.  The legacy +5 dB made the distant voice the loudest
+        # thing in the scene, which fought the illusion.
+        "volume=10dB"
+        "[out]"
+    ),
+    # GSM 06.10 is the 2G mobile codec; a round-trip through it is the real
+    # artifact rather than an imitation of one.  The raw `gsm` muxer is not
+    # optional — the codec is rejected inside a WAV container.
+    codec="libgsm",
+    container="gsm",
+    codec_rate=8000,
+)
+
+TREATMENTS: dict[str, Treatment] = {t.name: t for t in (FILM, SPEAKERPHONE, PHONE)}
 
 
 def _ffmpeg_binary() -> str:
@@ -212,7 +267,8 @@ def _warn_once(label: str, reason: str, message: str, *args) -> None:
     logger.warning(message, *args)
 
 
-def _fail(label: str, reason: str, message: str, *args) -> None:
+def _fail(label: str, reason: str, message: str, *args,
+          consequence: str = "leaving audio untreated") -> None:
     """Warn once, or raise :class:`AudioFxError` when strict mode is on.
 
     Args:
@@ -220,13 +276,17 @@ def _fail(label: str, reason: str, message: str, *args) -> None:
         reason: Short failure category.
         message: ``logger.warning`` format string.
         *args: Format arguments.
+        consequence: What the caller falls back to, appended to the warning.
+            The default suits a whole-treatment failure; a partial failure such
+            as a missing codec should say what it actually kept, or the log
+            claims the stem is dry when it is not.
 
     Raises:
         AudioFxError: If ``XIL_STRICT_FX`` is set in the environment.
     """
     if os.environ.get(STRICT_ENV_VAR):
         raise AudioFxError(message % args if args else message)
-    _warn_once(label, reason, message + " — leaving audio untreated", *args)
+    _warn_once(label, reason, message + " — " + consequence, *args)
 
 
 def _fit_length(raw: bytes, target_len: int, sample_width: int) -> bytes:
@@ -248,12 +308,107 @@ def _fit_length(raw: bytes, target_len: int, sample_width: int) -> bytes:
     return raw
 
 
+_CODEC_FALLBACK = "keeping the filtered audio without codec character"
+
+
+def _codec_round_trip(
+    raw: bytes,
+    segment: AudioSegment,
+    raw_fmt: str,
+    label: str,
+    *,
+    codec: str,
+    container: str | None,
+    codec_rate: int | None,
+) -> bytes:
+    """Encode raw PCM through a lossy codec and decode it straight back.
+
+    Some treatments are defined by an artifact no filter reproduces honestly —
+    a mobile call is a GSM 06.10 round-trip, not an EQ curve that resembles one.
+    Encoding also band-limits at the codec's Nyquist far more steeply than a
+    practical filter cascade, which is why the rate matters as much as the codec.
+
+    Two ffmpeg invocations, piped: raw PCM in, encoded bytes out, then decoded
+    back to raw PCM at the segment's own rate and channel count.
+
+    Failure returns *raw* untouched, so the caller keeps the filtered audio and
+    loses only the codec character.  Under ``XIL_STRICT_FX`` the failure raises
+    like any other, via :func:`_fail`.
+
+    Args:
+        raw: Filtered raw PCM from the main pass.
+        segment: The original segment, for rate/channel/width.
+        raw_fmt: ffmpeg raw PCM format matching the segment's sample width.
+        label: Treatment name, for log messages.
+        codec: ffmpeg encoder name.
+        container: Muxer to wrap it in; codec and container must be compatible.
+        codec_rate: Sample rate to encode at, or ``None`` for the input's.
+
+    Returns:
+        Decoded raw PCM, or *raw* unchanged when the round-trip fails.
+    """
+    binary = _ffmpeg_binary()
+    rate = str(segment.frame_rate)
+    channels = str(segment.channels)
+    encode = [
+        binary, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-f", raw_fmt, "-ar", rate, "-ac", channels, "-i", "pipe:0",
+        "-ar", str(codec_rate or segment.frame_rate), "-ac", "1",
+        "-c:a", codec, "-f", container or codec, "pipe:1",
+    ]
+    decode = [
+        binary, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-f", container or codec, "-i", "pipe:0",
+        "-vn", "-sn", "-dn",
+        "-f", raw_fmt, "-ar", rate, "-ac", channels, "pipe:1",
+    ]
+
+    try:
+        enc = subprocess.run(encode, input=raw, capture_output=True)
+        if enc.returncode != 0 or not enc.stdout:
+            raise _CodecStageError("encode", enc.stderr)
+        dec = subprocess.run(decode, input=enc.stdout, capture_output=True)
+        if dec.returncode != 0 or not dec.stdout:
+            raise _CodecStageError("decode", dec.stderr)
+    except _CodecStageError as exc:
+        _fail(
+            label, "codec",
+            "codec %s unavailable for treatment %r (%s): %s",
+            codec, label, exc.stage, exc.detail,
+            consequence=_CODEC_FALLBACK,
+        )
+        return raw
+    except FileNotFoundError:
+        _fail(label, "codec", "ffmpeg not found for codec stage of %r", label,
+              consequence=_CODEC_FALLBACK)
+        return raw
+    except OSError as exc:
+        _fail(label, "codec", "codec stage failed for treatment %r: %s", label, exc,
+              consequence=_CODEC_FALLBACK)
+        return raw
+
+    return dec.stdout
+
+
+class _CodecStageError(Exception):
+    """Internal: one stage of a codec round-trip returned non-zero."""
+
+    def __init__(self, stage: str, stderr: bytes) -> None:
+        self.stage = stage
+        lines = stderr.decode("utf-8", "replace").strip().splitlines()
+        self.detail = lines[-1] if lines else "no stderr output"
+        super().__init__(f"{stage}: {self.detail}")
+
+
 def run_ffmpeg_filter(
     segment: AudioSegment,
     graph: str,
     *,
     preserve_length: bool = True,
     label: str = "",
+    codec: str | None = None,
+    container: str | None = None,
+    codec_rate: int | None = None,
 ) -> AudioSegment:
     """Push a segment through an ffmpeg ``-filter_complex`` graph.
 
@@ -265,6 +420,10 @@ def run_ffmpeg_filter(
             Leave enabled unless the caller genuinely wants a length change;
             the pipeline's cue timeline assumes stems keep their duration.
         label: Treatment name, used in log messages and cache keys.
+        codec: Optional encoder to round-trip the filtered audio through, for
+            treatments whose character is a real codec artifact.
+        container: Muxer for that round-trip; required alongside *codec*.
+        codec_rate: Sample rate to encode at, or ``None`` to keep the input's.
 
     Returns:
         The treated segment, or ``segment`` unchanged if ffmpeg is unavailable
@@ -297,6 +456,9 @@ def run_ffmpeg_filter(
         segment.sample_width,
         resolved,
         preserve_length,
+        codec,
+        container,
+        codec_rate,
     )
     cached = _fx_cache.get(cache_key)
     if cached is not None:
@@ -340,6 +502,13 @@ def run_ffmpeg_filter(
         return segment
 
     out = proc.stdout
+    if codec:
+        # Degrades to the filter-only result, not to the dry input: losing the
+        # codec should cost the grit, not the whole treatment.
+        out = _codec_round_trip(
+            out, segment, raw_fmt, label,
+            codec=codec, container=container, codec_rate=codec_rate,
+        )
     if preserve_length:
         out = _fit_length(out, len(source), segment.sample_width)
 
@@ -372,7 +541,14 @@ def apply_treatment(segment: AudioSegment, name: str) -> AudioSegment:
             ", ".join(sorted(TREATMENTS)),
         )
         return segment
-    return run_ffmpeg_filter(segment, treatment.graph, label=treatment.name)
+    return run_ffmpeg_filter(
+        segment,
+        treatment.graph,
+        label=treatment.name,
+        codec=treatment.codec,
+        container=treatment.container,
+        codec_rate=treatment.codec_rate,
+    )
 
 
 def clear_cache() -> None:

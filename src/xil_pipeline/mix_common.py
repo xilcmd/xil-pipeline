@@ -79,9 +79,9 @@ _SPAN_SENTINEL_MARKERS: dict[str, tuple[str, ...]] = {
     "PHONE FILTER": ("ENGAGES", "DISENGAGES"),
 }
 
-# Treatments that must not stack with an identical cast-config filter.  phone is
-# a band-limit plus a fixed +5 dB, so applying it twice band-limits twice and
-# lands +10 dB — audibly wrong rather than merely redundant.  vintage and film
+# Treatments that must not stack with an identical cast-config filter.  Applying
+# phone twice band-limits twice and runs the voice through GSM twice, compounding
+# the codec artifacts into mush rather than doubling an effect.  vintage and film
 # keep stacking as they always have; see the caveat in cast-config-reference.md.
 _DEDUPED_TREATMENTS: frozenset[str] = frozenset({"phone"})
 
@@ -518,10 +518,19 @@ def collect_stem_plans(
 
 
 def apply_phone_filter(segment: AudioSegment) -> AudioSegment:
-    """Apply a phone-speaker audio filter to an audio segment.
+    """Apply the mobile-call treatment to an audio segment.
 
-    Cuts frequencies below 300 Hz and above 3000 Hz, then boosts
-    volume by 5 dB to simulate a telephone speaker.
+    Steep 300 Hz / 3.4 kHz skirts, an earpiece presence lift, hard AGC and a
+    real GSM 06.10 round-trip, landing ~1 dB under an untreated stem.
+
+    This was a pure-pydub one-liner until the measurements showed what it was
+    actually doing: pydub's filters are single-pole, so the old chain left 80 Hz
+    only 11 dB down and 8 kHz only 9 dB down — a slightly muffled voice rather
+    than a phone.  Rendered through ffmpeg it is 37 dB and 46 dB respectively.
+
+    Requires ffmpeg, like the film and speakerphone treatments; without it the
+    stem passes through untreated with a warning, and losing only the GSM
+    encoder costs the codec grit rather than the whole effect.
 
     Args:
         segment: Input audio segment to filter.
@@ -529,7 +538,7 @@ def apply_phone_filter(segment: AudioSegment) -> AudioSegment:
     Returns:
         Filtered audio segment.
     """
-    return segment.high_pass_filter(300).low_pass_filter(3000) + 5
+    return audio_fx.apply_treatment(segment, "phone")
 
 
 def apply_vintage_filter(segment: AudioSegment) -> AudioSegment:
