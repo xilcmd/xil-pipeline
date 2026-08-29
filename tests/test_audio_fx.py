@@ -27,6 +27,13 @@ ffmpeg_required = pytest.mark.skipif(
     not audio_fx.ffmpeg_available(), reason="ffmpeg not available"
 )
 
+# libgsm ships with Debian's ffmpeg but not with the GitHub macOS or Windows
+# runner builds, where `phone` correctly degrades to filter-only.  Assertions
+# about codec character have to skip there rather than fail.
+gsm_required = pytest.mark.skipif(
+    not audio_fx.encoder_available("libgsm"), reason="ffmpeg build has no libgsm"
+)
+
 
 def _tone(freq: int = 440, duration_ms: int = 400, gain_db: float = 0) -> AudioSegment:
     seg = Sine(freq).to_audio_segment(duration=duration_ms)
@@ -153,7 +160,19 @@ class TestPhoneResponse:
         assert self._delta(1000) - self._delta(80) >= 25
 
     def test_top_end_is_rejected(self):
-        assert self._delta(1000) - self._delta(6000) >= 25
+        """Holds on filter-only builds too, where this measures ~20 dB.
+
+        With libgsm the codec's 8 kHz rate brickwalls at 4 kHz and this jumps
+        to ~47 dB — see test_codec_adds_a_hard_ceiling.  The threshold here is
+        the floor the treatment must clear everywhere; the old pydub chain
+        managed 9 dB.
+        """
+        assert self._delta(1000) - self._delta(6000) >= 15
+
+    @gsm_required
+    def test_codec_adds_a_hard_ceiling(self):
+        """The 8 kHz codec rate is what turns a roll-off into a brickwall."""
+        assert self._delta(1000) - self._delta(6000) >= 35
 
     def test_passband_is_reasonably_flat(self):
         span = [self._delta(f) for f in (500, 1000, 1700, 3000)]
@@ -194,6 +213,7 @@ class TestCodecRoundTrip:
 
         monkeypatch.setattr(subprocess, "run", fake)
 
+    @gsm_required
     def test_codec_changes_the_result(self):
         tone = _tone(1000, duration_ms=400, gain_db=-18)
         graph = audio_fx.TREATMENTS["phone"].graph
@@ -204,6 +224,7 @@ class TestCodecRoundTrip:
         )
         assert plain.raw_data != coded.raw_data
 
+    @gsm_required
     def test_codec_is_part_of_the_cache_key(self):
         """Two runs differing only in codec must not collide in the cache."""
         tone = _tone(1000, duration_ms=400, gain_db=-18)

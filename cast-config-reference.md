@@ -127,6 +127,18 @@ the actual 2G mobile codec — which is where its grit and its hard 4 kHz ceilin
 come from. If that encoder is missing but ffmpeg is present, the treatment keeps
 its filtering and loses only the codec character, with one warning.
 
+> **`libgsm` is not in every ffmpeg build.** Debian's has it; the stock macOS
+> and Windows builds generally do not. Where it is missing, `phone` still
+> band-limits properly (~20 dB down at 6 kHz instead of ~47 dB) but sounds
+> smoother and less like a mobile. **Render an episode on the same machine you
+> auditioned it on**, or two masters of the same episode will not match. Check
+> with `ffmpeg -hide_banner -encoders | grep libgsm`, or in Python:
+>
+> ```python
+> from xil_pipeline.audio_fx import encoder_available
+> encoder_available("libgsm")
+> ```
+
 > **This treatment was rebuilt in a later release and sounds materially
 > different.** It used to be a pydub one-liner whose single-pole filters left
 > 80 Hz only ~11 dB down and 8 kHz only ~9 dB down — a slightly muffled voice

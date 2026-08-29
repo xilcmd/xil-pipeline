@@ -248,6 +248,39 @@ def ffmpeg_available() -> bool:
     return proc.returncode == 0
 
 
+def encoder_available(name: str) -> bool:
+    """Report whether this ffmpeg build ships a given encoder.
+
+    ffmpeg builds differ in what they bundle, and the codec-backed treatments
+    degrade quietly when an encoder is absent rather than failing.  This is what
+    lets a caller — a test, or someone wondering why a treatment sounds
+    different on another machine — tell the two situations apart.
+
+    Notably ``libgsm`` is present in Debian's ffmpeg but not in the GitHub
+    macOS or Windows runner builds, so ``phone`` renders band-limited but
+    without its codec grit on those platforms.
+
+    Args:
+        name: Encoder name, e.g. ``"libgsm"``.
+
+    Returns:
+        True if ffmpeg lists the encoder, False if it does not or cannot run.
+    """
+    try:
+        proc = subprocess.run(
+            [_ffmpeg_binary(), "-hide_banner", "-encoders"],
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if proc.returncode != 0:
+        return False
+    # Encoder rows are " V..... name  description"; match the name as a token
+    # so a substring such as "gsm" cannot match "libgsm_ms".
+    return name in proc.stdout.decode("utf-8", "replace").split()
+
+
 def _warn_once(label: str, reason: str, message: str, *args) -> None:
     """Log a warning at most once per (treatment, reason) for this process.
 
