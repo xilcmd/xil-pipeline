@@ -537,9 +537,14 @@ no API credits.
 
 ### Phone Calls — `PHONE FILTER`
 
-Use this for an ordinary phone call: a voice heard down the line, band-limited but still
-present. It is the plain telephone sound. Reach for `SPEAKERPHONE` instead when the call is
-on a speaker in the room — that one adds saturation, hard AGC and a room slap.
+Use this for an ordinary phone call: a voice heard down the line. It is a mobile call —
+narrow, gritty, levelled hard, and run through the real GSM codec, so it reads as a phone
+immediately rather than as a muffled voice. It sits slightly *under* the person in the room,
+which is what sells the distance.
+
+Reach for `SPEAKERPHONE` instead when the call is on a speaker in the room — that one adds
+saturation and a tabletop slap. `PHONE FILTER` is a voice against an ear; `SPEAKERPHONE` is
+a small loudspeaker on a table.
 
 ```
 [PHONE FILTER: ENGAGES DEZ]

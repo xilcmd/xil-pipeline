@@ -94,7 +94,7 @@ stems during assembly and DAW export. Pick by how it should *sound*:
 | Value | Sounds like | Use for |
 |-------|-------------|---------|
 | `false` / `null` | untreated | everyone in the room |
-| `true` / `"phone"` | thin and band-limited (300 Hz–3 kHz), gentle | a landline caller; the long-standing default |
+| `true` / `"phone"` | narrow and gritty — steep 300 Hz–3.4 kHz skirts, earpiece presence, hard AGC and real GSM codec artifacts | a mobile caller, heard down the line |
 | `"vintage"` | dark, mono, mid-forward, no saturation | aged tape or a record player; period flashbacks |
 | `"film"` | warm and reflective, rolled-off top, recessed presence, audible grain | dialogue heard from a film print (1990s indie register) |
 | `"speakerphone"` | narrow, crunchy, hard-levelled, with a room slap | a phone on a table, on speaker |
@@ -116,10 +116,36 @@ like a modern recording of something old.
 
 `phone` and `speakerphone` are independent — `speakerphone` is not a stronger
 `phone`, it is a separate chain with saturation, hard AGC and a short delay.
+`phone` is a voice against an ear; `speakerphone` is a small loudspeaker in a room.
 
-`film` and `speakerphone` are rendered through ffmpeg. If ffmpeg is unavailable
-the stem passes through untreated and a warning is logged; set `XIL_STRICT_FX=1`
-to make that a hard error instead.
+`phone`, `film` and `speakerphone` are rendered through ffmpeg. If ffmpeg is
+unavailable the stem passes through untreated and a warning is logged; set
+`XIL_STRICT_FX=1` to make that a hard error instead.
+
+`phone` additionally round-trips the audio through the GSM 06.10 codec at 8 kHz —
+the actual 2G mobile codec — which is where its grit and its hard 4 kHz ceiling
+come from. If that encoder is missing but ffmpeg is present, the treatment keeps
+its filtering and loses only the codec character, with one warning.
+
+> **`libgsm` is not in every ffmpeg build.** Debian's has it; the stock macOS
+> and Windows builds generally do not. Where it is missing, `phone` still
+> band-limits properly (~20 dB down at 6 kHz instead of ~47 dB) but sounds
+> smoother and less like a mobile. **Render an episode on the same machine you
+> auditioned it on**, or two masters of the same episode will not match. Check
+> with `ffmpeg -hide_banner -encoders | grep libgsm`, or in Python:
+>
+> ```python
+> from xil_pipeline.audio_fx import encoder_available
+> encoder_available("libgsm")
+> ```
+
+> **This treatment was rebuilt in a later release and sounds materially
+> different.** It used to be a pydub one-liner whose single-pole filters left
+> 80 Hz only ~11 dB down and 8 kHz only ~9 dB down — a slightly muffled voice
+> rather than a phone. It is now ~37 dB and ~47 dB respectively. The old version
+> also added a flat +5 dB, making the caller the loudest thing in the scene; the
+> new one lands ~1.4 dB *under* an untreated stem. Episodes rendered with the old
+> filter need re-rendering to pick this up.
 
 Note that a speaker whose `filter` names a treatment **and** who speaks inside a
 matching script span (see `FILM AUDIO` in the direction types reference) receives
@@ -127,11 +153,11 @@ that treatment twice. This has always been the behaviour for `VINTAGE FILTER`;
 it is more audible for `film`, which compounds compression and grain.
 
 **`phone` is the one exception.** A `phone` span treatment is skipped when the
-speaker's own `filter` already applied it, because `apply_phone_filter` is a
-band-limit plus a fixed +5 dB — applying it twice band-limits twice and lands
-+10 dB, which is wrong rather than merely doubled. The exception is deliberately
-narrow: only `phone` is deduped, and only against an identical cast filter. A
-`vintage` speaker inside a `PHONE FILTER` span still gets both.
+speaker's own `filter` already applied it. Applying it twice band-limits twice
+and runs the voice through GSM twice, compounding the codec artifacts into mush
+rather than doubling an effect. The exception is deliberately narrow: only
+`phone` is deduped, and only against an identical cast filter. A `vintage`
+speaker inside a `PHONE FILTER` span still gets both.
 
 #### Pan Guide
 
