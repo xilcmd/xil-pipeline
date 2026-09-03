@@ -14,7 +14,7 @@ from pydub.generators import Sine
 
 # ─── Import modules ───
 from xil_pipeline import XILP003_audio_assembly as assembly
-from xil_pipeline import mix_common
+from xil_pipeline import audio_fx, mix_common
 
 # ─── Helpers ───
 
@@ -665,3 +665,49 @@ class TestCastFilterSpanDedupe:
         calls = self._run(stems, self._index("PHONE FILTER", "PHONE FILTER"),
                           "vintage", "apply_phone_filter")
         assert calls == 1
+
+
+class TestCodecPreflightWarning:
+    """A missing codec is silent damage: it renders, it just renders differently."""
+
+    def _run(self, cast, span, encoder_present):
+        audio_fx._warned.clear()
+        audio_fx.clear_cache()
+        with unittest.mock.patch.object(
+            audio_fx, "encoder_available", lambda name: encoder_present
+        ):
+            mix_common._warn_missing_treatment_codecs(cast, span)
+        return audio_fx._warned
+
+    def test_warns_when_a_cast_filter_needs_a_missing_codec(self):
+        warned = self._run({"dez": {"filter": "phone"}}, {}, False)
+        assert ("phone", "codec-preflight") in warned
+
+    def test_warns_for_a_span_treatment_too(self):
+        """A script span engages phone even with no cast filter set."""
+        warned = self._run({}, {5: ("phone",)}, False)
+        assert ("phone", "codec-preflight") in warned
+
+    def test_silent_when_the_encoder_is_present(self):
+        assert not self._run({"dez": {"filter": "phone"}}, {}, True)
+
+    def test_silent_when_the_episode_uses_no_phone(self):
+        """An episode with no phone lines must not probe or warn about one."""
+        assert not self._run({"adam": {"filter": "vintage"}}, {7: ("film",)}, False)
+
+    def test_silent_with_no_treatments_at_all(self):
+        assert not self._run({"adam": {"filter": False}}, {}, False)
+
+    def test_legacy_true_filter_is_recognised_as_phone(self):
+        warned = self._run({"dez": {"filter": True}}, {}, False)
+        assert ("phone", "codec-preflight") in warned
+
+    def test_warns_once_across_both_layer_builders(self):
+        """build_foreground and build_dialogue_layer both call it per render."""
+        cast = {"dez": {"filter": "phone"}}
+        audio_fx._warned.clear()
+        with unittest.mock.patch.object(audio_fx, "encoder_available", lambda n: False), \
+             unittest.mock.patch.object(audio_fx.logger, "warning") as mock_warn:
+            mix_common._warn_missing_treatment_codecs(cast, {})
+            mix_common._warn_missing_treatment_codecs(cast, {})
+        assert mock_warn.call_count == 1

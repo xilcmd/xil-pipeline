@@ -347,3 +347,38 @@ class TestFilterRegistry:
             mix_common._apply_speaker_filters(tone, "telephone")
         assert first.raw_data == tone.raw_data
         assert sum("telephone" in r.message for r in caplog.records) == 1
+
+
+class TestMissingCodecs:
+    """Which treatments this build cannot render at full character."""
+
+    def test_reports_nothing_when_encoder_is_present(self, monkeypatch):
+        monkeypatch.setattr(audio_fx, "encoder_available", lambda name: True)
+        assert audio_fx.missing_codecs(["phone"]) == {}
+
+    def test_reports_the_encoder_a_treatment_needs(self, monkeypatch):
+        monkeypatch.setattr(audio_fx, "encoder_available", lambda name: False)
+        assert audio_fx.missing_codecs(["phone"]) == {"phone": "libgsm"}
+
+    def test_filter_only_treatments_are_never_reported(self, monkeypatch):
+        """film and speakerphone declare no codec, so nothing can be missing."""
+        monkeypatch.setattr(audio_fx, "encoder_available", lambda name: False)
+        assert audio_fx.missing_codecs(["film", "speakerphone", "vintage"]) == {}
+
+    def test_unknown_names_are_ignored(self, monkeypatch):
+        monkeypatch.setattr(audio_fx, "encoder_available", lambda name: False)
+        assert audio_fx.missing_codecs(["nonsense"]) == {}
+
+    def test_encoder_is_probed_once_per_process(self, monkeypatch):
+        """Each probe spawns ffmpeg; a render asks about the same codec often."""
+        calls = []
+
+        def counted(name):
+            calls.append(name)
+            return False
+
+        monkeypatch.setattr(audio_fx, "encoder_available", counted)
+        audio_fx.missing_codecs(["phone"])
+        audio_fx.missing_codecs(["phone"])
+        audio_fx.missing_codecs(["phone", "film"])
+        assert calls == ["libgsm"]

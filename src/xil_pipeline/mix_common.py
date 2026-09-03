@@ -638,6 +638,47 @@ def _apply_named_filter(segment: AudioSegment, name: str) -> AudioSegment:
     return globals()[func_name](segment)
 
 
+def _warn_missing_treatment_codecs(
+    cast_config: dict, span_map: "dict[int, tuple[str, ...]]",
+) -> None:
+    """Warn up front if a treatment this render uses is missing its codec.
+
+    A codec-backed treatment still renders without its encoder — it degrades to
+    the filter-only result — so nothing fails and the mid-render warning is one
+    line among hundreds.  The failure mode that actually bites is silent
+    inconsistency: two machines producing masters of the same episode that do
+    not match.  Saying so before the first stem is written makes that visible
+    while there is still time to render somewhere else.
+
+    Only treatments this episode actually engages are checked, so an episode
+    with no phone lines never probes for a phone codec.
+
+    Args:
+        cast_config: Speaker-to-config mapping, for per-speaker ``filter`` values.
+        span_map: Output of :func:`_span_treatments`, for script-driven spans.
+    """
+    names: list[str] = []
+    for entry in cast_config.values():
+        if isinstance(entry, dict):
+            names.extend(_cast_filter_names(entry.get("filter")))
+    for treatments in span_map.values():
+        names.extend(treatments)
+    if not names:
+        return
+
+    for treatment, codec in audio_fx.missing_codecs(names).items():
+        # Deduped by audio_fx, so both layer builders can call this without
+        # emitting the warning twice for one render.
+        audio_fx._warn_once(
+            treatment, "codec-preflight",
+            "This ffmpeg build has no %r encoder, so the %r treatment will "
+            "render band-limited but without its codec character. The audio is "
+            "usable, but it will NOT match a render from a machine that has the "
+            "encoder — check before publishing a master.",
+            codec, treatment,
+        )
+
+
 def _span_names_to_apply(
     span_names: "tuple[str, ...]", cast_names: "list[str]",
 ) -> list[str]:
@@ -805,6 +846,7 @@ def build_foreground(
     timeline: dict[int, int] = {}
     current_ms = 0
     span_map = _span_treatments(stem_plans)
+    _warn_missing_treatment_codecs(cast_config, span_map)
 
     for plan in sorted(stem_plans, key=lambda p: p.seq):
         # Record cue position for ALL stems (both fg and bg).
@@ -1128,6 +1170,7 @@ def build_dialogue_layer(
     layer = AudioSegment.silent(duration=total_ms)
     labels: list[tuple[float, float, str]] = []
     span_map = _span_treatments(stem_plans)
+    _warn_missing_treatment_codecs(cast_config, span_map)
     for plan in sorted(stem_plans, key=lambda p: p.seq):
         if plan.entry_type != "dialogue":
             continue
