@@ -125,7 +125,19 @@ unavailable the stem passes through untreated and a warning is logged; set
 `phone` additionally round-trips the audio through the GSM 06.10 codec at 8 kHz —
 the actual 2G mobile codec — which is where its grit and its hard 4 kHz ceiling
 come from. If that encoder is missing but ffmpeg is present, the treatment keeps
-its filtering and loses only the codec character, with one warning.
+its filtering and loses only the codec character.
+
+> **`libgsm` is not in every ffmpeg build.** It has to be compiled in
+> (`--enable-libgsm`); ffmpeg has a native GSM *decoder* but no native encoder, and
+> installing the library afterwards does not help a pre-built binary. Debian and
+> Ubuntu ship it. Homebrew's default `ffmpeg` formula does **not**, and neither the
+> default formula nor the `homebrew-ffmpeg` tap offers it as an option — a macOS
+> render needs ffmpeg built from source to match.
+>
+> A render that engages `phone` without the encoder warns before writing its first
+> stem. The audio is usable, but it will not match a render from a machine that has
+> the encoder, so masters of the same episode can differ by which machine made them.
+> Check `ffmpeg -encoders | grep libgsm` if you are unsure.
 
 > **`libgsm` is not in every ffmpeg build.** Debian's has it; the stock macOS
 > and Windows builds generally do not. Where it is missing, `phone` still

@@ -35,6 +35,7 @@ Module Attributes:
 import hashlib
 import os
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from pydub import AudioSegment
@@ -57,6 +58,9 @@ _CACHE_MAX_ENTRIES: int = 512
 
 _fx_cache: dict[tuple, bytes] = {}
 _warned: set[tuple[str, str]] = set()
+# Encoder probes spawn ffmpeg, and a render asks about the same handful of
+# codecs for every episode.  Keyed by encoder name, not treatment.
+_encoder_probe_cache: dict[str, bool] = {}
 
 
 class AudioFxError(RuntimeError):
@@ -279,6 +283,39 @@ def encoder_available(name: str) -> bool:
     # Encoder rows are " V..... name  description"; match the name as a token
     # so a substring such as "gsm" cannot match "libgsm_ms".
     return name in proc.stdout.decode("utf-8", "replace").split()
+
+
+def missing_codecs(names: Iterable[str]) -> dict[str, str]:
+    """Map each named treatment to the encoder it needs but cannot find.
+
+    A treatment whose codec is missing still renders — it degrades to the
+    filter-only result — so nothing fails and the difference is easy to miss
+    until two machines produce masters that do not match.  This is what lets a
+    render stage say so up front instead of one warning buried mid-run.
+
+    Args:
+        names: Treatment names actually in use for this render.
+
+    Returns:
+        ``{treatment_name: encoder_name}`` for treatments that declare a codec
+        this ffmpeg build does not ship.  Empty when everything is available,
+        including when no named treatment uses a codec at all.
+    """
+    missing: dict[str, str] = {}
+    for name in sorted(set(names)):
+        treatment = TREATMENTS.get(name)
+        if treatment is None or not treatment.codec:
+            continue
+        if treatment.codec in _encoder_probe_cache:
+            available = _encoder_probe_cache[treatment.codec]
+        else:
+            # Each probe spawns ffmpeg, so cache per process: a render asks
+            # about the same handful of codecs for every episode.
+            available = encoder_available(treatment.codec)
+            _encoder_probe_cache[treatment.codec] = available
+        if not available:
+            missing[name] = treatment.codec
+    return missing
 
 
 def _warn_once(label: str, reason: str, message: str, *args) -> None:
@@ -590,3 +627,4 @@ def clear_cache() -> None:
     Intended for tests; the cache is otherwise self-limiting.
     """
     _fx_cache.clear()
+    _encoder_probe_cache.clear()
