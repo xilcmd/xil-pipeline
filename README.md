@@ -130,7 +130,7 @@ xil-master --episode S01E01
 | `xil-produce` | XILP002 | Voice + SFX generation (ElevenLabs API) |
 | `xil-assemble` | XILP003 | Two-pass audio assembly |
 | `xil-studio` | XILP004 | ElevenLabs Studio project onboarding |
-| `xil-daw` | XILP005 | DAW layer export (4 WAVs for Audacity) |
+| `xil-daw` | XILP005 | DAW layer export (5 WAVs for Audacity) |
 | `xil-cues` | XILP006 | Sound cues sheet ingester |
 | `xil-migrate` | XILP007 | Stem migrator for script revisions |
 | `xil-cleanup` | XILP008 | Stale stem cleanup |
