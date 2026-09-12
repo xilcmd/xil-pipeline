@@ -514,3 +514,118 @@ class TestTimelineTextMapOutput:
         content = open(txt, encoding="utf-8").read()
         assert content.startswith("# Timeline map: S01E01")
         assert "music/ambience omitted" in content
+
+
+class TestDetectAudacityGenerations:
+    """Which Audacity generations have config on this machine.
+
+    Audacity 4 dropped Macro Manager and the scripting pipe, so `--macro` and
+    the helper script's pipe automation are Audacity 3 features. Detection is
+    what lets the export say which one a macro is for.
+    """
+
+    def _detect(self, config_dir):
+        with unittest.mock.patch.object(
+            daw, "_audacity_config_dir", return_value=config_dir
+        ):
+            return daw.detect_audacity_generations()
+
+    def test_v3_only(self, tmp_path):
+        os.makedirs(tmp_path / "Macros")
+        assert self._detect(str(tmp_path)) == frozenset({"3"})
+
+    def test_v4_only_via_ini(self, tmp_path):
+        (tmp_path / "Audacity4.ini").write_text("[cloud]\n", encoding="utf-8")
+        assert self._detect(str(tmp_path)) == frozenset({"4"})
+
+    def test_v4_only_via_directory(self, tmp_path):
+        """Either marker is enough — a fresh v4 install may have only one."""
+        os.makedirs(tmp_path / "Audacity4")
+        assert self._detect(str(tmp_path)) == frozenset({"4"})
+
+    def test_both_installed(self, tmp_path):
+        """The real case on an upgraded machine — v3 config outlives the upgrade."""
+        os.makedirs(tmp_path / "Macros")
+        (tmp_path / "Audacity4.ini").write_text("[cloud]\n", encoding="utf-8")
+        assert self._detect(str(tmp_path)) == frozenset({"3", "4"})
+
+    def test_neither(self, tmp_path):
+        assert self._detect(str(tmp_path)) == frozenset()
+
+    def test_unresolvable_config_dir_is_empty_not_an_error(self):
+        """APPDATA is unreachable on native Linux — that must not raise."""
+        assert self._detect(None) == frozenset()
+
+
+class TestMacroVersionWarning:
+    """A macro written on an Audacity 4 box must not look usable there.
+
+    Goes through export_daw_layers rather than re-deriving the condition, so
+    the test fails if the real branch is wrong or moves.
+    """
+
+    def _export(self, config, stems_dir, parsed_file, tmp_path, generations, **kwargs):
+        output_dir = str(tmp_path / "daw" / "S01E01")
+        macros_dir = str(tmp_path / "Macros")
+        os.makedirs(macros_dir)
+        with (
+            unittest.mock.patch.object(
+                daw, "_find_audacity_macros_dir", return_value=macros_dir
+            ),
+            unittest.mock.patch.object(
+                daw, "detect_audacity_generations", return_value=frozenset(generations)
+            ) as mock_detect,
+            unittest.mock.patch.object(daw, "_to_windows_path", side_effect=lambda p: p),
+            unittest.mock.patch.object(daw.logger, "warning") as mock_warn,
+        ):
+            daw.export_daw_layers(
+                config, stems_dir, parsed_file, output_dir, "S01E01",
+                show="THE 413", **kwargs,
+            )
+        warnings = [c[0][0] for c in mock_warn.call_args_list]
+        return os.path.join(macros_dir, "THE413_S01E01.txt"), warnings, mock_detect
+
+    def test_macro_is_still_written_when_v4_present(self, config, stems_dir, parsed_file, tmp_path):
+        """Audacity 3 is often still installed, so the artifact stays."""
+        macro_path, _, _ = self._export(
+            config, stems_dir, parsed_file, tmp_path, {"3", "4"}, macro=True,
+        )
+        assert os.path.exists(macro_path)
+
+    def test_warns_that_the_macro_is_v3_only(self, config, stems_dir, parsed_file, tmp_path):
+        _, warnings, _ = self._export(
+            config, stems_dir, parsed_file, tmp_path, {"3", "4"}, macro=True,
+        )
+        assert any("Macro Manager" in w for w in warnings)
+
+    def test_silent_when_only_v3(self, config, stems_dir, parsed_file, tmp_path):
+        _, warnings, _ = self._export(
+            config, stems_dir, parsed_file, tmp_path, {"3"}, macro=True,
+        )
+        assert not any("Macro Manager" in w for w in warnings)
+
+    def test_probe_does_not_run_without_the_flag(self, config, stems_dir, parsed_file, tmp_path):
+        """Detection must live inside the --macro branch, not above it."""
+        _, _, mock_detect = self._export(config, stems_dir, parsed_file, tmp_path, {"3", "4"})
+        mock_detect.assert_not_called()
+
+
+class TestAudacity4LabelInstructions:
+    """v4 imports label files but does not name the track after the file."""
+
+    def test_helper_script_explains_label_renaming(self):
+        script = daw._make_audacity_script(
+            "S01E01",
+            [("Dialogue", "S01E01_layer_dialogue.wav"),
+             ("Dialogue labels", "S01E01_labels_dialogue.txt")],
+            show="THE 413",
+        )
+        assert "does not name an imported label track" in script
+        assert "rename" in script
+
+    def test_helper_script_scopes_the_pipe_to_audacity_3(self):
+        script = daw._make_audacity_script(
+            "S01E01", [("Dialogue", "S01E01_layer_dialogue.wav")], show="THE 413",
+        )
+        assert "mod-script-pipe in Audacity 3" in script
+        assert "Audacity 4 ships no modules directory" in script

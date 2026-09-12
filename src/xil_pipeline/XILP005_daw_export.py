@@ -113,29 +113,79 @@ def _write_labels(output_dir: str, fname: str, labels: list[tuple[float, float, 
             lf.write(f"{start_s:.3f}\t{end_s:.3f}\t{text}\n")
 
 
-def _find_audacity_macros_dir() -> str | None:
-    """Return the Audacity Macros directory as a Linux path, or None if not found.
+def _audacity_config_dir() -> str | None:
+    """Return ``%APPDATA%/audacity`` as a local path, or None if unresolvable.
 
-    Works in WSL (queries APPDATA via cmd.exe) and native Windows Python
-    (reads os.environ['APPDATA'] directly).
+    Works in WSL (queries APPDATA via cmd.exe, then converts with wslpath) and
+    in native Windows Python (reads ``os.environ['APPDATA']`` directly).  This
+    is the only Windows/WSL path bridge in the module, so both the Macros lookup
+    and the version probe go through it rather than repeating the dance.
+
+    Returns:
+        Path to the Audacity config directory, or ``None`` when APPDATA cannot
+        be resolved or the directory does not exist.
     """
     appdata = os.environ.get("APPDATA")
-    if appdata:
-        # Native Windows Python — APPDATA is already set.
-        macros_dir = os.path.join(appdata, "audacity", "Macros")
-        return macros_dir if os.path.isdir(macros_dir) else None
-    # WSL: ask Windows for APPDATA, then convert to a Linux path.
-    try:
-        win_appdata = subprocess.check_output(
-            ["cmd.exe", "/c", "echo %APPDATA%"], stderr=subprocess.DEVNULL
-        ).decode().strip()
-        linux_appdata = subprocess.check_output(
-            ["wslpath", "-u", win_appdata], stderr=subprocess.DEVNULL
-        ).decode().strip()
-        macros_dir = os.path.join(linux_appdata, "audacity", "Macros")
-        return macros_dir if os.path.isdir(macros_dir) else None
-    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+    if not appdata:
+        # WSL: ask Windows for APPDATA, then convert to a Linux path.
+        try:
+            win_appdata = subprocess.check_output(
+                ["cmd.exe", "/c", "echo %APPDATA%"], stderr=subprocess.DEVNULL
+            ).decode().strip()
+            appdata = subprocess.check_output(
+                ["wslpath", "-u", win_appdata], stderr=subprocess.DEVNULL
+            ).decode().strip()
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            return None
+    config_dir = os.path.join(appdata, "audacity")
+    return config_dir if os.path.isdir(config_dir) else None
+
+
+def _find_audacity_macros_dir() -> str | None:
+    """Return the Audacity Macros directory as a local path, or None if absent.
+
+    Only Audacity 3 has one — see :func:`detect_audacity_generations`.
+    """
+    config_dir = _audacity_config_dir()
+    if config_dir is None:
         return None
+    macros_dir = os.path.join(config_dir, "Macros")
+    return macros_dir if os.path.isdir(macros_dir) else None
+
+
+def detect_audacity_generations() -> frozenset[str]:
+    """Report which Audacity generations have configuration on this machine.
+
+    Audacity 4.0 dropped both Macro Manager and the scripting pipe (they are
+    slated to return in a later release), so the macro this module writes and
+    the pipe automation in the helper script are Audacity 3 features.  Knowing
+    which generations are present is what lets the export say so instead of
+    reporting a macro as written and leaving the user to find the missing menu.
+
+    Detection reads the config directory rather than ``Program Files`` because
+    APPDATA is already resolved here and install locations vary:
+
+    * ``"4"`` — ``Audacity4.ini`` or an ``Audacity4/`` directory
+    * ``"3"`` — a ``Macros/`` directory, which is exactly what ``--macro`` needs
+
+    **This detects "has been run on this machine", not "is installed now"** — a
+    config directory outlives an uninstall.  Good enough to qualify a warning;
+    never gate anything destructive on it.
+
+    Returns:
+        A set containing any of ``"3"`` and ``"4"``; empty when neither is found
+        or the config directory cannot be resolved.
+    """
+    config_dir = _audacity_config_dir()
+    if config_dir is None:
+        return frozenset()
+    found = set()
+    if any(os.path.exists(os.path.join(config_dir, name))
+           for name in ("Audacity4.ini", "Audacity4")):
+        found.add("4")
+    if os.path.isdir(os.path.join(config_dir, "Macros")):
+        found.add("3")
+    return frozenset(found)
 
 
 def _to_windows_path(linux_path: str) -> str:
@@ -236,12 +286,16 @@ def _make_audacity_script(
         \"\"\"Open {show_label} {tag} DAW layers in Audacity.
 
         Run this script while Audacity is open.  If mod-script-pipe is
-        enabled the four layer WAVs are imported automatically.  Otherwise
-        the file paths and manual import instructions are printed below.
+        enabled the layer WAVs are imported automatically.  Otherwise the
+        file paths and manual import instructions are printed below.
 
-        Enable mod-script-pipe in Audacity:
+        Enable mod-script-pipe in Audacity 3:
           Edit > Preferences > Modules > mod-script-pipe → Enabled
           (restart Audacity after enabling)
+
+        Audacity 4 ships no modules directory and has no scripting pipe, so
+        the import there is always manual — the instructions below are the
+        whole story.
         \"\"\"
         import os
         import sys
@@ -328,6 +382,11 @@ def _make_audacity_script(
                 for i, (name, filename) in enumerate(labels, 1):
                     full = os.path.join(BASE_DIR, filename)
                     print(f"  {{i}}. {{name:<20}}  {{full}}")
+                print()
+                print("  Audacity 4 does not name an imported label track after")
+                print("  its file, so import them in the order above and rename")
+                print("  each track to the name shown — they are otherwise")
+                print("  indistinguishable.")
             print()
             print("After importing, all tracks are pre-aligned at t=0.")
             print("No repositioning needed — just mix levels and export.")
@@ -636,6 +695,14 @@ def export_daw_layers(
         )
         if macro_path:
             logger.info(f"    Written: {macro_path}")
+            # Probed here, inside the flag branch, so a run without --macro
+            # never touches the filesystem looking for Audacity.
+            if "4" in detect_audacity_generations():
+                logger.warning(
+                    "Audacity 4 has no Macro Manager — this macro runs in "
+                    "Audacity 3 only. In Audacity 4, import the layer WAVs "
+                    "manually (see the helper script)."
+                )
         else:
             logger.warning("Audacity Macros directory not found — macro not written.")
 
@@ -670,7 +737,8 @@ def export_daw_layers(
         from xil_pipeline.models import DEFAULT_SLUG
         from xil_pipeline.models import show_slug as _show_slug
         macro_label = _show_slug(show).upper() if show else DEFAULT_SLUG.upper()
-        logger.info(f"    Audacity macro:       Tools → Macros → {macro_label}_{tag} → Apply to Project")
+        logger.info(f"    Audacity macro:       Tools → Macros → {macro_label}_{tag} → Apply to Project"
+                    f"  (Audacity 3 only)")
     if save_aup3:
         logger.info(f"    Will save project:    {output_dir}/{tag}.aup3")
 
@@ -704,11 +772,13 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--save-aup3", action="store_true",
-        help="Include SaveProject2 step in the Audacity helper script (requires mod-script-pipe)"
+        help="Include SaveProject2 step in the Audacity helper script "
+             "(requires mod-script-pipe; Audacity 3 only)"
     )
     parser.add_argument(
         "--macro", action="store_true",
-        help="Write an Audacity macro to %%APPDATA%%\\audacity\\Macros\\ for one-click import"
+        help="Write an Audacity macro to %%APPDATA%%\\audacity\\Macros\\ for one-click import "
+             "(Audacity 3 only — Audacity 4 has no Macro Manager)"
     )
     parser.add_argument(
         "--timeline", action="store_true",

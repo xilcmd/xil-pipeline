@@ -225,10 +225,10 @@ xil daw --episode S01E01 --timeline --timeline-html
 - Each WAV is tagged with ID3 metadata (Album, Genre, Year, Title, Artist) via `tag_wav()` from `sfx_common.py`
 - Generates four Audacity label track files (`{TAG}_labels_dialogue.txt`, etc.) — tab-separated start/end/text
 - Generates `{TAG}_open_in_audacity.py` — prints WAV import instructions (labels listed separately as optional)
-- `--macro` writes an Audacity macro (`THE413_{TAG}.txt`) to `%APPDATA%\audacity\Macros\` for one-click WAV import via `Tools > Macros`
+- `--macro` writes an Audacity macro (`THE413_{TAG}.txt`) to `%APPDATA%\audacity\Macros\` for one-click WAV import via `Tools > Macros` — **Audacity 3 only**; Audacity 4.0 removed Macro Manager, and the export warns when it detects v4 (`detect_audacity_generations()`)
 - `--dry-run` shows stem counts and output paths without writing files
 - `--gap-ms N` sets the silence gap between foreground stems in milliseconds (default: 600); reducing to 200–300 can shorten episode runtime by 1.5–2 minutes
-- `--save-aup3` includes a `SaveProject2` command in the generated `{TAG}_open_in_audacity.py` helper script (requires mod-script-pipe in Audacity)
+- `--save-aup3` includes a `SaveProject2` command in the generated `{TAG}_open_in_audacity.py` helper script (requires mod-script-pipe — **Audacity 3 only**; v4 ships no modules directory)
 - `--timeline` prints an ASCII multitrack timeline to stdout (works with `--dry-run` via fast mutagen header reads)
 - `--timeline-html` writes a self-contained interactive HTML timeline to `daw/{TAG}/{TAG}_timeline.html` (hover tooltips, Ctrl+scroll zoom)
 - The HTML timeline shows two **structure bands above the minute ruler** — Sections (`cold-open`, `act1`, …) over Scenes (`scene-1`, …) — derived from the parsed entries' `section`/`scene` fields via `derive_structure_bands()` in `mix_common.py`. Band boundaries come from the first *stemmed* entry of each group (section/scene headers carry no stem); entries with no scene (e.g. preamble) leave a deliberate gap
