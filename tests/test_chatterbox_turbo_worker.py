@@ -10,7 +10,13 @@ Only ``filter_tags`` (paralinguistic-tag allowlist) and ``_resolve_device``
 without the chatterbox venv.
 """
 
-from xil_pipeline.chatterbox_turbo_worker import ALLOWED_TAGS, _resolve_device, filter_tags
+from xil_pipeline.chatterbox_turbo_worker import (
+    ALLOWED_TAGS,
+    MAX_CHUNK_CHARS,
+    _resolve_device,
+    filter_tags,
+    split_text,
+)
 
 
 def test_keeps_native_paralinguistic_tags():
@@ -75,3 +81,46 @@ class TestResolveDevice:
     def test_explicit_cpu_request_is_never_overridden(self):
         assert _resolve_device("cpu", cuda_available=True) == "cpu"
         assert _resolve_device("cpu", cuda_available=False) == "cpu"
+
+
+class TestSplitText:
+    """Long lines are split so no generate() call hits Turbo's 40 s cap."""
+
+    def test_short_text_is_one_chunk(self):
+        assert split_text("Hello there.  How are you?") == ["Hello there. How are you?"]
+
+    def test_empty_text_has_no_chunks(self):
+        assert split_text("   ") == []
+
+    def test_splits_at_sentence_ends_and_packs(self):
+        s = "This sentence is about forty characters. "
+        chunks = split_text(s * 10, limit=100)
+        assert chunks == ["This sentence is about forty characters. This sentence is about forty characters."] * 5
+
+    def test_every_chunk_fits_and_no_text_is_lost(self):
+        text = ("Welcome back to the show, where tonight we talk about the harvest; "
+                "the weather, which was brutal; and the fair! Did you go? I did. ") * 12
+        chunks = split_text(text)
+        assert len(chunks) > 1
+        assert all(0 < len(c) <= MAX_CHUNK_CHARS for c in chunks)
+        assert " ".join(chunks) == " ".join(text.split())
+
+    def test_closing_quote_stays_with_its_sentence(self):
+        chunks = split_text('He said "Stop." Then he left the room quietly.', limit=20)
+        assert chunks[0] == 'He said "Stop."'
+        assert " ".join(chunks) == 'He said "Stop." Then he left the room quietly.'
+
+    def test_long_sentence_breaks_at_clauses_then_words(self):
+        text = "one two three, " * 30
+        chunks = split_text(text, limit=50)
+        assert all(len(c) <= 50 for c in chunks)
+        assert all(c.endswith(",") for c in chunks[:-1])
+        words = "word " * 40
+        assert all(len(c) <= 30 for c in split_text(words, limit=30))
+
+    def test_oversized_single_word_is_kept_whole(self):
+        assert split_text("x" * 60 + " tail", limit=50) == ["x" * 60, "tail"]
+
+    def test_tags_stay_inside_their_sentence(self):
+        text = "[laugh] That was funny. " + "Filler words here. " * 20
+        assert split_text(text, limit=80)[0].startswith("[laugh] That was funny.")
