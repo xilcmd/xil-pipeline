@@ -38,6 +38,17 @@ sampler point ``cond_path`` at a Turbo-specific file (``.turbo.conds.pt``).
 
 Turbo's ``generate()`` ignores ``exaggeration``/``cfg_weight``/``min_p`` (it logs
 a warning if they are non-zero), so this worker does not accept or forward them.
+
+Long lines
+----------
+Turbo stops sampling after 1000 speech tokens (``max_gen_len`` in
+``T3.inference_turbo``), and it samples at 25 tokens per second, so one
+``generate()`` call can never return more than 40 seconds of audio. A longer
+line does not fail: the model crams it into the cap and the stem comes out
+fast, garbled and repetitive. So the worker splits text longer than
+:data:`MAX_CHUNK_CHARS` at sentence boundaries (see :func:`split_text`),
+renders each chunk with the same voice conditionals, and joins the chunks
+with :data:`CHUNK_GAP_S` of silence.
 """
 
 import contextlib
@@ -81,6 +92,22 @@ ALLOWED_TAGS = {
     "laugh",
 }
 
+# Longest chunk sent to one generate() call. Turbo's hard cap is 40 s of audio;
+# the pipeline's dialogue runs at about 10.5 characters per second, so 250
+# characters (about 24 s) leaves room for slow delivery and inline tags.
+MAX_CHUNK_CHARS = 250
+
+# Silence inserted between chunks of one split line, in seconds. Turbo already
+# ends each chunk with three silence tokens (about 120 ms).
+CHUNK_GAP_S = 0.1
+
+# Sentence end: . ! ? or … (optionally followed by closing quotes/brackets),
+# then whitespace.
+_SENTENCE_END_RE = re.compile(r'(?:(?<=[.!?…])|(?<=[.!?…]["\'”’)\]]))\s+')
+
+# Weaker break points, tried when a single sentence is still too long.
+_CLAUSE_END_RE = re.compile(r'(?<=[,;:—])\s+')
+
 # Matches any [...] token; the replacement callback decides keep vs. drop.
 _TAG_RE = re.compile(r'\[([^\]]*)\]')
 
@@ -92,6 +119,56 @@ def filter_tags(text: str) -> str:
         return match.group(0) if name in ALLOWED_TAGS else ""
 
     return _TAG_RE.sub(_repl, text)
+
+
+def _pack(pieces: list[str], limit: int) -> list[str]:
+    """Greedily join *pieces* with spaces into chunks of at most *limit* chars."""
+    chunks: list[str] = []
+    current = ""
+    for piece in pieces:
+        if current and len(current) + 1 + len(piece) > limit:
+            chunks.append(current)
+            current = piece
+        else:
+            current = f"{current} {piece}" if current else piece
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _split_long(sentence: str, limit: int) -> list[str]:
+    """Break one over-long sentence at clause marks, then at spaces."""
+    pieces: list[str] = []
+    for clause in _CLAUSE_END_RE.split(sentence):
+        if len(clause) <= limit:
+            pieces.append(clause)
+        else:
+            pieces.extend(clause.split())
+    return _pack(pieces, limit)
+
+
+def split_text(text: str, limit: int = MAX_CHUNK_CHARS) -> list[str]:
+    """Split *text* into chunks Turbo can render without hitting its 40 s cap.
+
+    Text within *limit* is returned whole. Longer text is cut at sentence
+    ends and the sentences are packed back together up to *limit*; a sentence
+    that is longer than *limit* on its own is cut at commas, semicolons,
+    colons or dashes, and as a last resort between words. A single word longer
+    than *limit* is kept intact. Chunks never start or end with whitespace.
+    """
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return [text] if text else []
+    pieces: list[str] = []
+    for sentence in _SENTENCE_END_RE.split(text):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        if len(sentence) <= limit:
+            pieces.append(sentence)
+        else:
+            pieces.extend(_split_long(sentence, limit))
+    return _pack(pieces, limit)
 
 
 def _claim_protocol_stdout():
@@ -187,22 +264,35 @@ def main() -> None:
         tmp_wav = None
         tmp_mp3 = None
         try:
+            chunks = split_text(text)
+            if len(chunks) > 1:
+                print(f"[split] {len(text)} chars → {len(chunks)} chunks", file=sys.stderr, flush=True)
+
             if cond_path and os.path.exists(cond_path):
                 # Fast path: pre-computed conditioning — skip ref audio processing
                 from chatterbox.tts_turbo import Conditionals  # type: ignore[import]
                 model.conds = Conditionals.load(cond_path, map_location=device)
                 print(f"[conds] loaded ← {os.path.basename(cond_path)}", file=sys.stderr, flush=True)
-                wav = model.generate(text)
+                parts = [model.generate(chunks[0])]
             elif ref_audio:
                 # Slow path: compute from ref audio, save conds for next session
-                wav = model.generate(text, audio_prompt_path=ref_audio)
+                parts = [model.generate(chunks[0], audio_prompt_path=ref_audio)]
                 if cond_path and model.conds is not None:
                     os.makedirs(os.path.dirname(os.path.abspath(cond_path)), exist_ok=True)
                     model.conds.save(cond_path)
                     print(f"[conds] saved  → {os.path.basename(cond_path)}", file=sys.stderr, flush=True)
             else:
                 # No ref, no cache: use model default voice
-                wav = model.generate(text)
+                parts = [model.generate(chunks[0])]
+
+            # Later chunks reuse model.conds, which the first call set (or
+            # the default voice already holds), so every chunk shares a voice.
+            parts.extend(model.generate(chunk) for chunk in chunks[1:])
+            gap = torch.zeros(1, int(CHUNK_GAP_S * model.sr), dtype=parts[0].dtype)
+            joined = [parts[0]]
+            for part in parts[1:]:
+                joined.extend((gap, part))
+            wav = torch.cat(joined, dim=1)
 
             # WAV → temp file → MP3 → final path (atomic replace)
             tmp_fd, tmp_wav = tempfile.mkstemp(suffix=".wav")
