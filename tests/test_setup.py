@@ -9,11 +9,15 @@ output exactly (parity).
 """
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
 from xil_pipeline import XILU023_setup as setup
+
+# venv-chatterbox (bin/python3) is POSIX-only, and the fakes are sh scripts.
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX venv layout")
 
 
 def _script(path: Path, body: str) -> None:
