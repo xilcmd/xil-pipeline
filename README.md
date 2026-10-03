@@ -23,18 +23,33 @@ paralinguistic tags (emotion, delivery style, and vocal gestures — see [the pi
 This venv carries heavy ML dependencies (PyTorch) and is intentionally kept out of the main
 package; each `xil` command auto-detects it at run time.
 
+One command builds and checks it:
+
 ```bash
-# First-time setup (CUDA 12.4 wheels shown; adjust for your GPU/driver)
-python -m venv venv-chatterbox
+xil setup chatterbox             # CUDA wheels if nvidia-smi works, else CPU
+xil setup chatterbox --dry-run   # show the commands without running them
+```
+
+It creates the venv in `--dir`, else `$XIL_CODEROOT`, else the workspace root (the places
+`xil produce` looks). It uses [uv](https://docs.astral.sh/uv/) when it is on `PATH`,
+otherwise `python3.13 -m venv` and pip. Force a build with `--device cuda|cpu`, pick another
+CUDA wheel set with `--cuda-index` (default `cu124`), and rebuild with `--force`. Running it
+on a working venv does nothing.
+
+To do the same by hand:
+
+```bash
+# CUDA 12.4 wheels shown; use .../whl/cpu for CPU only
+python3.13 -m venv venv-chatterbox
 venv-chatterbox/bin/pip install --upgrade pip
 venv-chatterbox/bin/pip install 'torch==2.6.0' 'torchaudio==2.6.0' \
     --index-url https://download.pytorch.org/whl/cu124
-venv-chatterbox/bin/pip install chatterbox-tts      # provides Chatterbox Turbo
-
-# Model weights auto-download from Hugging Face on first run. If the Turbo repo
-# (ResembleAI/chatterbox-turbo) is gated for your account, authenticate first:
-export HF_TOKEN=hf_...                               # or: huggingface-cli login
+venv-chatterbox/bin/pip install chatterbox-tts pydub
 ```
+
+Model weights download from Hugging Face on the first render. If the Turbo repo
+(ResembleAI/chatterbox-turbo) is gated for your account, authenticate first with
+`export HF_TOKEN=hf_...` or `huggingface-cli login`.
 
 Then place a per-character reference clip at `voice_refs/<speaker_key>.wav` (Chatterbox Turbo
 requires clips **longer than 5 seconds**) and select the backend:

@@ -330,6 +330,7 @@ sequenceDiagram
 
 > **Local voice clones:** `--backend chatterbox-turbo` runs local GPU TTS in `venv-chatterbox/`
 > (driven by `chatterbox_turbo_worker.py`), cloning each character from `voice_refs/<key>.wav`.
+> Build that venv with `xil setup chatterbox` (XILU023), which picks CUDA or CPU PyTorch wheels.
 > It natively renders 19 paralinguistic cues (see below) and strips every other bracketed tag.
 > Requires reference clips **>5 s**, and caches conditionals as `voice_refs/<key>.turbo.conds.pt`.
 >

@@ -194,6 +194,14 @@ Pipeline status check \(em make\-style staleness report showing which stages
 are current and which need re\-running.  See
 .BR xil\-status (1).
 .TP
+.B setup
+Local model setup \(em build and verify
+.I venv\-chatterbox
+(PyTorch with CUDA or CPU wheels, chatterbox\-tts) where
+.B xil produce
+looks for it.  See
+.BR xil\-setup (1).
+.TP
 .B use
 Active show context \(em list all shows in the workspace and optionally
 switch the active show used by subsequent commands.  See
@@ -272,6 +280,7 @@ API key for ElevenLabs TTS and sound\-effect generation.  Required by
 .BR xil\-remove\-show (1),
 .BR xil\-remove\-episode (1),
 .BR xil\-status (1),
+.BR xil\-setup (1),
 .BR xil\-studio\-onboard (1),
 .BR xil\-gui (1),
 .BR xil\-publish (1),

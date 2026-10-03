@@ -36,7 +36,13 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs.core.api_error import ApiError
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import CastConfiguration, derive_paths, get_workspace_root, resolve_slug
+from xil_pipeline.models import (
+    CastConfiguration,
+    derive_paths,
+    get_workspace_root,
+    resolve_slug,
+    resolve_venv_python,
+)
 from xil_pipeline.sfx_common import run_banner, tag_mp3
 
 logger = get_logger(__name__)
@@ -355,7 +361,10 @@ def main() -> None:
         # Resolve chatterbox python path
         chatterbox_client: _ChatterboxClient | None = None
         if backend in ("chatterbox", "chatterbox-turbo") and not args.dry_run:
-            python_path = args.chatterbox_python or os.path.join("venv-chatterbox", "bin", "python3")
+            # Same search as produce; the fallback keeps the error text unchanged.
+            python_path = resolve_venv_python("venv-chatterbox", args.chatterbox_python) or os.path.join(
+                "venv-chatterbox", "bin", "python3"
+            )
             if not os.path.exists(python_path):
                 sys.exit(f"Error: Chatterbox Python not found at {python_path}. "
                          "Use --chatterbox-python to specify the path.")
