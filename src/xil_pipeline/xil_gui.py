@@ -42,7 +42,7 @@ from pathlib import Path
 from fastapi import Request as _FastAPIRequest
 
 from xil_pipeline.log_config import configure_logging, get_logger
-from xil_pipeline.models import get_workspace_root
+from xil_pipeline.models import get_workspace_root, resolve_venv_python
 from xil_pipeline.sfx_common import read_sfx_grade as _read_sfx_grade
 from xil_pipeline.sfx_common import write_sfx_grade as _write_sfx_grade
 
@@ -198,16 +198,8 @@ def _default_mmaudio_python() -> str:
 
 
 def _default_chatterbox_python() -> str:
-    """Return the first existing venv-chatterbox python3, or an empty string."""
-    from pathlib import Path
-    candidates = [
-        get_workspace_root() / "venv-chatterbox" / "bin" / "python3",
-        Path(sys.executable).parent.parent.parent / "venv-chatterbox" / "bin" / "python3",
-    ]
-    for c in candidates:
-        if c.exists():
-            return str(c)
-    return ""
+    """Return the venv-chatterbox python3 ``xil produce`` would use, or an empty string."""
+    return resolve_venv_python("venv-chatterbox") or ""
 
 
 def _find_speakers_configs() -> list[str]:

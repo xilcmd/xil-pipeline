@@ -189,6 +189,12 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
         _UTILITY,
         "(workspace management)",
     ),
+    "setup": CommandSpec(
+        "xil_pipeline.XILU023_setup",
+        "create and verify local ML worker venvs (chatterbox)",
+        _UTILITY,
+        "(local GPU TTS setup)",
+    ),
 }
 """Subcommand registry. Insertion order defines display order within each group."""
 
