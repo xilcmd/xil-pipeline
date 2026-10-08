@@ -191,7 +191,7 @@ def _run(args: argparse.Namespace) -> None:
             logger.error(
                 "Cannot find venv-whisper Python. Pass --whisper-python PATH, "
                 "set XIL_CODEROOT to the directory containing venv-whisper/, "
-                "or create venv-whisper/ at the workspace or repo root. "
+                "or build it with: xil setup whisper. "
                 "Use --no-transcribe to skip transcription."
             )
             sys.exit(1)

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Tests for XILU023_setup.py — ``xil setup chatterbox``.
+"""Tests for XILU023_setup.py — ``xil setup chatterbox / whisper / mmaudio``.
 
 Mirrors the Rust ``cmd::setup`` tests; command strings must match the Rust
 output exactly (parity).
@@ -177,3 +177,89 @@ def test_gui_default_honours_code_root(tmp_path, monkeypatch):
     assert xil_gui._default_chatterbox_python() == str(py)
     monkeypatch.setenv("XIL_CODEROOT", str(tmp_path / "empty"))
     assert xil_gui._default_chatterbox_python() == ""
+
+
+# ── whisper / mmaudio ────────────────────────────────────────────────────────
+
+
+def test_whisper_plan_has_no_torch():
+    uv = setup.Installer("uv", "/bin/uv")
+    steps = setup.plan(uv, "/c/venv-whisper", "3.13", True, "cu124", setup.WHISPER)
+    assert [s.display() for s in steps] == [
+        "/bin/uv venv /c/venv-whisper --python 3.13",
+        "/bin/uv pip install --python /c/venv-whisper/bin/python3 faster-whisper",
+    ]
+    pip = setup.Installer("pip", "/usr/bin/python3")
+    steps = setup.plan(pip, "/c/venv-whisper", "3.13", False, "cu124", setup.WHISPER)
+    assert [s.label for s in steps] == ["create venv", "upgrade pip", "install faster-whisper"]
+
+
+def test_mmaudio_plan_clones_then_repins_torch(tmp_path):
+    uv = setup.Installer("uv", "/bin/uv")
+    venv = str(tmp_path / "venv-mmaudio")
+    repo = str(tmp_path / "MMAudio")
+    steps = setup.plan(uv, venv, "3.12", True, "cu124", setup.MMAUDIO, "/usr/bin/git")
+    assert [s.display() for s in steps] == [
+        f"/bin/uv venv {venv} --python 3.12",
+        f"/usr/bin/git clone https://github.com/hkchengrex/MMAudio {repo}",
+        f"/usr/bin/git -C {repo} checkout 974010a",
+        f"/bin/uv pip install --python {venv}/bin/python3 -e {repo} pydub",
+        f"/bin/uv pip install --python {venv}/bin/python3 torch==2.6.0 torchaudio==2.6.0 "
+        "torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124",
+    ]
+
+
+def test_mmaudio_plan_reuses_existing_clone(tmp_path):
+    (tmp_path / "MMAudio").mkdir()
+    pip = setup.Installer("pip", "/usr/bin/python3")
+    steps = setup.plan(pip, str(tmp_path / "venv-mmaudio"), "3.12", False, "cu124", setup.MMAUDIO)
+    assert [s.label for s in steps] == [
+        "create venv", "upgrade pip", "install MMAudio", "install PyTorch",
+    ]
+    assert steps[-1].display().endswith("--index-url https://download.pytorch.org/whl/cpu")
+
+
+def test_mmaudio_needs_git_to_clone(tmp_path):
+    opts = _opts(tmp_path / "venv-mmaudio", target=setup.MMAUDIO, python_ver="3.12")
+    assert setup.execute(opts, setup.Installer("uv", "/bin/uv")) == 1
+    (tmp_path / "MMAudio").mkdir()
+    opts.dry_run = True
+    assert setup.execute(opts, setup.Installer("uv", "/bin/uv")) == 0
+
+
+@pytest.mark.parametrize(
+    "target,python,header",
+    [
+        ("whisper", "3.13", "venv-whisper."),
+        ("mmaudio", "3.12", "venv-mmaudio with CPU PyTorch wheels."),
+    ],
+)
+def test_main_uses_target_python_default(target, python, header, tmp_path, monkeypatch, capsys):
+    bin_dir = tmp_path / "bin"
+    _script(bin_dir / "uv", "exit 0")
+    _script(bin_dir / "git", "exit 0")
+    monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setenv("XIL_CODEROOT", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["xil-setup", target, "--dry-run", "--device", "cpu"])
+    assert setup.main() == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"Setting up {tmp_path / header}")
+    assert f"--python {python}" in out
+
+
+def test_mmaudio_build_reports_weights(tmp_path, capsys):
+    venv = tmp_path / "venv-mmaudio"
+    (tmp_path / "MMAudio").mkdir()
+    (tmp_path / "weights").mkdir()
+    (tmp_path / "weights" / "mmaudio_large_44k_v2.pth").write_bytes(b"")
+    uv = tmp_path / "uv"
+    _script(
+        uv,
+        'if [ "$1" = venv ]; then mkdir -p "$2/bin"; '
+        "printf '#!/bin/sh\\necho True\\n' > \"$2/bin/python3\"; chmod +x \"$2/bin/python3\"; fi",
+    )
+    opts = _opts(venv, target=setup.MMAUDIO, cuda=True)
+    assert setup.execute(opts, setup.Installer("uv", str(uv))) == 0
+    out = capsys.readouterr().out
+    assert "Verified: mmaudio imports; device CUDA." in out
+    assert f"Weights found: {tmp_path / 'weights' / 'mmaudio_large_44k_v2.pth'}" in out

@@ -41,12 +41,39 @@ via pydub to match the rest of the SFX library, and atomically moved into place.
 """
 
 import contextlib
+import dataclasses
 import json
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 _DEFAULT_VARIANT = "large_44k_v2"
+
+_PATH_FIELDS = ("model_path", "vae_path", "bigvgan_16k_path", "synchformer_ckpt")
+
+
+def weights_base() -> Path:
+    """Where ``weights/`` and ``ext_weights/`` live: ``$XIL_MMAUDIO_WEIGHTS``,
+    else the directory holding this venv (``xil setup mmaudio`` puts
+    ``venv-mmaudio`` in ``$XIL_CODEROOT``)."""
+    override = os.environ.get("XIL_MMAUDIO_WEIGHTS")
+    return Path(override) if override else Path(sys.prefix).parent
+
+
+def anchor_paths(cfg, base: Path):
+    """Return *cfg* with its relative checkpoint paths made absolute under *base*.
+
+    MMAudio's ``ModelConfig`` uses ``./weights/...`` and ``./ext_weights/...``,
+    which resolve against the current directory: run from the workspace, the
+    worker would download ~6 GB of weights there.
+    """
+    changes = {}
+    for name in _PATH_FIELDS:
+        value = getattr(cfg, name)
+        if value is not None and not Path(value).is_absolute():
+            changes[name] = base / value
+    return dataclasses.replace(cfg, **changes)
 
 
 def main() -> None:
@@ -92,7 +119,8 @@ def main() -> None:
 
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
 
-    model: ModelConfig = all_model_cfg[_DEFAULT_VARIANT]
+    model: ModelConfig = anchor_paths(all_model_cfg[_DEFAULT_VARIANT], weights_base())
+    print(f"[mmaudio] weights: {model.model_path}", file=sys.stderr, flush=True)
     model.download_if_needed()
     seq_cfg = model.seq_cfg
 

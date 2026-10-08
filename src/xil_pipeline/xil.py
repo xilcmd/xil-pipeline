@@ -191,7 +191,7 @@ XIL_SCRIPT_COMMANDS: dict[str, CommandSpec] = {
     ),
     "setup": CommandSpec(
         "xil_pipeline.XILU023_setup",
-        "create and verify local ML worker venvs (chatterbox)",
+        "create and verify local ML worker venvs (chatterbox, whisper, mmaudio)",
         _UTILITY,
         "(local GPU TTS setup)",
     ),

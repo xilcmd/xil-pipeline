@@ -401,9 +401,7 @@ def _find_mmaudio_python(explicit: str | None) -> str:
         logger.error(
             "Cannot find the venv-mmaudio Python. Pass --mmaudio-python PATH, "
             "set XIL_CODEROOT to the directory containing venv-mmaudio/, or "
-            "create it: python -m venv venv-mmaudio && "
-            "git clone https://github.com/hkchengrex/MMAudio && "
-            "venv-mmaudio/bin/pip install -e MMAudio"
+            "build it with: xil setup mmaudio"
         )
         sys.exit(1)
     return py
