@@ -404,10 +404,15 @@ xil sample --episode S01E01 --backend chatterbox-turbo \
 > prompt-generated cue `duration_seconds` is the *generation length* and there is no mix-time
 > clip — that applies only to `source=` cues.
 >
-> Install (not on PyPI):
+> Install (not on PyPI) with `xil setup mmaudio` (XILU023). It clones MMAudio @`974010a`
+> beside the venv, builds the venv on Python 3.12 (MMAudio pins `numpy<2.1`, which has no
+> 3.13 wheels), and re-pins torch last. The worker anchors MMAudio's relative
+> `./weights` / `./ext_weights` paths to the folder holding `venv-mmaudio` (or
+> `$XIL_MMAUDIO_WEIGHTS`), so the ~6 GB never downloads into the current directory.
+> By hand:
 >
 > ```bash
-> python -m venv venv-mmaudio
+> python3.12 -m venv venv-mmaudio
 > git clone https://github.com/hkchengrex/MMAudio
 > venv-mmaudio/bin/pip install -e MMAudio
 > # Re-pin torch AFTER: MMAudio's `torch >= 2.5.1` has no upper bound and pulls a
@@ -1692,7 +1697,7 @@ flowchart TD
     NOOP --> JSON
 ```
 
-> **venv-whisper setup:** Create once with `python3 -m venv venv-whisper && venv-whisper/bin/pip install faster-whisper`. Place at workspace root or repo root — auto-detected in that order.
+> **venv-whisper setup:** Create once with `xil setup whisper` (or by hand: `python3 -m venv venv-whisper && venv-whisper/bin/pip install faster-whisper`). Place at workspace root or repo root — auto-detected in that order.
 > **CUDA fallback:** `whisper_worker.py` probes CUDA at startup (silent 1-second test transcription). If `libcublas` or other GPU libraries are missing (common in WSL2), it silently reinitializes on `cpu/int8` before reporting ready.
 > **No ElevenLabs API key required** — reads local files only.
 

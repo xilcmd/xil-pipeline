@@ -1,14 +1,14 @@
-.TH XIL\-SETUP "1" "2026\-10\-03" "xil\-pipeline 0.4.0" "User Commands"
+.TH XIL\-SETUP "1" "2026\-10\-07" "xil\-pipeline 0.4.0" "User Commands"
 .SH NAME
 xil\-setup
 .SH SYNOPSIS
 .B xil\-setup
-[-h] [--device {auto,cuda,cpu}] [--cuda-index TAG] [--dir PATH] [--python VER] [--force] [--dry-run] {chatterbox}
+[-h] [--device {auto,cuda,cpu}] [--cuda-index TAG] [--dir PATH] [--python VER] [--force] [--dry-run] {chatterbox,whisper,mmaudio}
 .SH DESCRIPTION
-Create and verify the virtual environment a local ML worker runs under. 'chatterbox' builds venv\-chatterbox with PyTorch (CUDA wheels when an NVIDIA GPU is found, CPU wheels otherwise) and chatterbox\-tts, then checks that it imports.
+Create and verify the virtual environment a local ML worker runs under. 'chatterbox' builds venv\-chatterbox (PyTorch + chatterbox\-tts) for local TTS; 'whisper' builds venv\-whisper (faster\-whisper) for xil stem\-verify; 'mmaudio' clones MMAudio and builds venv\-mmaudio for local SFX. PyTorch comes as CUDA wheels when an NVIDIA GPU is found, CPU wheels otherwise.
 
 .TP
-\fB{chatterbox}\fR
+\fB{chatterbox,whisper,mmaudio}\fR
 what to set up
 
 .SH OPTIONS
@@ -22,11 +22,11 @@ PyTorch CUDA wheel index tag
 
 .TP
 \fB\-\-dir\fR \fI\,PATH\/\fR
-directory to create venv\-chatterbox in
+directory to create the venv in
 
 .TP
 \fB\-\-python\fR \fI\,VER\/\fR
-Python version for the venv (chatterbox\-tts needs 3.10\-3.13 for torch 2.6)
+Python version for the venv (default: 3.13; 3.12 for mmaudio)
 
 .TP
 \fB\-\-force\fR
@@ -38,7 +38,7 @@ print the commands without running them
 
 .SH COMMENTS
 The venv is created in \-\-dir, else $XIL_CODEROOT, else the workspace root: the
-places 'xil produce' looks for it. Uses uv when it is on PATH, otherwise
+places the xil commands look for it. Uses uv when it is on PATH, otherwise
 python \-m venv and pip. Running it again on a working venv does nothing.
 
 .SH SEE ALSO

@@ -195,11 +195,18 @@ are current and which need re\-running.  See
 .BR xil\-status (1).
 .TP
 .B setup
-Local model setup \(em build and verify
+Local model setup \(em build and verify a worker venv:
 .I venv\-chatterbox
-(PyTorch with CUDA or CPU wheels, chatterbox\-tts) where
-.B xil produce
-looks for it.  See
+(PyTorch, chatterbox\-tts) for
+.BR "xil produce" ,
+.I venv\-whisper
+(faster\-whisper) for
+.BR "xil stem\-verify" ,
+or
+.I venv\-mmaudio
+(a pinned MMAudio clone, PyTorch) for
+.BR "xil sfx \-\-sfx\-backend mmaudio" .
+See
 .BR xil\-setup (1).
 .TP
 .B use

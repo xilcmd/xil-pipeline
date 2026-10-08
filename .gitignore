@@ -6,6 +6,7 @@ venv-whisper/
 venv-docs/
 venv-mmaudio/
 MMAudio/
+.venv-records/
 logs/
 __pycache__/
 *.pyc
